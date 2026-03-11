@@ -97,6 +97,22 @@ jobs:
       - name: Build Tauri app
         run: pnpm tauri build
 
+      - name: List packaged artifacts (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo "=== release bundle files ==="
+          find src-tauri/target/release -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.msi" -o -name "*.exe" \) | sort
+
+      - name: List packaged artifacts (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Write-Host "=== release bundle files ==="
+          Get-ChildItem -Path src-tauri/target/release -Recurse -File -Include *.deb,*.AppImage,*.rpm,*.msi,*.exe |
+            Sort-Object FullName |
+            ForEach-Object { $_.FullName }
+
       - name: Upload bundle artifacts
         uses: actions/upload-artifact@v4
         with:

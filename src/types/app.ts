@@ -69,6 +69,7 @@ export type DepartmentConfig = {
   summary: string;
   guide: string;
   apiConfigId: string;
+  apiConfigIds: string[];
   agentIds: string[];
   createdAt: string;
   updatedAt: string;

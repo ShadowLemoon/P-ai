@@ -1632,36 +1632,45 @@ async fn delegate_notify_assistant_if_needed(
         .ok_or_else(|| "未找到助理部门委任人".to_string())?;
     let assistant_department = assistant_department(&config)
         .ok_or_else(|| "未找到助理部门配置".to_string())?;
+    let assistant_api_config_ids = department_api_config_ids(assistant_department);
     drop(guard);
 
-    let request = SendChatRequest {
-        payload: ChatInputPayload {
-            text: Some(delegate_build_assistant_notify_text(delegate, result_text)),
-            display_text: Some(String::new()),
-            images: None,
-            audios: None,
-            model: None,
-            extra_text_blocks: None,
-            provider_meta: Some(serde_json::json!({
-                "messageKind": "delegate_notify_assistant",
-                "delegateId": delegate.delegate_id,
-                "delegateKind": delegate.kind,
-                "resultStatus": result_status,
-                "sourceDepartmentId": delegate.source_department_id,
-                "targetDepartmentId": delegate.target_department_id,
-            })),
-        },
-        session: Some(SessionSelector {
-            api_config_id: Some(assistant_department.api_config_id.clone()),
-            agent_id: assistant_agent_id,
-            conversation_id: None,
-        }),
-        speaker_agent_id: Some(SYSTEM_PERSONA_ID.to_string()),
-        trigger_only: true,
-    };
+    let notify_text = delegate_build_assistant_notify_text(delegate, result_text);
+    let provider_meta = serde_json::json!({
+        "messageKind": "delegate_notify_assistant",
+        "delegateId": delegate.delegate_id,
+        "delegateKind": delegate.kind,
+        "resultStatus": result_status,
+        "sourceDepartmentId": delegate.source_department_id,
+        "targetDepartmentId": delegate.target_department_id,
+    });
     let noop_channel = tauri::ipc::Channel::new(|_| Ok(()));
-    let _ = send_chat_message_inner(request, app_state, &noop_channel).await?;
-    Ok(())
+    let mut errors = Vec::<String>::new();
+    for api_config_id in assistant_api_config_ids {
+        let request = SendChatRequest {
+            payload: ChatInputPayload {
+                text: Some(notify_text.clone()),
+                display_text: Some(String::new()),
+                images: None,
+                audios: None,
+                model: None,
+                extra_text_blocks: None,
+                provider_meta: Some(provider_meta.clone()),
+            },
+            session: Some(SessionSelector {
+                api_config_id: Some(api_config_id.clone()),
+                agent_id: assistant_agent_id.clone(),
+                conversation_id: None,
+            }),
+            speaker_agent_id: Some(SYSTEM_PERSONA_ID.to_string()),
+            trigger_only: true,
+        };
+        match send_chat_message_inner(request, app_state, &noop_channel).await {
+            Ok(_) => return Ok(()),
+            Err(err) => errors.push(format!("{api_config_id}: {err}")),
+        }
+    }
+    Err(format!("助理部门所有候选模型均失败：{}", errors.join(" | ")))
 }
 
 async fn delegate_execute_agent_run(
@@ -1726,26 +1735,68 @@ fn delegate_create_conversation(
     Ok(conversation_id)
 }
 
+fn delegate_update_conversation_api_config_id(
+    app_state: &AppState,
+    conversation_id: &str,
+    api_config_id: &str,
+) -> Result<(), String> {
+    let guard = app_state
+        .state_lock
+        .lock()
+        .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
+    let mut data = read_app_data(&app_state.data_path)?;
+    if let Some(conversation) = data.conversations.iter_mut().find(|item| item.id == conversation_id) {
+        conversation.api_config_id = api_config_id.to_string();
+        conversation.updated_at = now_iso();
+        write_app_data(&app_state.data_path, &data)?;
+    }
+    drop(guard);
+    Ok(())
+}
+
 async fn delegate_finish_and_publish_result(
     app_state: AppState,
     delegate: DelegateEntry,
     root_conversation_id: String,
-    target_api_config_id: String,
+    target_api_config_ids: Vec<String>,
 ) -> Result<SendChatResult, String> {
+    let primary_api_config_id = target_api_config_ids
+        .first()
+        .cloned()
+        .ok_or_else(|| format!("部门没有可用模型，departmentId={}", delegate.target_department_id))?;
     let delegate_conversation_id = delegate_create_conversation(
         &app_state,
         &delegate,
-        &target_api_config_id,
+        &primary_api_config_id,
         &root_conversation_id,
     )?;
-    let run_result = delegate_execute_agent_run(
-        &app_state,
-        &delegate,
-        &target_api_config_id,
-        &root_conversation_id,
-        &delegate_conversation_id,
-    )
-    .await;
+    let mut run_result = Err("未尝试任何候选模型".to_string());
+    let mut errors = Vec::<String>::new();
+    for api_config_id in target_api_config_ids {
+        let _ = delegate_update_conversation_api_config_id(
+            &app_state,
+            &delegate_conversation_id,
+            &api_config_id,
+        );
+        match delegate_execute_agent_run(
+            &app_state,
+            &delegate,
+            &api_config_id,
+            &root_conversation_id,
+            &delegate_conversation_id,
+        )
+        .await
+        {
+            Ok(result) => {
+                run_result = Ok(result);
+                break;
+            }
+            Err(err) => {
+                errors.push(format!("{api_config_id}: {err}"));
+                run_result = Err(format!("部门所有候选模型均失败：{}", errors.join(" | ")));
+            }
+        }
+    }
     match run_result {
         Ok(result) => {
             let _ = delegate_store_update_status(
@@ -1959,13 +2010,13 @@ fn builtin_delegate(
 
     let app_state_clone = app_state.clone();
     let delegate_clone = delegate.clone();
-    let target_api_config_id = target_department.api_config_id.clone();
+    let target_api_config_ids = department_api_config_ids(&target_department);
     tokio::spawn(async move {
         let _ = delegate_finish_and_publish_result(
             app_state_clone,
             delegate_clone,
             root_conversation_id,
-            target_api_config_id,
+            target_api_config_ids,
         )
         .await;
     });
@@ -2052,7 +2103,7 @@ async fn builtin_handoff(
         app_state.clone(),
         delegate.clone(),
         runtime_context.root_conversation_id.clone(),
-        target_department.api_config_id.clone(),
+        department_api_config_ids(&target_department),
     )
     .await
     {

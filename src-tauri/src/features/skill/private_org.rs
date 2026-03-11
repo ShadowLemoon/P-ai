@@ -326,6 +326,7 @@ fn load_private_departments_from_workspace(
             name,
             summary: file.summary.trim().to_string(),
             guide: file.guide.trim().to_string(),
+            api_config_ids: vec![api_config_id.clone()],
             api_config_id,
             agent_ids,
             created_at: now.clone(),

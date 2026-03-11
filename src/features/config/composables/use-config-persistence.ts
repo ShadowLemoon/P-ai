@@ -48,12 +48,18 @@ const DEFAULT_MAX_RECORD_SECONDS = 60;
 const MAX_RECORD_SECONDS = 600;
 
 function mapDepartmentConfig(item: unknown): AppConfig["departments"][number] {
+  const apiConfigIds = Array.isArray((item as { apiConfigIds?: unknown[] })?.apiConfigIds)
+    ? ((item as { apiConfigIds?: unknown[] }).apiConfigIds || []).map((v) => String(v || "").trim()).filter(Boolean)
+    : [];
+  const legacyApiConfigId = String((item as { apiConfigId?: unknown })?.apiConfigId || "").trim();
+  const normalizedApiConfigIds = Array.from(new Set((apiConfigIds.length > 0 ? apiConfigIds : [legacyApiConfigId]).filter(Boolean)));
   return {
     id: String((item as { id?: unknown })?.id || "").trim(),
     name: String((item as { name?: unknown })?.name || "").trim(),
     summary: String((item as { summary?: unknown })?.summary || "").trim(),
     guide: String((item as { guide?: unknown })?.guide || "").trim(),
-    apiConfigId: String((item as { apiConfigId?: unknown })?.apiConfigId || "").trim(),
+    apiConfigId: normalizedApiConfigIds[0] || "",
+    apiConfigIds: normalizedApiConfigIds,
     agentIds: Array.isArray((item as { agentIds?: unknown[] })?.agentIds)
       ? ((item as { agentIds?: unknown[] }).agentIds || []).map((v) => String(v || "").trim()).filter(Boolean)
       : [],

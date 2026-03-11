@@ -307,6 +307,12 @@ fn normalize_departments(config: &mut AppConfig) {
         .unwrap_or_default();
     let mut out = Vec::<DepartmentConfig>::new();
     let mut seen_ids = std::collections::HashSet::<String>::new();
+    let valid_text_chat_api_ids = config
+        .api_configs
+        .iter()
+        .filter(|a| is_text_chat_api(a))
+        .map(|a| a.id.clone())
+        .collect::<std::collections::HashSet<_>>();
     for raw in &config.departments {
         let id = raw.id.trim().to_string();
         if id.is_empty() {
@@ -316,15 +322,17 @@ fn normalize_departments(config: &mut AppConfig) {
         if !seen_ids.insert(key) {
             continue;
         }
-        let api_config_id = if config
-            .api_configs
-            .iter()
-            .any(|a| a.id == raw.api_config_id && is_text_chat_api(a))
-        {
-            raw.api_config_id.trim().to_string()
-        } else {
-            fallback_api_id.clone()
-        };
+        let mut api_config_ids = department_api_config_ids(raw)
+            .into_iter()
+            .filter(|id| valid_text_chat_api_ids.contains(id))
+            .collect::<Vec<_>>();
+        if api_config_ids.is_empty() && !fallback_api_id.trim().is_empty() {
+            api_config_ids.push(fallback_api_id.clone());
+        }
+        let api_config_id = api_config_ids
+            .first()
+            .cloned()
+            .unwrap_or_else(|| fallback_api_id.clone());
         let mut agent_ids = Vec::<String>::new();
         let mut seen_agent_ids = std::collections::HashSet::<String>::new();
         for agent_id in &raw.agent_ids {
@@ -342,6 +350,7 @@ fn normalize_departments(config: &mut AppConfig) {
             name: raw.name.trim().to_string(),
             summary: raw.summary.trim().to_string(),
             guide: raw.guide.trim().to_string(),
+            api_config_ids,
             api_config_id,
             agent_ids,
             created_at: raw.created_at.trim().to_string(),
@@ -380,12 +389,23 @@ fn normalize_departments(config: &mut AppConfig) {
                 item.name = default_assistant_department_name(&config.ui_language);
             }
             if item.api_config_id.trim().is_empty()
-                || !config
-                    .api_configs
-                    .iter()
-                    .any(|a| a.id == item.api_config_id && is_text_chat_api(a))
+                || !valid_text_chat_api_ids.contains(&item.api_config_id)
             {
+                item.api_config_ids = if fallback_api_id.trim().is_empty() {
+                    Vec::new()
+                } else {
+                    vec![fallback_api_id.clone()]
+                };
                 item.api_config_id = fallback_api_id.clone();
+            } else {
+                item.api_config_ids = department_api_config_ids(item)
+                    .into_iter()
+                    .filter(|id| valid_text_chat_api_ids.contains(id))
+                    .collect();
+                if item.api_config_ids.is_empty() && !item.api_config_id.trim().is_empty() {
+                    item.api_config_ids.push(item.api_config_id.clone());
+                }
+                item.api_config_id = item.api_config_ids.first().cloned().unwrap_or_else(|| fallback_api_id.clone());
             }
             if item.agent_ids.is_empty() {
                 item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
@@ -396,7 +416,7 @@ fn normalize_departments(config: &mut AppConfig) {
     out.sort_by_key(|item| (if item.is_built_in_assistant { 0 } else { 1 }, item.order_index));
     config.departments = out;
     if let Some(dept) = assistant_department(config) {
-        config.assistant_department_api_config_id = dept.api_config_id.clone();
+        config.assistant_department_api_config_id = department_primary_api_config_id(dept);
     }
 }
 

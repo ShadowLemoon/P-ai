@@ -104,9 +104,35 @@
           <!-- 驱动模型 -->
           <div class="px-3 py-2">
             <div class="text-[11px] opacity-50 uppercase tracking-wide mb-1">{{ t("config.department.model") }}</div>
-            <select v-model="selectedDepartment.apiConfigId" class="select select-bordered select-sm w-full" :disabled="selectedDepartmentIsPrivateWorkspace" @change="syncAssistantDepartmentState">
-              <option v-for="api in textDepartmentApiConfigs" :key="api.id" :value="api.id">{{ api.name }}</option>
-            </select>
+            <div class="grid gap-2">
+              <div
+                v-for="(apiId, idx) in selectedDepartmentApiConfigIds"
+                :key="`${selectedDepartment.id}-api-${idx}`"
+                class="flex items-center gap-2"
+              >
+                <select
+                  class="select select-bordered select-sm flex-1"
+                  :disabled="selectedDepartmentIsPrivateWorkspace"
+                  :value="apiId"
+                  @change="updateDepartmentApiConfigAt(idx, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="api in availableDepartmentApiConfigsForIndex(idx)" :key="api.id" :value="api.id">{{ api.name }}</option>
+                </select>
+                <div class="join">
+                  <button class="btn btn-sm btn-square join-item" :disabled="selectedDepartmentIsPrivateWorkspace || idx <= 0" :title="t('config.department.moveUp')" @click="moveDepartmentApiConfig(idx, -1)">↑</button>
+                  <button class="btn btn-sm btn-square join-item" :disabled="selectedDepartmentIsPrivateWorkspace || idx >= selectedDepartmentApiConfigIds.length - 1" :title="t('config.department.moveDown')" @click="moveDepartmentApiConfig(idx, 1)">↓</button>
+                  <button class="btn btn-sm btn-square join-item" :disabled="selectedDepartmentIsPrivateWorkspace || selectedDepartmentApiConfigIds.length <= 1" :title="t('config.department.removeModel')" @click="removeDepartmentApiConfigAt(idx)">×</button>
+                </div>
+              </div>
+              <button
+                class="btn btn-sm btn-outline"
+                :disabled="selectedDepartmentIsPrivateWorkspace || remainingDepartmentApiConfigs.length <= 0"
+                @click="addDepartmentApiConfig"
+              >
+                {{ t("config.department.addModel") }}
+              </button>
+            </div>
+            <div class="text-[11px] opacity-60 mt-1">{{ t("config.department.modelFallbackHint") }}</div>
             <div class="text-[11px] opacity-50 mt-1">{{ t("config.department.allowedModelsNote") }}</div>
           </div>
 
@@ -189,6 +215,19 @@ const selectedDepartmentIsPrivateWorkspace = computed(
 const textDepartmentApiConfigs = computed(() =>
   props.apiConfigs.filter((api) => !!api.enableText && ["openai", "openai_responses", "gemini", "deepseek/kimi", "anthropic"].includes(api.requestFormat)),
 );
+const selectedDepartmentApiConfigIds = computed(() =>
+  Array.from(new Set(
+    (selectedDepartment.value?.apiConfigIds?.length
+      ? selectedDepartment.value.apiConfigIds
+      : [selectedDepartment.value?.apiConfigId || ""])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  )),
+);
+const remainingDepartmentApiConfigs = computed(() => {
+  const selectedIds = new Set(selectedDepartmentApiConfigIds.value);
+  return textDepartmentApiConfigs.value.filter((api) => !selectedIds.has(api.id));
+});
 const departmentNameCounts = computed(() => {
   const counts = new Map<string, number>();
   for (const department of props.config.departments || []) {
@@ -232,7 +271,8 @@ watch(page, () => {
 function syncAssistantDepartmentState() {
   const assistant = props.config.departments.find((item) => item.id === "assistant-department" || item.isBuiltInAssistant);
   if (!assistant) return;
-  assistant.apiConfigId = String(assistant.apiConfigId || "").trim() || textDepartmentApiConfigs.value[0]?.id || "";
+  assistant.apiConfigIds = normalizeDepartmentApiConfigIds(assistant.apiConfigIds, assistant.apiConfigId);
+  assistant.apiConfigId = assistant.apiConfigIds[0] || textDepartmentApiConfigs.value[0]?.id || "";
   props.config.assistantDepartmentApiConfigId = assistant.apiConfigId;
   const nextAssistantId = assistant.agentIds[0];
   if (nextAssistantId && nextAssistantId !== props.assistantDepartmentAgentId) {
@@ -250,6 +290,7 @@ function addDepartment() {
     summary: "",
     guide: "",
     apiConfigId: textDepartmentApiConfigs.value[0]?.id || "",
+    apiConfigIds: textDepartmentApiConfigs.value[0]?.id ? [textDepartmentApiConfigs.value[0].id] : [],
     agentIds: [],
     createdAt: now,
     updatedAt: now,
@@ -290,6 +331,80 @@ function selectDepartmentAssignee(agentId: string) {
   const target = selectedDepartment.value;
   if (!target) return;
   target.agentIds = agentId ? [agentId] : [];
+  target.updatedAt = new Date().toISOString();
+  syncAssistantDepartmentState();
+}
+
+function normalizeDepartmentApiConfigIds(apiConfigIds: string[] | undefined, legacyApiConfigId: string | undefined) {
+  const ids = Array.from(new Set(
+    ((Array.isArray(apiConfigIds) && apiConfigIds.length > 0) ? apiConfigIds : [legacyApiConfigId || ""])
+      .map((id) => String(id || "").trim())
+      .filter((id) => textDepartmentApiConfigs.value.some((api) => api.id === id)),
+  ));
+  if (ids.length > 0) return ids;
+  return textDepartmentApiConfigs.value[0]?.id ? [textDepartmentApiConfigs.value[0].id] : [];
+}
+
+function ensureSelectedDepartmentApiConfigIds() {
+  const target = selectedDepartment.value;
+  if (!target) return [];
+  const ids = normalizeDepartmentApiConfigIds(target.apiConfigIds, target.apiConfigId);
+  target.apiConfigIds = ids;
+  target.apiConfigId = ids[0] || "";
+  return ids;
+}
+
+function availableDepartmentApiConfigsForIndex(index: number) {
+  const currentIds = ensureSelectedDepartmentApiConfigIds();
+  const currentId = currentIds[index];
+  return textDepartmentApiConfigs.value.filter((api) => api.id === currentId || !currentIds.includes(api.id));
+}
+
+function updateDepartmentApiConfigAt(index: number, apiId: string) {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const next = ensureSelectedDepartmentApiConfigIds();
+  next[index] = apiId;
+  target.apiConfigIds = Array.from(new Set(next.filter(Boolean)));
+  target.apiConfigId = target.apiConfigIds[0] || "";
+  target.updatedAt = new Date().toISOString();
+  syncAssistantDepartmentState();
+}
+
+function addDepartmentApiConfig() {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const nextApi = remainingDepartmentApiConfigs.value[0];
+  if (!nextApi) return;
+  const next = ensureSelectedDepartmentApiConfigIds();
+  next.push(nextApi.id);
+  target.apiConfigIds = next;
+  target.apiConfigId = next[0] || "";
+  target.updatedAt = new Date().toISOString();
+  syncAssistantDepartmentState();
+}
+
+function removeDepartmentApiConfigAt(index: number) {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const next = ensureSelectedDepartmentApiConfigIds();
+  next.splice(index, 1);
+  target.apiConfigIds = next.length > 0 ? next : (textDepartmentApiConfigs.value[0]?.id ? [textDepartmentApiConfigs.value[0].id] : []);
+  target.apiConfigId = target.apiConfigIds[0] || "";
+  target.updatedAt = new Date().toISOString();
+  syncAssistantDepartmentState();
+}
+
+function moveDepartmentApiConfig(index: number, delta: number) {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const next = ensureSelectedDepartmentApiConfigIds();
+  const swapIndex = index + delta;
+  if (swapIndex < 0 || swapIndex >= next.length) return;
+  const [item] = next.splice(index, 1);
+  next.splice(swapIndex, 0, item);
+  target.apiConfigIds = next;
+  target.apiConfigId = next[0] || "";
   target.updatedAt = new Date().toISOString();
   syncAssistantDepartmentState();
 }

@@ -221,6 +221,7 @@ export function useConfigCore(options: UseConfigCoreOptions) {
       summary: assistantSummary,
       guide: assistantGuide,
       apiConfigId: defaultAssistantDepartmentApiId,
+      apiConfigIds: defaultAssistantDepartmentApiId ? [defaultAssistantDepartmentApiId] : [],
       agentIds: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -238,14 +239,21 @@ export function useConfigCore(options: UseConfigCoreOptions) {
       const agentIds = Array.isArray(item?.agentIds)
         ? Array.from(new Set(item.agentIds.map((v) => String(v || "").trim()).filter(Boolean)))
         : [];
+      const rawApiConfigIds = Array.isArray(item?.apiConfigIds)
+        ? item.apiConfigIds.map((v) => String(v || "").trim()).filter(Boolean)
+        : [];
+      const legacyApiConfigId = String(item?.apiConfigId || "").trim();
+      const apiConfigIds = Array.from(new Set(
+        (rawApiConfigIds.length > 0 ? rawApiConfigIds : [legacyApiConfigId])
+          .filter((id) => validTextChatApiIds.has(id)),
+      ));
       normalizedDepartments.push({
         id,
         name: String(item?.name || "").trim() || `部门 ${normalizedDepartments.length + 1}`,
         summary: String(item?.summary || "").trim(),
         guide: String(item?.guide || "").trim(),
-        apiConfigId: validTextChatApiIds.has(String(item?.apiConfigId || "").trim())
-          ? String(item?.apiConfigId || "").trim()
-          : defaultAssistantDepartmentApiId,
+        apiConfigId: apiConfigIds[0] || defaultAssistantDepartmentApiId,
+        apiConfigIds: apiConfigIds.length > 0 ? apiConfigIds : (defaultAssistantDepartmentApiId ? [defaultAssistantDepartmentApiId] : []),
         agentIds,
         createdAt: String(item?.createdAt || "").trim() || new Date().toISOString(),
         updatedAt: String(item?.updatedAt || "").trim() || new Date().toISOString(),
@@ -267,11 +275,20 @@ export function useConfigCore(options: UseConfigCoreOptions) {
       ...item,
       id: item.isBuiltInAssistant || item.id === "assistant-department" ? "assistant-department" : item.id,
       name: String(item.name || "").trim() || (item.isBuiltInAssistant || item.id === "assistant-department" ? assistantName : `部门 ${idx + 1}`),
-      apiConfigId: validTextChatApiIds.has(item.apiConfigId) ? item.apiConfigId : defaultAssistantDepartmentApiId,
+      apiConfigIds: Array.from(new Set(
+        (Array.isArray(item.apiConfigIds) ? item.apiConfigIds : [])
+          .map((id) => String(id || "").trim())
+          .filter((id) => validTextChatApiIds.has(id)),
+      )),
+      apiConfigId: "",
       orderIndex: idx + 1,
       isBuiltInAssistant: item.isBuiltInAssistant || item.id === "assistant-department",
       source: item.source || "main_config",
       scope: item.scope || "global",
+    })).map((item) => ({
+      ...item,
+      apiConfigIds: item.apiConfigIds.length > 0 ? item.apiConfigIds : (defaultAssistantDepartmentApiId ? [defaultAssistantDepartmentApiId] : []),
+      apiConfigId: item.apiConfigIds[0] || defaultAssistantDepartmentApiId,
     }));
     const assistantDept = options.config.departments.find((item) => item.id === "assistant-department" || item.isBuiltInAssistant);
     if (assistantDept) {

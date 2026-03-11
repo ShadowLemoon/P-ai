@@ -217,6 +217,7 @@
                     name: "助理部门".to_string(),
                     summary: String::new(),
                     guide: String::new(),
+                    api_config_ids: vec!["embed-a".to_string()],
                     api_config_id: "embed-a".to_string(),
                     agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
                     created_at: "2026-03-10T00:00:00Z".to_string(),
@@ -229,6 +230,7 @@
                     name: "资料部".to_string(),
                     summary: String::new(),
                     guide: String::new(),
+                    api_config_ids: vec!["stt-a".to_string()],
                     api_config_id: "stt-a".to_string(),
                     agent_ids: vec![],
                     created_at: "2026-03-10T00:00:00Z".to_string(),
@@ -293,6 +295,7 @@
 
         assert_eq!(cfg.assistant_department_api_config_id, "chat-a");
         assert!(cfg.departments.iter().all(|department| department.api_config_id == "chat-a"));
+        assert!(cfg.departments.iter().all(|department| department.api_config_ids == vec!["chat-a".to_string()]));
     }
 
     #[test]

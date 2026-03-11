@@ -380,6 +380,9 @@ struct DepartmentConfig {
     summary: String,
     #[serde(default)]
     guide: String,
+    #[serde(default)]
+    api_config_ids: Vec<String>,
+    #[serde(default)]
     api_config_id: String,
     #[serde(default)]
     agent_ids: Vec<String>,
@@ -412,12 +415,14 @@ fn default_assistant_private_scope() -> String {
 
 fn default_assistant_department(api_config_id: &str) -> DepartmentConfig {
     let now = now_iso();
+    let api_config_id = api_config_id.trim().to_string();
     DepartmentConfig {
         id: ASSISTANT_DEPARTMENT_ID.to_string(),
         name: "助理部门".to_string(),
         summary: "负责直接与用户对话，承接主会话与统筹调度。".to_string(),
         guide: "你是助理部门，负责作为主负责人理解用户需求、决定是否需要委派、汇总结果并继续推进主对话。".to_string(),
-        api_config_id: api_config_id.trim().to_string(),
+        api_config_ids: if api_config_id.is_empty() { Vec::new() } else { vec![api_config_id.clone()] },
+        api_config_id,
         agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
         created_at: now.clone(),
         updated_at: now,
@@ -438,6 +443,36 @@ fn default_assistant_department_name(ui_language: &str) -> String {
 
 fn default_departments(api_config_id: &str) -> Vec<DepartmentConfig> {
     vec![default_assistant_department(api_config_id)]
+}
+
+fn department_api_config_ids(department: &DepartmentConfig) -> Vec<String> {
+    let mut out = Vec::<String>::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    for api_id in &department.api_config_ids {
+        let api_id = api_id.trim().to_string();
+        if api_id.is_empty() {
+            continue;
+        }
+        let key = api_id.to_ascii_lowercase();
+        if seen.insert(key) {
+            out.push(api_id);
+        }
+    }
+    let legacy = department.api_config_id.trim().to_string();
+    if !legacy.is_empty() {
+        let key = legacy.to_ascii_lowercase();
+        if seen.insert(key) {
+            out.push(legacy);
+        }
+    }
+    out
+}
+
+fn department_primary_api_config_id(department: &DepartmentConfig) -> String {
+    department_api_config_ids(department)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| department.api_config_id.trim().to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -18,6 +18,19 @@ fn prepared_history_to_rig_messages(prepared: &PreparedPrompt) -> Result<Vec<Rig
                     user_blocks.push(UserContent::text(time_text.clone()));
                 }
             }
+            for (mime, bytes) in &hm.images {
+                user_blocks.push(UserContent::image_base64(
+                    bytes.clone(),
+                    image_media_type_from_mime(mime),
+                    Some(ImageDetail::Auto),
+                ));
+            }
+            for (mime, bytes) in &hm.audios {
+                user_blocks.push(UserContent::audio(
+                    bytes.clone(),
+                    audio_media_type_from_mime(mime),
+                ));
+            }
             chat_history.push(RigMessage::User {
                 content: OneOrMany::many(user_blocks)
                     .map_err(|_| "Failed to build user history message".to_string())?,

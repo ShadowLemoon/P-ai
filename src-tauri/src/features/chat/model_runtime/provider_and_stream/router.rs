@@ -176,6 +176,17 @@ async fn call_model_openai_style(
                     err
                 );
                 let mut fallback = original;
+                if fallback.latest_user_extra_text.trim().is_empty() {
+                    fallback.latest_user_extra_text =
+                        "[系统提示] 已过滤图片附件：模型不支持当前图片输入格式，已自动切换为纯文本重试。"
+                            .to_string();
+                } else {
+                    fallback.latest_user_extra_text = format!(
+                        "{}\n\n{}",
+                        fallback.latest_user_extra_text.trim(),
+                        "[系统提示] 已过滤图片附件：模型不支持当前图片输入格式，已自动切换为纯文本重试。"
+                    );
+                }
                 fallback.latest_images.clear();
                 fallback.latest_audios.clear();
                 request_log = prepared_prompt_to_equivalent_request_json(

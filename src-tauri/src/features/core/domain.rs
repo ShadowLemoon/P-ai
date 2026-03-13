@@ -1188,6 +1188,8 @@ struct PreparedHistoryMessage {
     role: String,
     text: String,
     user_time_text: Option<String>,
+    images: Vec<(String, String)>,
+    audios: Vec<(String, String)>,
     tool_calls: Option<Vec<Value>>,
     tool_call_id: Option<String>,
     reasoning_content: Option<String>,

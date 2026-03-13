@@ -590,6 +590,90 @@ fn render_prompt_message_text(message: &ChatMessage) -> String {
     render_message_content_for_model(message)
 }
 
+fn render_prompt_user_text_only(message: &ChatMessage) -> String {
+    let mut chunks = Vec::<String>::new();
+    for part in &message.parts {
+        if let MessagePart::Text { text } = part {
+            if !text.trim().is_empty() {
+                chunks.push(text.clone());
+            }
+        }
+    }
+    chunks.join("\n")
+}
+
+fn resolve_media_from_parts(
+    parts: &[MessagePart],
+    data_path: Option<&PathBuf>,
+    log_prefix: &str,
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    let mut images = Vec::<(String, String)>::new();
+    let mut audios = Vec::<(String, String)>::new();
+    for part in parts {
+        match part {
+            MessagePart::Image {
+                mime, bytes_base64, ..
+            } => {
+                let resolved = if let Some(path) = data_path {
+                    match resolve_stored_binary_base64(path, bytes_base64) {
+                        Ok(value) => value,
+                        Err(err) => {
+                            eprintln!(
+                                "{} 解析图片附件失败，mime={}，data_path={}，bytes_base64_len={}，error={}",
+                                log_prefix,
+                                mime,
+                                path.to_string_lossy(),
+                                bytes_base64.len(),
+                                err
+                            );
+                            bytes_base64.clone()
+                        }
+                    }
+                } else {
+                    bytes_base64.clone()
+                };
+                if !resolved.trim().is_empty() {
+                    images.push((mime.clone(), resolved));
+                }
+            }
+            MessagePart::Audio {
+                mime, bytes_base64, ..
+            } => {
+                let resolved = if let Some(path) = data_path {
+                    match resolve_stored_binary_base64(path, bytes_base64) {
+                        Ok(value) => value,
+                        Err(err) => {
+                            eprintln!(
+                                "{} 解析音频附件失败，mime={}，data_path={}，bytes_base64_len={}，error={}",
+                                log_prefix,
+                                mime,
+                                path.to_string_lossy(),
+                                bytes_base64.len(),
+                                err
+                            );
+                            bytes_base64.clone()
+                        }
+                    }
+                } else {
+                    bytes_base64.clone()
+                };
+                if !resolved.trim().is_empty() {
+                    audios.push((mime.clone(), resolved));
+                }
+            }
+            MessagePart::Text { .. } => {}
+        }
+    }
+    (images, audios)
+}
+
+fn collect_prompt_media_parts(
+    message: &ChatMessage,
+    data_path: Option<&PathBuf>,
+) -> (Vec<(String, String)>, Vec<(String, String)>) {
+    resolve_media_from_parts(&message.parts, data_path, "[提示词] 历史消息")
+}
+
 #[derive(Debug, Clone)]
 struct PromptDepartmentCard {
     id: String,
@@ -899,6 +983,8 @@ fn build_prompt_with_mode(
                             role: "assistant".to_string(),
                             text,
                             user_time_text: None,
+                            images: Vec::new(),
+                            audios: Vec::new(),
                             tool_calls,
                             tool_call_id: None,
                             reasoning_content,
@@ -918,6 +1004,8 @@ fn build_prompt_with_mode(
                                 role: "tool".to_string(),
                                 text,
                                 user_time_text: None,
+                                images: Vec::new(),
+                                audios: Vec::new(),
                                 tool_calls: None,
                                 tool_call_id,
                                 reasoning_content: None,
@@ -927,8 +1015,18 @@ fn build_prompt_with_mode(
                 }
             }
         }
-        let text = render_prompt_message_text(message);
-        if text.trim().is_empty() {
+        let is_user = role == "user";
+        let text = if is_user {
+            render_prompt_user_text_only(message)
+        } else {
+            render_prompt_message_text(message)
+        };
+        let (images, audios) = if is_user {
+            collect_prompt_media_parts(message, data_path)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        if text.trim().is_empty() && images.is_empty() && audios.is_empty() {
             continue;
         }
         history_messages.push(PreparedHistoryMessage {
@@ -939,6 +1037,8 @@ fn build_prompt_with_mode(
             } else {
                 None
             },
+            images,
+            audios,
             tool_calls: None,
             tool_call_id: None,
             reasoning_content: None,
@@ -1113,70 +1213,16 @@ fn build_prompt_with_mode(
     if let Some(msg) = latest_user {
         let user_meta_text =
             build_prompt_user_meta_text(&msg, agents, prompt_user_name, ui_language);
+        let latest_user_text_rendered = render_prompt_user_text_only(&msg);
+        let (resolved_images, resolved_audios) =
+            resolve_media_from_parts(&msg.parts, data_path, "[提示词] 最新消息");
         let ChatMessage {
-            parts,
-            extra_text_blocks,
-            ..
+            extra_text_blocks, ..
         } = msg;
         latest_user_meta_text = user_meta_text.unwrap_or_default();
-        for part in parts {
-            match part {
-                MessagePart::Text { text } => {
-                    if !latest_user_text.is_empty() {
-                        latest_user_text.push('\n');
-                    }
-                    latest_user_text.push_str(&text);
-                }
-                MessagePart::Image {
-                    mime, bytes_base64, ..
-                } => {
-                    let resolved = if let Some(path) = data_path {
-                        match resolve_stored_binary_base64(path, &bytes_base64) {
-                            Ok(value) => value,
-                            Err(err) => {
-                                eprintln!(
-                                    "[提示词] 解析图片附件失败，mime={}，data_path={}，bytes_base64_len={}，error={}",
-                                    mime,
-                                    path.to_string_lossy(),
-                                    bytes_base64.len(),
-                                    err
-                                );
-                                bytes_base64
-                            }
-                        }
-                    } else {
-                        bytes_base64
-                    };
-                    if !resolved.trim().is_empty() {
-                        latest_images.push((mime, resolved));
-                    }
-                }
-                MessagePart::Audio {
-                    mime, bytes_base64, ..
-                } => {
-                    let resolved = if let Some(path) = data_path {
-                        match resolve_stored_binary_base64(path, &bytes_base64) {
-                            Ok(value) => value,
-                            Err(err) => {
-                                eprintln!(
-                                    "[提示词] 解析音频附件失败，mime={}，data_path={}，bytes_base64_len={}，error={}",
-                                    mime,
-                                    path.to_string_lossy(),
-                                    bytes_base64.len(),
-                                    err
-                                );
-                                bytes_base64
-                            }
-                        }
-                    } else {
-                        bytes_base64
-                    };
-                    if !resolved.trim().is_empty() {
-                        latest_audios.push((mime, resolved));
-                    }
-                }
-            }
-        }
+        latest_user_text = latest_user_text_rendered;
+        latest_images = resolved_images;
+        latest_audios = resolved_audios;
         for extra in extra_text_blocks {
             if extra.trim().is_empty() {
                 continue;

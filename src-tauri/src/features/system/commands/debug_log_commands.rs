@@ -75,6 +75,21 @@ fn prepared_prompt_to_equivalent_request_json(
     model_name: &str,
     temperature: f64,
 ) -> Value {
+    fn openai_input_audio_format_from_mime(mime: &str) -> String {
+        let normalized = mime.trim().to_ascii_lowercase();
+        match normalized.as_str() {
+            "audio/wav" | "audio/wave" | "audio/x-wav" => "wav".to_string(),
+            "audio/mp3" | "audio/mpeg" => "mp3".to_string(),
+            _ => normalized
+                .split('/')
+                .nth(1)
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .unwrap_or("wav")
+                .to_string(),
+        }
+    }
+
     fn normalize_user_content(content: &Value) -> Value {
         let Value::Array(items) = content else {
             return content.clone();
@@ -169,6 +184,32 @@ fn prepared_prompt_to_equivalent_request_json(
                     }));
                 }
             }
+            for (mime, bytes_base64) in &hm.images {
+                if mime.trim().eq_ignore_ascii_case("application/pdf") {
+                    content.push(serde_json::json!({
+                        "type": "file",
+                        "mime": mime,
+                        "bytesBase64": bytes_base64
+                    }));
+                } else {
+                    content.push(serde_json::json!({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": format!("data:{};base64,{}", mime, bytes_base64),
+                            "detail": "auto"
+                        }
+                    }));
+                }
+            }
+            for (mime, bytes_base64) in &hm.audios {
+                content.push(serde_json::json!({
+                    "type": "input_audio",
+                    "input_audio": {
+                        "data": bytes_base64,
+                        "format": openai_input_audio_format_from_mime(mime)
+                    }
+                }));
+            }
             messages.push(serde_json::json!({
                 "role": "user",
                 "content": content,
@@ -211,7 +252,7 @@ fn prepared_prompt_to_equivalent_request_json(
             "type": "input_audio",
             "input_audio": {
                 "data": bytes_base64,
-                "format": mime
+                "format": openai_input_audio_format_from_mime(mime)
             }
         }));
     }

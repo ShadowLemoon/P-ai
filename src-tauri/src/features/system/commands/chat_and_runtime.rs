@@ -456,6 +456,19 @@ async fn send_chat_message_inner(
                 eprintln!(
                     "[CHAT] Image input filtered out because current chat API does not support image and no vision fallback is configured."
                 );
+                let filtered_notice = match app_config.ui_language.trim() {
+                    "en-US" => "[SYSTEM NOTICE] Image attachment was filtered out: current model has image input disabled and no vision fallback model is configured.",
+                    "zh-TW" => "[系統提示] 已過濾圖片附件：當前模型未啟用圖片輸入，且未配置視覺回退模型。",
+                    _ => "[系统提示] 已过滤图片附件：当前模型未启用图片输入，且未配置视觉回退模型。",
+                };
+                let merged_text = effective_payload
+                    .text
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(|text| format!("{text}\n\n{filtered_notice}"))
+                    .unwrap_or_else(|| filtered_notice.to_string());
+                effective_payload.text = Some(merged_text);
                 effective_payload.images = None;
             }
         }
@@ -847,8 +860,8 @@ async fn send_chat_message_inner(
                     chat_overrides.latest_user_extra_blocks.push(task_board);
                 }
             }
-            chat_overrides.latest_images = effective_images.clone();
-            chat_overrides.latest_audios = effective_audios.clone();
+            chat_overrides.latest_images = Some(effective_images.clone());
+            chat_overrides.latest_audios = Some(effective_audios.clone());
         }
         let chat_overrides = Some(chat_overrides);
         let prepared = build_prepared_prompt_for_mode(

@@ -11,8 +11,8 @@ struct ChatPromptOverrides {
     latest_user_meta_text: Option<String>,
     latest_user_extra_blocks: Vec<String>,
     system_preamble_blocks: Vec<String>,
-    latest_images: Vec<(String, String)>,
-    latest_audios: Vec<(String, String)>,
+    latest_images: Option<Vec<(String, String)>>,
+    latest_audios: Option<Vec<(String, String)>>,
 }
 
 fn build_prepared_prompt_for_mode(
@@ -167,6 +167,8 @@ fn build_archive_history_messages(source_conversation: &Conversation) -> Vec<Pre
                 } else {
                     None
                 },
+                images: Vec::new(),
+                audios: Vec::new(),
                 tool_calls: msg
                     .tool_call
                     .as_ref()
@@ -297,8 +299,8 @@ fn apply_chat_latest_user_payload(
     latest_user_text: String,
     latest_user_meta_text: String,
     latest_user_extra_blocks: &[String],
-    latest_images: Vec<(String, String)>,
-    latest_audios: Vec<(String, String)>,
+    latest_images: Option<Vec<(String, String)>>,
+    latest_audios: Option<Vec<(String, String)>>,
 ) {
     prepared.latest_user_text = latest_user_text;
     prepared.latest_user_meta_text = latest_user_meta_text;
@@ -306,8 +308,12 @@ fn apply_chat_latest_user_payload(
         &prepared.latest_user_extra_text,
         latest_user_extra_blocks,
     );
-    prepared.latest_images = latest_images;
-    prepared.latest_audios = latest_audios;
+    if let Some(images) = latest_images {
+        prepared.latest_images = images;
+    }
+    if let Some(audios) = latest_audios {
+        prepared.latest_audios = audios;
+    }
 }
 
 fn merge_latest_user_extra_text(existing: &str, appended_blocks: &[String]) -> String {

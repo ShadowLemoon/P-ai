@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.3.8 - 2026-03-16
+
+- feat(remote-im): complete remote IM backend integration and main pipeline wiring
+  - add inbound enqueue flow, queue scheduling, and outbound adapter routing
+  - improve OneBot/NapCat channel lifecycle handling and runtime reconciliation
+- feat(remote-contacts): add per-contact controls and activation strategy
+  - split permissions into `allow_receive` and `allow_send` (default off)
+  - add activation mode (`never` / `always` / `keyword`) with cooldown support
+  - add activation decision logs and contact-level activation config command
+- refactor(remote-im): improve maintainability and diagnostics
+  - refactor large validation/parsing paths into helpers
+  - add structured logs for Dingtalk/OneBot send paths and token flow
+  - reduce unsafe/high-volume event logging payloads
+- fix(ui/types): improve config and runtime consistency
+  - fix conversation id/type mismatches and several silent catch blocks
+  - fix RemoteIm tab behavior, list layout updates, and Tailwind class issue
+  - add dynamic app version display in About tab (no hardcoded version text)
+- chore(branding): rename project-facing brand to `P-ai` / `π师傅`
+  - update visible app titles, docs links, and release/update repository URLs
+  - keep legacy data/storage identifiers for compatibility where required
+
 ## v0.3.2 - 2026-03-13
 
 - fix(multimodal): stabilize latest media prompt semantics

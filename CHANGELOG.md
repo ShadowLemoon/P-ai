@@ -2,6 +2,13 @@
 
 ## 未发布
 
+- 重构（app-shell）：拆分 `App.vue` 超大脚本，收敛页面职责
+  - 抽离终端审批队列、更新检查、UI 字体策略为独立 composable
+  - 抽离聊天工作空间、归档导入预览、回溯/重生会话操作为独立 composable
+  - `App.vue` 从 1795 行下降至约 1538 行，保留原有行为并提升可维护性
+- 修复（app-shell）：修复 `activeAssistantAgentId` 声明顺序导致的前端编译报错
+  - 避免“声明前使用/赋值前使用”触发 `ts-plugin(2448/2454)`
+
 - 调整（chat-queue）：优化出队时序与前端展示策略
   - 发送消息入队后优先尝试立即出队处理；仅在不可出队时退回异步调度
   - `history_flushed` 新增按 `activateAssistant` 分支处理：仅激活批次清屏，非激活批次按顺序追加消息

@@ -1,7 +1,7 @@
 <template>
   <div class="flex flex-col gap-4 min-h-0 h-full overflow-y-auto pr-1">
     <!-- 左侧：渠道列表 -->
-    <div class="bg-base-100 rounded-box border border-base-300 w-full h-[18rem] shrink-0 flex flex-col overflow-hidden">
+    <div class="bg-base-100 rounded-box border border-base-300 w-full h-72 shrink-0 flex flex-col overflow-hidden">
       <div class="flex items-center justify-between px-3 py-2 shrink-0">
         <span class="font-semibold text-sm">{{ t("config.remoteIm.title") }}</span>
         <div class="flex items-center gap-1">
@@ -45,7 +45,7 @@
     </div>
 
     <!-- 中间：渠道详情 -->
-    <div class="w-full min-h-[22rem] flex flex-col min-h-0">
+    <div class="w-full flex flex-col min-h-0">
       <div v-if="!selectedChannel" class="bg-base-100 rounded-box border border-base-300 flex-1 flex items-center justify-center">
         <div class="text-xs italic opacity-60">{{ t("config.remoteIm.empty") }}</div>
       </div>
@@ -168,9 +168,9 @@
               <div class="mt-2 flex items-center gap-2">
                 <span class="size-2 rounded-full" :class="channelStatus?.connected ? 'bg-success' : 'bg-base-300'"></span>
                 <span class="text-xs">
-                  {{ channelStatus?.connected 
-                    ? `${t("config.remoteIm.connected")} (${channelStatus.peerAddr})` 
-                    : channelStatus?.listenAddr 
+                  {{ channelStatus?.connected
+                    ? `${t("config.remoteIm.connected")} (${channelStatus.peerAddr})`
+                    : channelStatus?.listenAddr
                       ? t("config.remoteIm.waitingForConnection")
                       : t("config.remoteIm.serverNotStarted") }}
                 </span>
@@ -196,7 +196,7 @@
     </div>
 
     <!-- 右侧：联系人列表 -->
-    <div class="bg-base-100 rounded-box border border-base-300 w-full h-[22rem] shrink-0 flex flex-col overflow-hidden">
+    <div class="bg-base-100 rounded-box border border-base-300 w-full h-88 shrink-0 flex flex-col overflow-hidden">
       <div class="relative flex items-center justify-between px-3 py-2 shrink-0">
         <span class="flex items-center gap-2 font-semibold text-sm">
           {{ t("config.remoteIm.contactsTitle") }}
@@ -233,7 +233,7 @@
             </div>
             <div class="text-base transition-transform duration-200" :class="expandedContactIds.has(item.id) ? 'rotate-90' : ''">›</div>
           </div>
-          
+
           <!-- 展开的详情区域 -->
           <div v-if="expandedContactIds.has(item.id)" class="px-3 pb-3 bg-base-100/50 text-xs">
             <!-- 激活配置 -->

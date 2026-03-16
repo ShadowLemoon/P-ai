@@ -295,10 +295,13 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowR
 import { useI18n } from "vue-i18n";
 import { open } from "@tauri-apps/plugin-dialog";
 import { invokeTauri } from "./services/tauri-api";
-import { useAppBootstrap, type TerminalApprovalRequestPayload } from "./features/shell/composables/use-app-bootstrap";
+import { useAppBootstrap } from "./features/shell/composables/use-app-bootstrap";
 import { useAppCore } from "./features/shell/composables/use-app-core";
 import { useAppLifecycle } from "./features/shell/composables/use-app-lifecycle";
 import { useAppTheme } from "./features/shell/composables/use-app-theme";
+import { useGithubUpdate } from "./features/shell/composables/use-github-update";
+import { useTerminalApproval, type TerminalApprovalRequestPayload } from "./features/shell/composables/use-terminal-approval";
+import { applyUiFont, normalizeUiFont } from "./features/shell/composables/use-ui-font";
 import { useViewRefresh } from "./features/shell/composables/use-view-refresh";
 import { useWindowShell } from "./features/shell/composables/use-window-shell";
 import { useConfigCore } from "./features/config/composables/use-config-core";
@@ -306,9 +309,12 @@ import { useConfigEditors } from "./features/config/composables/use-config-edito
 import { useConfigPersistence, type ConfigSaveErrorInfo } from "./features/config/composables/use-config-persistence";
 import { useConfigRuntime } from "./features/config/composables/use-config-runtime";
 import { useAgentWorkPresence } from "./features/chat/composables/use-agent-work-presence";
-import { useArchivesView, type ArchiveImportPreview } from "./features/chat/composables/use-archives-view";
+import { useArchivesView } from "./features/chat/composables/use-archives-view";
+import { useArchiveImport } from "./features/chat/composables/use-archive-import";
 import { useAvatarCache } from "./features/chat/composables/use-avatar-cache";
 import { useChatDialogActions } from "./features/chat/composables/use-chat-dialog-actions";
+import { useChatWorkspace } from "./features/chat/composables/use-chat-workspace";
+import { useChatRewindActions } from "./features/chat/composables/use-chat-rewind-actions";
 import { useChatRuntime } from "./features/chat/composables/use-chat-runtime";
 import { useChatMessageBlocks } from "./features/chat/composables/use-chat-turns";
 import { useChatMedia } from "./features/chat/composables/use-chat-media";
@@ -328,7 +334,6 @@ import AppWindowContent from "./features/shell/components/AppWindowContent.vue";
 import AppWindowHeader from "./features/shell/components/AppWindowHeader.vue";
 import type {
   PersonaProfile,
-  ApiConfigItem,
   AppConfig,
   ChatMessage,
   ChatPersonaPresenceChip,
@@ -395,25 +400,13 @@ const allMessages = shallowRef<ChatMessage[]>([]);
 const visibleMessageBlockCount = ref(1);
 
 const status = ref("Ready.");
-const checkingUpdate = ref(false);
-const updateDialogOpen = ref(false);
-const updateDialogTitle = ref("检查更新");
-const updateDialogBody = ref("");
-const updateDialogKind = ref<"info" | "error">("info");
-const updateDialogReleaseUrl = ref("");
 const configSaveErrorDialogOpen = ref(false);
 const configSaveErrorDialogTitle = ref("");
 const configSaveErrorDialogBody = ref("");
 const configSaveErrorDialogKind = ref<"warning" | "error">("error");
 const terminalApprovalQueue = ref<TerminalApprovalRequestPayload[]>([]);
 const terminalApprovalResolving = ref(false);
-const archiveImportPreviewDialogOpen = ref(false);
-const archiveImportPreview = ref<ArchiveImportPreview | null>(null);
-const archiveImportRunning = ref(false);
 const skillPlaceholderDialogOpen = ref(false);
-const chatWorkspaceName = ref("默认工作空间");
-const chatWorkspaceLocked = ref(false);
-const chatWorkspacePath = ref("");
 const loading = ref(false);
 const saving = ref(false);
 const chatting = ref(false);
@@ -441,6 +434,21 @@ const { perfNow, perfLog, setStatus, setStatusError, localeOptions, applyUiLangu
   locale,
   status,
   perfDebug: PERF_DEBUG,
+});
+const {
+  checkingUpdate,
+  updateDialogOpen,
+  updateDialogTitle,
+  updateDialogBody,
+  updateDialogKind,
+  updateDialogReleaseUrl,
+  closeUpdateDialog,
+  openUpdateRelease,
+  autoCheckGithubUpdate,
+  manualCheckGithubUpdate,
+} = useGithubUpdate({
+  viewMode,
+  status,
 });
 
 const {
@@ -491,6 +499,18 @@ const {
   setStatusError,
 });
 const agentWorkPresence = useAgentWorkPresence();
+const {
+  archiveImportPreviewDialogOpen,
+  archiveImportPreview,
+  archiveImportRunning,
+  closeArchiveImportPreviewDialog,
+  prepareArchiveImport,
+  confirmArchiveImport,
+} = useArchiveImport({
+  buildArchiveImportPreview,
+  importArchivePayload,
+  setStatusError,
+});
 
 const {
   memoryDialog,
@@ -508,13 +528,6 @@ const {
   setStatus,
   setStatusError,
 });
-
-type ChatShellWorkspaceState = {
-  sessionId: string;
-  workspaceName: string;
-  rootPath: string;
-  locked: boolean;
-};
 
 const titleText = computed(() => {
   if (viewMode.value === "chat") {
@@ -727,6 +740,18 @@ const assistantDepartmentPersona = computed(
     ?? null,
 );
 const activeAssistantAgentId = computed(() => assistantDepartmentAgentId.value);
+const {
+  chatWorkspaceName,
+  chatWorkspaceLocked,
+  refreshChatWorkspaceState,
+  lockChatWorkspaceFromPicker,
+  unlockChatWorkspace,
+} = useChatWorkspace({
+  activeApiConfigId: assistantDepartmentApiConfigId,
+  activeAgentId: activeAssistantAgentId,
+  setStatus,
+  setStatusError,
+});
 const selectedPersonaEditor = computed(
   () => personas.value.find((p) => p.id === personaEditorId.value) ?? null,
 );
@@ -863,14 +888,17 @@ const { visibleMessageBlocks, hasMoreMessageBlocks, chatContextUsageRatio, chatU
 const DEFAULT_CHAT_VISIBLE_COUNT = 5;
 const displayMessageBlocks = computed(() => visibleMessageBlocks.value);
 const displayHasMoreMessageBlocks = computed(() => hasMoreMessageBlocks.value || hasMoreBackendHistory.value);
-const terminalApprovalCurrent = computed(() => terminalApprovalQueue.value[0] ?? null);
-const terminalApprovalDialogOpen = computed(() => !!terminalApprovalCurrent.value);
-const terminalApprovalDialogTitle = computed(
-  () => terminalApprovalCurrent.value?.title || "终端审批",
-);
-const terminalApprovalDialogBody = computed(
-  () => terminalApprovalCurrent.value?.message || "",
-);
+const {
+  terminalApprovalDialogOpen,
+  terminalApprovalDialogTitle,
+  terminalApprovalDialogBody,
+  enqueueTerminalApprovalRequest,
+  denyTerminalApproval,
+  approveTerminalApproval,
+} = useTerminalApproval({
+  queue: terminalApprovalQueue,
+  resolving: terminalApprovalResolving,
+});
 
 function syncUserAliasFromPersona() {
   const next = (userPersona.value?.name || "").trim() || t("archives.roleUser");
@@ -1251,108 +1279,6 @@ function setUiLanguage(value: string) {
   void saveConfig();
 }
 
-function normalizeUiFont(value: string): string {
-  const text = String(value || "").trim();
-  if (!text) return "auto";
-  if (text.length > 128) return text.slice(0, 128).trim() || "auto";
-  return text;
-}
-
-function resolveUiFontFamily(uiFont: string, uiLanguage: string): string {
-  const normalized = normalizeUiFont(uiFont);
-  if (normalized === "auto") {
-    if (uiLanguage === "zh-CN") {
-      return "\"Microsoft YaHei\", \"PingFang SC\", \"Noto Sans CJK SC\", \"Segoe UI\", system-ui, sans-serif";
-    }
-    if (uiLanguage === "zh-TW") {
-      return "\"PingFang TC\", \"Microsoft JhengHei\", \"Noto Sans CJK TC\", \"Segoe UI\", system-ui, sans-serif";
-    }
-    return "\"Segoe UI\", \"SF Pro Text\", system-ui, -apple-system, Roboto, \"Helvetica Neue\", Arial, sans-serif";
-  }
-  const escaped = normalized.replace(/"/g, '\\"');
-  return `"${escaped}", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif`;
-}
-
-function applyUiFont(uiFont: string, uiLanguage: string) {
-  const family = resolveUiFontFamily(uiFont, uiLanguage);
-  document.documentElement.style.setProperty("--app-font-family", family);
-}
-
-function setUiFont(value: string) {
-  const next = normalizeUiFont(value);
-  if (config.uiFont === next) return;
-  config.uiFont = next;
-  void saveConfig();
-}
-
-async function refreshChatWorkspaceState() {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  const agentId = String(activeAssistantAgentId.value || "").trim();
-  if (!apiConfigId || !agentId) {
-    chatWorkspaceName.value = "默认工作空间";
-    chatWorkspaceLocked.value = false;
-    chatWorkspacePath.value = "";
-    return;
-  }
-  try {
-    const state = await invokeTauri<ChatShellWorkspaceState>("get_chat_shell_workspace", {
-      input: { apiConfigId, agentId },
-    });
-    chatWorkspaceName.value = String(state.workspaceName || "").trim() || "默认工作空间";
-    chatWorkspaceLocked.value = !!state.locked;
-    chatWorkspacePath.value = String(state.rootPath || "").trim();
-  } catch (error) {
-    console.warn("[SHELL] refresh chat workspace failed:", error);
-  }
-}
-
-async function lockChatWorkspaceFromPicker() {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  const agentId = String(activeAssistantAgentId.value || "").trim();
-  if (!apiConfigId || !agentId) return;
-  try {
-    const picked = await open({
-      directory: true,
-      multiple: false,
-      defaultPath: chatWorkspacePath.value || undefined,
-    });
-    if (!picked || Array.isArray(picked)) return;
-    const state = await invokeTauri<ChatShellWorkspaceState>("lock_chat_shell_workspace", {
-      input: {
-        apiConfigId,
-        agentId,
-        workspacePath: String(picked),
-      },
-    });
-    chatWorkspaceName.value = String(state.workspaceName || "").trim() || "默认工作空间";
-    chatWorkspaceLocked.value = !!state.locked;
-    chatWorkspacePath.value = String(state.rootPath || "").trim();
-    setStatus(`工作空间已锁定: ${chatWorkspaceName.value}`);
-  } catch (error) {
-    setStatusError("status.requestFailed", error);
-  }
-}
-
-async function unlockChatWorkspace() {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  const agentId = String(activeAssistantAgentId.value || "").trim();
-  if (!apiConfigId || !agentId) return;
-  try {
-    const state = await invokeTauri<ChatShellWorkspaceState>("unlock_chat_shell_workspace", {
-      input: {
-        apiConfigId,
-        agentId,
-      },
-    });
-    chatWorkspaceName.value = String(state.workspaceName || "").trim() || "默认工作空间";
-    chatWorkspaceLocked.value = !!state.locked;
-    chatWorkspacePath.value = String(state.rootPath || "").trim();
-    setStatus(`工作空间已解锁: ${chatWorkspaceName.value}`);
-  } catch (error) {
-    setStatusError("status.requestFailed", error);
-  }
-}
-
 function openSkillPlaceholderDialog() {
   skillPlaceholderDialogOpen.value = true;
 }
@@ -1378,73 +1304,8 @@ async function openGithubRepository() {
   }
 }
 
-function closeUpdateDialog() {
-  updateDialogOpen.value = false;
-}
-
 function closeConfigSaveErrorDialog() {
   configSaveErrorDialogOpen.value = false;
-}
-
-function enqueueTerminalApprovalRequest(payload: TerminalApprovalRequestPayload) {
-  const requestId = String(payload.requestId || "").trim();
-  if (!requestId) return;
-  terminalApprovalQueue.value.push({
-    ...payload,
-    requestId,
-    title: String(payload.title || "终端审批"),
-    message: String(payload.message || ""),
-    approvalKind: String(payload.approvalKind || "unknown"),
-    sessionId: String(payload.sessionId || ""),
-  });
-}
-
-async function resolveTerminalApproval(approved: boolean) {
-  if (terminalApprovalResolving.value) return;
-  const current = terminalApprovalCurrent.value;
-  if (!current) return;
-  terminalApprovalResolving.value = true;
-  try {
-    await invokeTauri("resolve_terminal_approval", {
-      input: {
-        requestId: current.requestId,
-        approved,
-      },
-    });
-  } catch (error) {
-    console.warn("[TERMINAL] resolve_terminal_approval failed:", error);
-  } finally {
-    terminalApprovalQueue.value.shift();
-    terminalApprovalResolving.value = false;
-  }
-}
-
-function denyTerminalApproval() {
-  void resolveTerminalApproval(false);
-}
-
-function approveTerminalApproval() {
-  void resolveTerminalApproval(true);
-}
-
-function closeArchiveImportPreviewDialog() {
-  if (archiveImportRunning.value) return;
-  archiveImportPreviewDialogOpen.value = false;
-  archiveImportPreview.value = null;
-}
-
-function openUpdateDialog(text: string, kind: "info" | "error", releaseUrl?: string) {
-  updateDialogTitle.value = "检查更新";
-  updateDialogBody.value = text;
-  updateDialogKind.value = kind;
-  updateDialogReleaseUrl.value = releaseUrl || "";
-  updateDialogOpen.value = true;
-}
-
-function openUpdateRelease() {
-  const url = updateDialogReleaseUrl.value.trim();
-  if (!url) return;
-  void invokeTauri("open_external_url", { url });
 }
 
 function openConfigSaveErrorDialog(info: ConfigSaveErrorInfo) {
@@ -1461,16 +1322,6 @@ function openConfigSaveErrorDialog(info: ConfigSaveErrorInfo) {
     configSaveErrorDialogBody.value = t("status.saveConfigFailed", { err: info.errorText });
   }
   configSaveErrorDialogOpen.value = true;
-}
-
-async function prepareArchiveImport(file: File) {
-  try {
-    const preview = await buildArchiveImportPreview(file);
-    archiveImportPreview.value = preview;
-    archiveImportPreviewDialogOpen.value = true;
-  } catch (e) {
-    setStatusError("status.importArchiveFailed", e);
-  }
 }
 
 async function importPersonaMemories(payload: { agentId: string; file: File }) {
@@ -1499,66 +1350,6 @@ async function importPersonaMemories(payload: { agentId: string; file: File }) {
   }
 }
 
-async function confirmArchiveImport() {
-  if (!archiveImportPreview.value || archiveImportRunning.value) return;
-  archiveImportRunning.value = true;
-  try {
-    await importArchivePayload(archiveImportPreview.value.payloadJson);
-    archiveImportPreviewDialogOpen.value = false;
-    archiveImportPreview.value = null;
-  } catch (e) {
-    setStatusError("status.importArchiveFailed", e);
-  } finally {
-    archiveImportRunning.value = false;
-  }
-}
-
-async function autoCheckGithubUpdate() {
-  await checkGithubUpdate(true);
-}
-
-async function manualCheckGithubUpdate() {
-  await checkGithubUpdate(false);
-}
-
-async function checkGithubUpdate(silent: boolean) {
-  if (viewMode.value !== "config") return;
-  if (checkingUpdate.value) return;
-  checkingUpdate.value = true;
-  try {
-    status.value = "检查更新中...";
-    const result = await invokeTauri<{
-      currentVersion: string;
-      latestVersion: string;
-      hasUpdate: boolean;
-      releaseUrl: string;
-      updateSource?: string;
-    }>("check_github_update");
-    if (!result?.hasUpdate) {
-      if (!silent) {
-        status.value = `当前已是最新版本 ${result.currentVersion}`;
-        openUpdateDialog(`当前已是最新版本 ${result.currentVersion}`, "info");
-      }
-      return;
-    }
-    status.value = `发现新版本 ${result.latestVersion}（当前 ${result.currentVersion}）`;
-    if (!silent) {
-      openUpdateDialog(
-        `发现新版本 ${result.latestVersion}\n当前版本 ${result.currentVersion}\n\n可前往发布页下载更新（来源：${result.updateSource || "github"}）。`,
-        "info",
-        result.releaseUrl,
-      );
-    }
-  } catch (error) {
-    if (!silent) {
-      status.value = `检查更新失败: ${String(error)}`;
-      openUpdateDialog(`检查更新失败：${String(error)}`, "error");
-    }
-    console.warn("[UPDATE] check_github_update failed:", error);
-  } finally {
-    checkingUpdate.value = false;
-  }
-}
 
 const chatFlow = useChatFlow({
   chatting,
@@ -1675,25 +1466,6 @@ function clearStreamBuffer() {
   chatFlow.clearStreamBuffer();
 }
 
-type RewindConversationResult = {
-  removedCount: number;
-  remainingCount: number;
-  recalledUserMessage?: ChatMessage;
-};
-
-function resetVisibleBlocksAfterRewind(nextMessages: ChatMessage[]) {
-  const assistantIndices: number[] = [];
-  for (let i = 0; i < nextMessages.length; i += 1) {
-    if (nextMessages[i]?.role === "assistant") assistantIndices.push(i);
-  }
-  if (assistantIndices.length < 2) {
-    visibleMessageBlockCount.value = Math.max(1, nextMessages.length || 1);
-    return;
-  }
-  const startIndex = assistantIndices[assistantIndices.length - 2];
-  visibleMessageBlockCount.value = Math.max(1, nextMessages.length - startIndex);
-}
-
 function buildPersonasSnapshotJson() {
   return JSON.stringify(
     personas.value.map((item) => ({
@@ -1717,82 +1489,27 @@ function buildPersonasSnapshotJson() {
     })),
   );
 }
-
-async function rewindConversationFromTurn(turnId: string): Promise<ChatMessage | null> {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  const agentId = String(activeAssistantAgentId.value || "").trim();
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  const messageId = String(turnId || "").trim();
-  if (!apiConfigId || !agentId || !messageId) return null;
-  const currentMessages = [...allMessages.value];
-  try {
-    const result = await invokeTauri<RewindConversationResult>("rewind_conversation_from_message", {
-      input: {
-        session: {
-          apiConfigId,
-          agentId,
-          conversationId: conversationId || null,
-        },
-        messageId,
-      },
-    });
-    let keepCountFromLocal = -1;
-    const directIndex = currentMessages.findIndex((item) => item.id === messageId);
-    if (directIndex >= 0) {
-      const directRole = String(currentMessages[directIndex]?.role || "").trim();
-      if (directRole === "user") {
-        // Rewind to selected user turn: remove that user message and everything after it.
-        keepCountFromLocal = directIndex;
-      } else {
-        // Regenerate on assistant bubble: rewind to the nearest previous user turn.
-        for (let i = directIndex - 1; i >= 0; i -= 1) {
-          if (String(currentMessages[i]?.role || "").trim() === "user") {
-            keepCountFromLocal = i;
-            break;
-          }
-        }
-      }
-    }
-    const keepCountFromBackend = Math.max(0, Math.min(currentMessages.length, Number(result.remainingCount) || 0));
-    const keepCount = keepCountFromLocal >= 0 ? keepCountFromLocal : keepCountFromBackend;
-    const nextMessages = currentMessages.slice(0, keepCount);
-    allMessages.value = nextMessages;
-    resetVisibleBlocksAfterRewind(nextMessages);
-    return result.recalledUserMessage
-      ?? currentMessages[keepCount]
-      ?? currentMessages.find((item) => item.id === messageId && item.role === "user")
-      ?? null;
-  } catch (error) {
-    setStatusError("status.rewindConversationFailed", error);
-    return null;
-  }
-}
-
-async function deleteUnarchivedConversation(conversationId: string) {
-  await deleteUnarchivedConversationFromArchives(conversationId);
-  if (String(currentChatConversationId.value || "").trim() === String(conversationId || "").trim()) {
-    currentChatConversationId.value = "";
-    allMessages.value = [];
-    visibleMessageBlockCount.value = 1;
-  }
-}
-
-async function handleRecallTurn(payload: { turnId: string }) {
-  if (chatting.value || forcingArchive.value) return;
-  const recalledUserMessage = await rewindConversationFromTurn(payload.turnId);
-  if (!recalledUserMessage) return;
-  chatInput.value = removeBinaryPlaceholders(messageText(recalledUserMessage));
-  clipboardImages.value = extractMessageImages(recalledUserMessage);
-}
-
-async function handleRegenerateTurn(payload: { turnId: string }) {
-  if (chatting.value || forcingArchive.value) return;
-  const recalledUserMessage = await rewindConversationFromTurn(payload.turnId);
-  if (!recalledUserMessage) return;
-  chatInput.value = removeBinaryPlaceholders(messageText(recalledUserMessage));
-  clipboardImages.value = extractMessageImages(recalledUserMessage);
-  await chatFlow.sendChat();
-}
+const {
+  deleteUnarchivedConversation,
+  handleRecallTurn,
+  handleRegenerateTurn,
+} = useChatRewindActions({
+  activeApiConfigId: assistantDepartmentApiConfigId,
+  activeAgentId: activeAssistantAgentId,
+  currentConversationId: currentChatConversationId,
+  allMessages,
+  visibleMessageBlockCount,
+  chatting,
+  forcingArchive,
+  chatInput,
+  clipboardImages,
+  deleteUnarchivedConversationFromArchives,
+  sendChat: chatFlow.sendChat,
+  setStatusError,
+  removeBinaryPlaceholders,
+  messageText,
+  extractMessageImages,
+});
 
 function handleToolsChanged() {
   if (selectedPersonaEditor.value?.source === "private_workspace") {

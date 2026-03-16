@@ -1,0 +1,166 @@
+fn inflight_chat_key(
+    agent_id: &str,
+    conversation_id: Option<&str>,
+) -> String {
+    match conversation_id.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(conversation_id) => format!("{}::{}", agent_id.trim(), conversation_id),
+        None => agent_id.trim().to_string(),
+    }
+}
+
+fn register_inflight_tool_abort_handle(
+    state: &AppState,
+    chat_key: &str,
+    handle: AbortHandle,
+) -> Result<(), String> {
+    let mut inflight = state
+        .inflight_tool_abort_handles
+        .lock()
+        .map_err(|_| "Failed to lock inflight tool abort handles".to_string())?;
+    if let Some(previous) = inflight.insert(chat_key.to_string(), handle) {
+        previous.abort();
+    }
+    Ok(())
+}
+
+fn clear_inflight_tool_abort_handle(state: &AppState, chat_key: &str) -> Result<(), String> {
+    let mut inflight = state
+        .inflight_tool_abort_handles
+        .lock()
+        .map_err(|_| "Failed to lock inflight tool abort handles".to_string())?;
+    inflight.remove(chat_key);
+    Ok(())
+}
+
+fn abort_inflight_tool_abort_handle(state: &AppState, chat_key: &str) -> Result<bool, String> {
+    let mut inflight = state
+        .inflight_tool_abort_handles
+        .lock()
+        .map_err(|_| "Failed to lock inflight tool abort handles".to_string())?;
+    if let Some(handle) = inflight.remove(chat_key) {
+        handle.abort();
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn delegate_thread_chat_key(thread: &DelegateRuntimeThread) -> String {
+    inflight_chat_key(
+        &thread.target_agent_id,
+        Some(&thread.conversation.id),
+    )
+}
+
+fn abort_delegate_runtime_descendants_by_parent_session(
+    state: &AppState,
+    parent_chat_key: &str,
+) -> Result<usize, String> {
+    let children = delegate_runtime_thread_list(state)?
+        .into_iter()
+        .filter(|thread| thread.parent_chat_session_key.as_deref() == Some(parent_chat_key))
+        .collect::<Vec<_>>();
+    let mut aborted_count = 0usize;
+    for thread in children {
+        let child_chat_key = delegate_thread_chat_key(&thread);
+        let aborted_chat = {
+            let mut inflight = state
+                .inflight_chat_abort_handles
+                .lock()
+                .map_err(|_| "Failed to lock inflight chat abort handles".to_string())?;
+            if let Some(handle) = inflight.remove(&child_chat_key) {
+                handle.abort();
+                true
+            } else {
+                false
+            }
+        };
+        let aborted_tool = abort_inflight_tool_abort_handle(state, &child_chat_key)?;
+        if aborted_chat || aborted_tool {
+            aborted_count += 1;
+            eprintln!(
+                "[INFO][CHAT] aborted sync delegate child session: parent_session={}, child_session={}, delegate_id={}",
+                parent_chat_key,
+                child_chat_key,
+                thread.delegate_id
+            );
+        }
+        aborted_count += abort_delegate_runtime_descendants_by_parent_session(state, &child_chat_key)?;
+    }
+    Ok(aborted_count)
+}
+
+fn model_reply_has_visible_content(reply: &ModelReply) -> bool {
+    !reply.assistant_text.trim().is_empty()
+        || !reply.reasoning_standard.trim().is_empty()
+        || !reply.reasoning_inline.trim().is_empty()
+        || reply.suppress_assistant_message
+}
+
+fn effective_prompt_tokens_from_provider(
+    estimated_prompt_tokens: u64,
+    trusted_input_tokens: Option<u64>,
+) -> (u64, &'static str) {
+    let estimated = estimated_prompt_tokens.max(1);
+    let Some(provider) = trusted_input_tokens.filter(|value| *value > 0) else {
+        return (estimated_prompt_tokens, "estimate_no_provider");
+    };
+    let gap = provider.abs_diff(estimated) as f64 / estimated as f64;
+    if gap > 0.5 {
+        return (provider.max(estimated_prompt_tokens), "max_large_gap");
+    }
+    (provider, "provider")
+}
+
+fn estimate_prepared_prompt_tokens(
+    prepared: &PreparedPrompt,
+    selected_api: &ApiConfig,
+    current_agent: &AgentProfile,
+) -> u64 {
+    let mut total = 0.0f64;
+    total += estimated_tokens_for_text(&prepared.preamble);
+    for hm in &prepared.history_messages {
+        total += 10.0;
+        total += estimated_tokens_for_text(&hm.text);
+        if let Some(v) = hm.user_time_text.as_deref() {
+            total += estimated_tokens_for_text(v);
+        }
+        if let Some(v) = hm.reasoning_content.as_deref() {
+            total += estimated_tokens_for_text(v);
+        }
+        if let Some(calls) = hm.tool_calls.as_ref() {
+            let text = serde_json::to_string(calls).unwrap_or_default();
+            total += estimated_tokens_for_text(&text);
+        }
+    }
+    for text_block in prepared_prompt_latest_user_text_blocks(prepared) {
+        total += estimated_tokens_for_text(&text_block);
+    }
+    total += prepared.latest_images.len() as f64 * 280.0;
+    total += prepared.latest_audios.len() as f64 * 320.0;
+
+    if selected_api.enable_tools {
+        let mut seen = std::collections::HashSet::<String>::new();
+        for tool in selected_api
+            .tools
+            .iter()
+            .chain(current_agent.tools.iter())
+            .filter(|tool| tool.enabled)
+        {
+            let key = tool.id.trim().to_ascii_lowercase();
+            if key.is_empty() || !seen.insert(key) {
+                continue;
+            }
+            let text = serde_json::to_string(tool).unwrap_or_default();
+            total += estimated_tokens_for_text(&text);
+        }
+    }
+
+    total.ceil().max(0.0).min(u64::MAX as f64) as u64
+}
+
+fn is_retryable_model_error(error: &str) -> bool {
+    let normalized = error.trim().to_ascii_lowercase();
+    normalized.contains("429") || normalized.contains("too many requests")
+}
+

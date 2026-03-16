@@ -6,6 +6,11 @@
   - 发送消息入队后优先尝试立即出队处理；仅在不可出队时退回异步调度
   - `history_flushed` 新增按 `activateAssistant` 分支处理：仅激活批次清屏，非激活批次按顺序追加消息
   - 修复 `history_flushed` 异步等待后的轮次竞态，避免旧轮次回写覆盖新一轮 `sendChat`
+- 重构（chat-runtime-structure）：拆分 `chat_and_runtime.rs` 超大文件，按职责下沉到子模块目录
+  - 入口文件收敛为 include 壳：`commands/chat_and_runtime.rs`
+  - 核心链路拆分为 `core_helpers/core_send_inner/core_commands`
+  - 模型与多媒体能力拆分为 `models_catalog/attachments_io/stt_transcribe/model_providers/tools_and_cache`
+  - 在不改变既有行为前提下提升定位问题与后续改造效率
 
 - 重构（chat-routing）：彻底移除“消息/会话绑定模型 API”路径，统一改为“部门 -> 模型”解析
   - `ChatSessionInfo` 改为仅携带 `department_id + agent_id`，不再持有 `api_config_id`

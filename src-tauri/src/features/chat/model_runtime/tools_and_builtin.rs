@@ -335,6 +335,118 @@ async fn call_model_openai_rig_style(
     .await
 }
 
+fn openai_non_stream_extract_text(content: &Value) -> String {
+    match content {
+        Value::String(text) => text.clone(),
+        Value::Array(items) => {
+            let mut blocks = Vec::<String>::new();
+            for item in items {
+                let Some(obj) = item.as_object() else {
+                    continue;
+                };
+                let block_type = obj.get("type").and_then(Value::as_str).unwrap_or_default();
+                if block_type != "text" {
+                    continue;
+                }
+                let text = obj
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|v| !v.is_empty())
+                    .map(ToOwned::to_owned)
+                    .or_else(|| {
+                        obj.get("text")
+                            .and_then(Value::as_object)
+                            .and_then(|v| v.get("value"))
+                            .and_then(Value::as_str)
+                            .map(str::trim)
+                            .filter(|v| !v.is_empty())
+                            .map(ToOwned::to_owned)
+                    });
+                if let Some(text) = text {
+                    blocks.push(text);
+                }
+            }
+            blocks.join("\n")
+        }
+        _ => String::new(),
+    }
+}
+
+async fn call_model_openai_non_stream_rig_style(
+    api_config: &ResolvedApiConfig,
+    model_name: &str,
+    prepared: PreparedPrompt,
+) -> Result<ModelReply, String> {
+    let mut request =
+        prepared_prompt_to_equivalent_request_json(&prepared, model_name, api_config.temperature);
+    let request_obj = request
+        .as_object_mut()
+        .ok_or_else(|| "Invalid request payload".to_string())?;
+    request_obj.insert("stream".to_string(), Value::Bool(false));
+    let base_url = if api_config.base_url.trim().is_empty() {
+        "https://api.openai.com/v1".to_string()
+    } else {
+        api_config.base_url.trim().trim_end_matches('/').to_string()
+    };
+    let endpoint = format!("{base_url}/chat/completions");
+    let response = reqwest::Client::new()
+        .post(&endpoint)
+        .header(CONTENT_TYPE, "application/json")
+        .header(AUTHORIZATION, format!("Bearer {}", api_config.api_key))
+        .json(&request)
+        .send()
+        .await
+        .map_err(|err| format!("openai non-stream request failed: {err}"))?;
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|err| format!("openai non-stream read body failed: {err}"))?;
+    if !status.is_success() {
+        let snippet = response_text.chars().take(600).collect::<String>();
+        return Err(format!(
+            "openai non-stream request failed: status={} body={}",
+            status.as_u16(),
+            snippet
+        ));
+    }
+    let payload: Value = serde_json::from_str(&response_text)
+        .map_err(|err| format!("openai non-stream parse failed: {err}"))?;
+    let first_choice = payload
+        .get("choices")
+        .and_then(Value::as_array)
+        .and_then(|items| items.first())
+        .ok_or_else(|| "openai non-stream response missing choices[0]".to_string())?;
+    let message = first_choice
+        .get("message")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "openai non-stream response missing choices[0].message".to_string())?;
+    let assistant_text = message
+        .get("content")
+        .map(openai_non_stream_extract_text)
+        .unwrap_or_default();
+    let reasoning_standard = message
+        .get("reasoning_content")
+        .or_else(|| message.get("reasoning"))
+        .map(openai_non_stream_extract_text)
+        .unwrap_or_default();
+    let trusted_input_tokens = payload
+        .get("usage")
+        .and_then(Value::as_object)
+        .and_then(|usage| usage.get("prompt_tokens"))
+        .and_then(Value::as_u64)
+        .filter(|value| *value > 0);
+    Ok(ModelReply {
+        assistant_text,
+        reasoning_standard,
+        reasoning_inline: String::new(),
+        tool_history_events: Vec::new(),
+        suppress_assistant_message: false,
+        trusted_input_tokens,
+    })
+}
+
 async fn call_model_openai_responses_rig_style(
     api_config: &ResolvedApiConfig,
     model_name: &str,
@@ -3162,4 +3274,3 @@ async fn builtin_remote_im_send(
         "platformMessageId": platform_message_id
     }))
 }
-

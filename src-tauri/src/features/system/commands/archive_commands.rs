@@ -164,10 +164,16 @@ fn build_request_preview_value(
             preview_messages.push(Value::Object(msg));
         } else {
             if hm.role == "user" {
-                let mut content = vec![serde_json::json!(hm.text)];
+                let mut content = vec![serde_json::json!({
+                    "type": "text",
+                    "text": hm.text,
+                })];
                 if let Some(time_text) = &hm.user_time_text {
                     if !time_text.trim().is_empty() {
-                        content.push(serde_json::json!(time_text));
+                        content.push(serde_json::json!({
+                            "type": "text",
+                            "text": time_text,
+                        }));
                     }
                 }
                 preview_messages.push(serde_json::json!({

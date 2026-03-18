@@ -42,6 +42,7 @@
             "zh-CN",
             None,
             None,
+            None,
             false,
         );
 
@@ -119,6 +120,7 @@
             "zh-CN",
             None,
             None,
+            None,
             false,
         );
 
@@ -157,6 +159,16 @@
         let prepared = PreparedPrompt {
             preamble: "sys".to_string(),
             history_messages: vec![
+                PreparedHistoryMessage {
+                    role: "user".to_string(),
+                    text: "你好".to_string(),
+                    user_time_text: Some("[遥酱] 2026-03-18T12:18".to_string()),
+                    images: Vec::new(),
+                    audios: Vec::new(),
+                    tool_calls: None,
+                    tool_call_id: None,
+                    reasoning_content: None,
+                },
                 PreparedHistoryMessage {
                     role: "assistant".to_string(),
                     text: String::new(),
@@ -207,6 +219,20 @@
         assert!(messages.iter().any(|m| {
             m.get("role").and_then(Value::as_str) == Some("tool")
                 && m.get("tool_call_id").and_then(Value::as_str) == Some("call_1")
+        }));
+        assert!(messages.iter().any(|m| {
+            m.get("role").and_then(Value::as_str) == Some("user")
+                && m.get("content")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.len() == 2
+                            && arr[0].get("type").and_then(Value::as_str) == Some("text")
+                            && arr[0].get("text").and_then(Value::as_str) == Some("你好")
+                            && arr[1].get("type").and_then(Value::as_str) == Some("text")
+                            && arr[1].get("text").and_then(Value::as_str)
+                                == Some("[遥酱] 2026-03-18T12:18")
+                    })
+                    .unwrap_or(false)
         }));
     }
 

@@ -105,20 +105,15 @@ mod archive_host_selection_tests {
     #[test]
     fn host_should_prefer_fallback_agent_when_valid() {
         let data = AppData {
-            version: APP_DATA_SCHEMA_VERSION,
             agents: vec![mk_agent("pub-a", false), mk_agent("pub-b", false)],
             assistant_department_agent_id: "pub-b".to_string(),
             user_alias: "u".to_string(),
             response_style_id: "concise".to_string(),
-            conversations: Vec::new(),
-            archived_conversations: Vec::new(),
-            image_text_cache: Vec::new(),
-            remote_im_contacts: Vec::new(),
+            ..AppData::default()
         };
         let source = Conversation {
             id: "c1".to_string(),
             title: "t".to_string(),
-            api_config_id: "api".to_string(),
             agent_id: "pub-a".to_string(),
             conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
             root_conversation_id: None,
@@ -142,20 +137,15 @@ mod archive_host_selection_tests {
     #[test]
     fn host_should_prefer_fallback_even_when_private() {
         let data = AppData {
-            version: APP_DATA_SCHEMA_VERSION,
             agents: vec![mk_agent("p1", true), mk_agent("p2", true)],
             assistant_department_agent_id: "p2".to_string(),
             user_alias: "u".to_string(),
             response_style_id: "concise".to_string(),
-            conversations: Vec::new(),
-            archived_conversations: Vec::new(),
-            image_text_cache: Vec::new(),
-            remote_im_contacts: Vec::new(),
+            ..AppData::default()
         };
         let source = Conversation {
             id: "c1".to_string(),
             title: "t".to_string(),
-            api_config_id: "api".to_string(),
             agent_id: "p1".to_string(),
             conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
             root_conversation_id: None,
@@ -181,7 +171,6 @@ mod archive_host_selection_tests {
         let source = Conversation {
             id: "c1".to_string(),
             title: "t".to_string(),
-            api_config_id: "api".to_string(),
             agent_id: "p1".to_string(),
             conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
             root_conversation_id: None,

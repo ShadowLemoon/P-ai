@@ -482,6 +482,7 @@ mod terminal_exec_tests {
             dequeue_lock: Arc::new(Mutex::new(())),
             delegate_runtime_threads: Arc::new(Mutex::new(HashMap::new())),
             delegate_recent_threads: Arc::new(Mutex::new(VecDeque::new())),
+            provider_streaming_disabled_keys: Arc::new(Mutex::new(std::collections::HashSet::new())),
             preferred_release_source: Arc::new(Mutex::new("github".to_string())),
         }
     }
@@ -580,4 +581,3 @@ mod terminal_exec_tests {
         assert_eq!(result.get("approved").and_then(Value::as_bool), Some(false));
     }
 }
-

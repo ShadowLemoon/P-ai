@@ -10,6 +10,8 @@ include!("terminal/runtime.rs");
 
 include!("terminal/workspace.rs");
 
+include!("terminal/matcher.rs");
+
 include!("terminal/approval.rs");
 
 include!("terminal/guards.rs");

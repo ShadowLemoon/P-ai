@@ -198,7 +198,7 @@ async fn builtin_shell_exec(
     if let Some(reason) = terminal_command_block_reason(cmd) {
         return Err(format!("shell_exec blocked: {reason}"));
     }
-    if terminal_command_contains_absolute_path_token(cmd) {
+    if terminal_command_contains_absolute_path_token(cmd, &runtime_shell.kind) {
         return Ok(serde_json::json!({
             "ok": false,
             "approved": false,
@@ -239,7 +239,13 @@ async fn builtin_shell_exec(
     let timeout_ms = normalize_terminal_timeout_ms(timeout_ms);
     if terminal_should_parse_command_paths_for_boundary_check() {
         let ungranted_paths =
-            terminal_collect_ungranted_command_paths(state, &normalized_session, &cwd, cmd)?;
+            terminal_collect_ungranted_command_paths(
+                state,
+                &normalized_session,
+                &cwd,
+                cmd,
+                &runtime_shell.kind,
+            )?;
         if !ungranted_paths.is_empty() {
             return Ok(serde_json::json!({
                 "ok": false,

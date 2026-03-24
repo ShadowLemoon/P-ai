@@ -70,10 +70,10 @@ fn default_window_size(label: &str) -> (u32, u32) {
 
 fn minimum_window_size(label: &str) -> (u32, u32) {
     match label {
-        "main" => (900_u32, 900_u32),
-        "chat" => (600_u32, 600_u32),
-        "archives" => (820_u32, 720_u32),
-        _ => (820_u32, 720_u32),
+        "main" => (520_u32, 520_u32),
+        "chat" => (520_u32, 520_u32),
+        "archives" => (560_u32, 560_u32),
+        _ => (520_u32, 520_u32),
     }
 }
 
@@ -85,6 +85,17 @@ fn monitor_logical_size(monitor: &tauri::Monitor) -> tauri::LogicalSize<f64> {
     monitor
         .size()
         .to_logical::<f64>(monitor.scale_factor().max(0.1))
+}
+
+fn default_window_size_for_monitor(label: &str, monitor: &tauri::Monitor) -> (u32, u32) {
+    let fallback = default_window_size(label);
+    let logical = monitor_logical_size(monitor);
+    let min_side = logical.width.min(logical.height);
+    if !min_side.is_finite() || min_side <= 1.0 {
+        return fallback;
+    }
+    let target = (min_side * 0.8).round().max(1.0) as u32;
+    (target, target)
 }
 
 fn logical_to_physical_px(value: u32, scale_factor: f64) -> i32 {
@@ -110,7 +121,7 @@ fn resolved_window_size_for_monitor(
     width: Option<u32>,
     height: Option<u32>,
 ) -> (u32, u32) {
-    let (default_width, default_height) = default_window_size(label);
+    let (default_width, default_height) = default_window_size_for_monitor(label, monitor);
     let (min_width, min_height) = minimum_window_size(label);
     let monitor_logical = monitor_logical_size(monitor);
     let max_width = monitor_logical.width.max(1.0).round() as u32;

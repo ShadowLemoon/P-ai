@@ -1452,11 +1452,61 @@ impl RemoteImSdk for OnebotV11Sdk {
     }
 }
 
+struct WeixinOcSdk;
+
+impl RemoteImSdk for WeixinOcSdk {
+    fn platform(&self) -> RemoteImPlatform {
+        RemoteImPlatform::WeixinOc
+    }
+
+    fn validate_channel(&self, channel: &RemoteImChannelConfig) -> Result<(), String> {
+        let credentials = WeixinOcCredentials::from_value(&channel.credentials);
+        if credentials.normalized_base_url().trim().is_empty() {
+            return Err(format!("weixin_oc channel '{}' missing baseUrl", channel.id));
+        }
+        if credentials.token.trim().is_empty() {
+            return Err(format!("weixin_oc channel '{}' missing token, please login first", channel.id));
+        }
+        Ok(())
+    }
+
+    fn send_outbound<'a>(
+        &'a self,
+        channel: &'a RemoteImChannelConfig,
+        contact: &'a RemoteImContact,
+        payload: &'a Value,
+    ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
+        Box::pin(async move {
+            if remote_im_payload_has_non_text_items(payload) {
+                return Err("个人微信渠道首版仅支持文本发送".to_string());
+            }
+            let text = remote_im_payload_text(payload);
+            let trimmed = text.trim();
+            if trimmed.is_empty() {
+                return Err("个人微信渠道发送内容为空".to_string());
+            }
+            let credentials = WeixinOcCredentials::from_value(&channel.credentials);
+            let context_token = weixin_oc_manager()
+                .get_context_token(&channel.id, &contact.remote_contact_id)
+                .await;
+            let message_id = weixin_oc_send_text_message(
+                credentials,
+                &contact.remote_contact_id,
+                trimmed,
+                context_token.as_deref(),
+            )
+            .await?;
+            Ok(message_id)
+        })
+    }
+}
+
 fn remote_im_sdk_for_platform(platform: &RemoteImPlatform) -> Box<dyn RemoteImSdk> {
     match platform {
         RemoteImPlatform::Feishu => Box::new(FeishuSdk),
         RemoteImPlatform::Dingtalk => Box::new(DingtalkSdk),
         RemoteImPlatform::OnebotV11 => Box::new(OnebotV11Sdk),
+        RemoteImPlatform::WeixinOc => Box::new(WeixinOcSdk),
     }
 }
 
@@ -1596,6 +1646,7 @@ mod remote_im_adapter_tests {
             remote_contact_name: "g".to_string(),
             remark_name: String::new(),
             allow_send: false,
+            allow_send_files: false,
             allow_receive: false,
             activation_mode: "never".to_string(),
             activation_keywords: Vec::new(),

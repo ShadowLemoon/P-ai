@@ -632,8 +632,10 @@ impl Default for ApiConfig {
 enum RemoteImPlatform {
     Feishu,
     Dingtalk,
-    #[serde(rename = "onebot_v11", alias = "napcat", alias = "weixin_oc")]
+    #[serde(rename = "onebot_v11", alias = "napcat")]
     OnebotV11,
+    #[serde(rename = "weixin_oc")]
+    WeixinOc,
 }
 
 impl<'de> serde::Deserialize<'de> for RemoteImPlatform {
@@ -646,7 +648,8 @@ impl<'de> serde::Deserialize<'de> for RemoteImPlatform {
         let platform = match normalized.as_str() {
             "feishu" => Self::Feishu,
             "dingtalk" => Self::Dingtalk,
-            "onebot_v11" | "napcat" | "weixin_oc" => Self::OnebotV11,
+            "onebot_v11" | "napcat" => Self::OnebotV11,
+            "weixin_oc" => Self::WeixinOc,
             _ => Self::OnebotV11,
         };
         Ok(platform)
@@ -1339,6 +1342,8 @@ struct RemoteImContact {
     remark_name: String,
     #[serde(default)]
     allow_send: bool,
+    #[serde(default)]
+    allow_send_files: bool,
     #[serde(default)]
     allow_receive: bool,
     #[serde(default = "default_remote_im_contact_activation_mode")]

@@ -204,6 +204,12 @@ impl DingtalkStreamManager {
             peer_addr: state.endpoint.clone(),
             connected_at: state.connected_at,
             listen_addr: String::new(),
+            status_text: None,
+            last_error: state.last_error.clone(),
+            account_id: None,
+            base_url: None,
+            login_session_key: None,
+            qrcode_url: None,
         }
     }
 }

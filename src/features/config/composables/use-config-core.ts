@@ -33,7 +33,7 @@ function isTextRequestFormat(format: string): boolean {
 
 function normalizeRemoteImPlatform(value: unknown): RemoteImPlatform {
   const text = String(value || "").trim().toLowerCase();
-  if (text === "feishu" || text === "dingtalk" || text === "onebot_v11") {
+  if (text === "feishu" || text === "dingtalk" || text === "onebot_v11" || text === "weixin_oc") {
     return text as RemoteImPlatform;
   }
   return "onebot_v11";

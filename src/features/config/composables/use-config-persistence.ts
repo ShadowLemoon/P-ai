@@ -81,7 +81,7 @@ function mapDepartmentConfig(item: unknown): AppConfig["departments"][number] {
 function mapRemoteImChannel(item: unknown): RemoteImChannelConfig {
   const platformRaw = String((item as { platform?: unknown })?.platform || "").trim().toLowerCase();
   const platform =
-    platformRaw === "feishu" || platformRaw === "dingtalk" || platformRaw === "onebot_v11"
+    platformRaw === "feishu" || platformRaw === "dingtalk" || platformRaw === "onebot_v11" || platformRaw === "weixin_oc"
       ? platformRaw
       : "onebot_v11";
   return {

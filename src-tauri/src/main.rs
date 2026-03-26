@@ -57,6 +57,7 @@ include!("features/chat/model_runtime.rs");
 include!("features/chat/scheduler.rs");
 include!("features/remote_im/napcat_ws.rs");
 include!("features/remote_im/dingtalk_stream.rs");
+include!("features/remote_im/weixin_oc.rs");
 include!("features/remote_im.rs");
 include!("features/remote_im_adapters.rs");
 
@@ -109,7 +110,14 @@ async fn remote_im_get_channel_status(
                 peer_addr: None,
                 connected_at: None,
                 listen_addr: String::new(),
+                status_text: None,
+                last_error: None,
+                account_id: None,
+                base_url: None,
+                login_session_key: None,
+                qrcode_url: None,
             }),
+            RemoteImPlatform::WeixinOc => Ok(weixin_oc_manager().build_status(&channel.id).await),
         };
     }
     get_channel_connection_status(channel_id).await
@@ -126,12 +134,25 @@ async fn remote_im_restart_channel(
     state: State<'_, AppState>,
 ) -> Result<ChannelConnectionStatus, String> {
     eprintln!("[远程IM] 重启渠道: {}", channel_id);
+    napcat_ws_manager()
+        .add_log(&channel_id, "info", "[远程IM] 收到渠道重启请求")
+        .await;
     let config = state_read_config_cached(&state)
         .map_err(|e| format!("{e:?}"))?;
     let channel = config.remote_im_channels.iter()
         .find(|ch| ch.id == channel_id)
         .ok_or_else(|| format!("渠道 {} 未找到", channel_id))?
         .clone();
+    napcat_ws_manager()
+        .add_log(
+            &channel_id,
+            "info",
+            &format!(
+                "[远程IM] 当前渠道配置: enabled={}, platform={:?}",
+                channel.enabled, channel.platform
+            ),
+        )
+        .await;
 
     let manager = napcat_ws_manager();
     manager
@@ -167,10 +188,17 @@ async fn remote_im_restart_channel(
                 );
             }
         });
+    } else if channel.platform == RemoteImPlatform::WeixinOc {
+        let state_clone = state.inner().clone();
+        weixin_oc_manager()
+            .reconcile_channel_runtime(&channel, state_clone)
+            .await?;
     }
 
     if channel.platform == RemoteImPlatform::Dingtalk {
         Ok(dingtalk_stream_manager().get_channel_status(&channel_id).await)
+    } else if channel.platform == RemoteImPlatform::WeixinOc {
+        Ok(weixin_oc_manager().build_status(&channel_id).await)
     } else {
         Ok(manager.get_connection_status(&channel_id).await)
     }
@@ -387,6 +415,28 @@ fn main() {
                         }
                     });
                 }
+
+                let weixin_channels: Vec<_> = config
+                    .remote_im_channels
+                    .iter()
+                    .filter(|ch| ch.platform == RemoteImPlatform::WeixinOc)
+                    .cloned()
+                    .collect();
+                for channel in weixin_channels {
+                    let state_clone = event_state.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(err) = weixin_oc_manager()
+                            .reconcile_channel_runtime(&channel, state_clone)
+                            .await
+                        {
+                            eprintln!(
+                                "[启动] 启动个人微信渠道失败: channel_id={}, error={}",
+                                channel.id,
+                                err
+                            );
+                        }
+                    });
+                }
             }
 
             tauri::async_runtime::spawn(async move {
@@ -504,6 +554,7 @@ fn main() {
             remote_im_list_channels,
             remote_im_list_contacts,
             remote_im_update_contact_allow_send,
+            remote_im_update_contact_allow_send_files,
             remote_im_update_contact_allow_receive,
             remote_im_update_contact_activation,
             remote_im_update_contact_remark,
@@ -517,6 +568,10 @@ fn main() {
             remote_im_get_channel_status,
             remote_im_get_channel_logs,
             remote_im_restart_channel,
+            remote_im_weixin_oc_start_login,
+            remote_im_weixin_oc_get_login_status,
+            remote_im_weixin_oc_sync_contacts,
+            remote_im_weixin_oc_logout,
             desktop_screenshot,
             xcap,
             desktop_wait,

@@ -32,6 +32,18 @@ pub struct ChannelConnectionStatus {
     pub peer_addr: Option<String>,
     pub connected_at: Option<DateTime<Utc>>,
     pub listen_addr: String,
+    #[serde(default)]
+    pub status_text: Option<String>,
+    #[serde(default)]
+    pub last_error: Option<String>,
+    #[serde(default)]
+    pub account_id: Option<String>,
+    #[serde(default)]
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub login_session_key: Option<String>,
+    #[serde(default)]
+    pub qrcode_url: Option<String>,
 }
 
 /// NapCat 凭证配置
@@ -336,6 +348,12 @@ impl NapcatWsManager {
                 peer_addr: conn.peer_addr.clone(),
                 connected_at: conn.connected_at,
                 listen_addr: listen_addrs.get(channel_id).cloned().unwrap_or_default(),
+                status_text: None,
+                last_error: None,
+                account_id: None,
+                base_url: None,
+                login_session_key: None,
+                qrcode_url: None,
             }
         } else {
             ChannelConnectionStatus {
@@ -344,6 +362,12 @@ impl NapcatWsManager {
                 peer_addr: None,
                 connected_at: None,
                 listen_addr: listen_addrs.get(channel_id).cloned().unwrap_or_default(),
+                status_text: None,
+                last_error: None,
+                account_id: None,
+                base_url: None,
+                login_session_key: None,
+                qrcode_url: None,
             }
         }
     }

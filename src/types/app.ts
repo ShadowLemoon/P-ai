@@ -102,7 +102,7 @@ export type AppConfig = {
   apiConfigs: ApiConfigItem[];
 };
 
-export type RemoteImPlatform = "feishu" | "dingtalk" | "onebot_v11";
+export type RemoteImPlatform = "feishu" | "dingtalk" | "onebot_v11" | "weixin_oc";
 
 export type RemoteImChannelConfig = {
   id: string;
@@ -126,6 +126,7 @@ export type RemoteImContact = {
   remoteContactName: string;
   remarkName: string;
   allowSend: boolean;
+  allowSendFiles: boolean;
   allowReceive: boolean;
   activationMode: "always" | "never" | "keyword";
   activationKeywords: string[];

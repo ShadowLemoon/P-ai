@@ -1,400 +1,98 @@
 <template>
-  <div class="flex flex-col gap-4 min-h-0 h-full overflow-y-auto pr-1">
+  <div class="flex items-start gap-4 min-h-0 h-full pr-1">
     <!-- 左侧：渠道列表 -->
-    <div class="bg-base-100 rounded-box border border-base-300 w-full h-72 shrink-0 flex flex-col overflow-hidden">
+    <div class="self-start h-auto bg-base-100 rounded-box border border-base-300 w-1/3 shrink-0 flex flex-col overflow-hidden">
       <div class="flex items-center justify-between px-3 py-2 shrink-0">
         <span class="font-semibold text-sm">{{ t("config.remoteIm.title") }}</span>
-        <div class="flex items-center gap-1">
-          <button class="btn btn-xs btn-ghost" :disabled="channelPage <= 1" @click="channelPage -= 1">‹</button>
-          <span class="text-xs font-medium opacity-70">{{ channelPage }} / {{ channelPageCount }}</span>
-          <button class="btn btn-xs btn-ghost" :disabled="channelPage >= channelPageCount" @click="channelPage += 1">›</button>
-        </div>
         <div class="flex gap-1">
-          <button class="btn  btn-square btn-ghost" :title="t('config.remoteIm.addChannel')" @click="addChannel">
+          <button class="btn btn-square btn-ghost" :title="t('config.remoteIm.addChannel')" @click="addChannel">
             <Plus class="h-3.5 w-3.5" />
-          </button>
-          <button
-            class="btn  btn-square btn-ghost"
-            :class="!selectedChannel ? 'cursor-not-allowed' : ''"
-            :title="t('common.delete')"
-            :disabled="!selectedChannel"
-            @click="removeSelectedChannel"
-          >
-            <Trash2 class="h-3.5 w-3.5" :class="!selectedChannel ? '' : 'text-error'" />
           </button>
         </div>
       </div>
-      <ul class="menu w-full flex-1 overflow-y-auto">
-        <li v-if="channels.length === 0" class="menu-title">
-          <span class="text-xs italic opacity-60">{{ t("config.remoteIm.empty") }}</span>
-        </li>
-        <li v-for="(ch, idx) in pagedChannels" :key="ch.id">
-          <button class="flex items-center gap-2" :class="{ 'menu-active': selectedChannelId === ch.id }" @click="selectedChannelId = ch.id">
-            <span class="badge badge-xs" :class="channelListStatusBadgeClass(ch)">{{ channelListStatusBadgeText(ch) }}</span>
-            <span class="truncate">{{ ch.name || `#${(channelPage - 1) * CHANNELS_PAGE_SIZE + idx + 1}` }}</span>
-          </button>
+      <div v-if="channels.length === 0" class="text-xs italic opacity-60 py-4 text-center">
+        {{ t("config.remoteIm.empty") }}
+      </div>
+      <ul v-else class="menu w-full">
+        <li v-for="ch in channels" :key="ch.id">
+          <div
+            class="flex w-full items-center gap-2 rounded-lg border border-transparent"
+            :class="selectedChannelId === ch.id ? 'bg-primary border-primary text-primary-content' : ''"
+            @click="selectedChannelId = ch.id"
+          >
+            <div class="flex-1 min-w-0">
+              <div class="font-bold text-xs truncate">{{ ch.name || t('config.remoteIm.channelName') }}</div>
+              <div class="text-[10px] opacity-60 truncate">{{ platformLabelOf(ch.platform) }}</div>
+            </div>
+            <div class="ml-auto flex items-center gap-1 shrink-0">
+              <button
+                class="btn btn-ghost btn-square hover:bg-base-300"
+                :title="t('config.remoteIm.channelDetails')"
+                @click.stop="openChannelConfigModal(ch.id)"
+              >
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary toggle-sm"
+                :checked="ch.enabled"
+                :disabled="saving"
+                @mousedown.stop
+                @click.stop
+                @change.stop="(e) => toggleChannelEnabled(ch, (e.target as HTMLInputElement).checked)"
+              />
+            </div>
+          </div>
         </li>
       </ul>
     </div>
 
-    <!-- 中间：渠道详情 -->
-    <div class="w-full flex flex-col min-h-0">
-      <div v-if="!selectedChannel" class="bg-base-100 rounded-box border border-base-300 flex-1 flex items-center justify-center">
-        <div class="text-xs italic opacity-60">{{ t("config.remoteIm.empty") }}</div>
-      </div>
-
-      <div v-else class="bg-base-100 rounded-box border border-base-300 flex-1 min-h-0 overflow-hidden flex flex-col">
-        <!-- 头部 -->
-        <div class="flex items-center justify-between px-3 py-2 shrink-0">
-          <span class="font-semibold text-sm">{{ selectedChannel.name || t('config.remoteIm.channelName') }}</span>
-          <div class="flex gap-1">
-            <button
-              v-if="selectedChannel.platform === 'onebot_v11'"
-              class="btn  btn-ghost"
-              :title="t('common.reset')"
-              @click="resetNapcatCredentials"
-            >
-              <RotateCcw class="h-3.5 w-3.5" />
-              {{ t("common.reset") }}
-            </button>
-            <button
-              class="btn "
-              :class="channelDirty ? 'btn-primary' : 'btn-ghost'"
-              :disabled="!channelDirty || saving"
-              @click="saveChannels"
-            >
-              <Save v-if="!saving" class="h-3.5 w-3.5" />
-              <span v-else class="loading loading-spinner loading-xs"></span>
-              {{ t("common.save") }}
-            </button>
-          </div>
-        </div>
-
-        <!-- 状态栏 -->
-        <div class="px-3 pb-2 shrink-0">
-          <div class="rounded-box border border-base-300 bg-base-200/60 px-3 py-2 flex items-center justify-between gap-3">
-            <div class="flex items-center gap-2 min-w-0">
-              <span
-                class="size-2 rounded-full shrink-0"
-                :class="selectedChannel.platform === 'onebot_v11'
-                  ? (channelRuntimeStates[selectedChannel.id]?.connected ? 'bg-success' : (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300'))
-                  : (selectedChannel.platform === 'dingtalk'
-                    ? (channelRuntimeStates[selectedChannel.id]?.connected ? 'bg-success' : (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300'))
-                    : ((selectedChannel.platform === 'feishu')
-                      ? (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300')
-                      : (selectedChannel.enabled ? 'bg-success' : 'bg-base-300')))"
-              ></span>
-              <span class="text-xs font-medium">{{ t("config.remoteIm.connectionStatus") }}</span>
-              <span class="text-xs opacity-80 truncate">{{ channelStatusPreview(selectedChannel!) }}</span>
-            </div>
-            <div class="flex items-center gap-2">
-              <button class="btn btn-xs btn-ghost" @click="openChannelLogsModal">
-                {{ t("config.remoteIm.viewLogs") }}
-              </button>
-              <label class="flex items-center gap-2">
-                <span class="text-xs opacity-70">{{ t("config.remoteIm.enabled") }}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary bg-base-100"
-                  :checked="selectedChannel.enabled"
-                  :disabled="saving"
-                  @change="(e) => toggleSelectedChannelEnabled((e.target as HTMLInputElement).checked)"
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <!-- 内容滚动区 -->
-        <div class="flex-1 overflow-y-auto px-3 text-xs">
-            <!-- 渠道名称 -->
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <span>{{ t("config.remoteIm.channelName") }}</span>
-              <input v-model="selectedChannel.name" class="input input-bordered input-sm w-48" :placeholder="t('config.remoteIm.channelName')" />
-            </div>
-            <!-- 平台 -->
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <span>{{ t("config.remoteIm.platform") }}</span>
-              <select v-model="selectedChannel.platform" class="select select-bordered select-sm w-48">
-                <option value="onebot_v11">{{ t("config.remoteIm.platformOptions.onebotV11") }}</option>
-                <option value="feishu">{{ t("config.remoteIm.platformOptions.feishu") }}</option>
-                <option value="dingtalk">{{ t("config.remoteIm.platformOptions.dingtalk") }}</option>
-              </select>
-            </div>
-            <!-- 能力配置标题 -->
-            <div class="border-b-base-content/5 flex items-center gap-2 border-b border-dashed py-2 mt-2">
-              <span class="font-semibold">{{ t("config.remoteIm.capabilities") }}</span>
-            </div>
-
-            <!-- 能力配置列表 -->
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <label class="flex cursor-pointer items-center gap-2 select-none">
-                <input v-model="selectedChannel.activateAssistant" type="checkbox" class="checkbox" />
-                <span>{{ t("config.remoteIm.activateAssistant") }}</span>
-              </label>
-            </div>
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <label class="flex cursor-pointer items-center gap-2 select-none">
-                <input v-model="selectedChannel.receiveFiles" type="checkbox" class="checkbox" />
-                <span>{{ t("config.remoteIm.receiveFiles") }}</span>
-              </label>
-            </div>
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <label class="flex cursor-pointer items-center gap-2 select-none">
-                <input v-model="selectedChannel.allowSendFiles" type="checkbox" class="checkbox" />
-                <span>{{ t("config.remoteIm.allowSendFiles") }}</span>
-              </label>
-            </div>
-            <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-              <label class="flex cursor-pointer items-center gap-2 select-none">
-                <input v-model="selectedChannel.showToolCalls" type="checkbox" class="checkbox" />
-                <span>{{ t("config.remoteIm.showToolCalls") }}</span>
-              </label>
-            </div>
-
-            <!-- OneBot v11 凭证配置 -->
-            <template v-if="selectedChannel.platform === 'onebot_v11'">
-              <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
-                <span class="font-semibold">{{ t("config.remoteIm.napcatConfig") }}</span>
-              </div>
-              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-                <span>{{ t("config.remoteIm.wsHost") }}</span>
-                <input v-model="napcatCredentials.wsHost" class="input input-bordered input-sm w-32" placeholder="0.0.0.0" />
-              </div>
-              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-                <span>{{ t("config.remoteIm.wsPort") }}</span>
-                <input v-model.number="napcatCredentials.wsPort" type="number" class="input input-bordered input-sm w-32" placeholder="6199" />
-              </div>
-              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-                <span>{{ t("config.remoteIm.wsToken") }}</span>
-                <input v-model="napcatCredentials.wsToken" class="input input-bordered input-sm w-32" :placeholder="t('config.remoteIm.wsTokenPlaceholder')" />
-              </div>
-            </template>
-
-            <!-- 钉钉凭证 -->
-            <template v-else-if="selectedChannel.platform === 'dingtalk'">
-              <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
-                <span class="font-semibold">{{ t("config.remoteIm.dingtalkCredentials") }}</span>
-              </div>
-              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-                <span>{{ t("config.remoteIm.dingtalkClientId") }}</span>
-                <input
-                  v-model="dingtalkCredentials.clientId"
-                  class="input input-bordered input-sm w-72"
-                  placeholder="dingxxxxxxxxxxxxxxxx"
-                />
-              </div>
-              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
-                <span>{{ t("config.remoteIm.dingtalkClientSecret") }}</span>
-                <div class="flex items-center gap-2">
-                  <input
-                    v-model="dingtalkCredentials.clientSecret"
-                    :type="showDingtalkSecret ? 'text' : 'password'"
-                    class="input input-bordered input-sm w-72"
-                    placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-                  />
-                  <button
-                    class="btn btn-xs btn-ghost"
-                    type="button"
-                    @click="showDingtalkSecret = !showDingtalkSecret"
-                  >
-                    {{ showDingtalkSecret ? "隐藏" : "显示" }}
-                  </button>
-                </div>
-              </div>
-            </template>
-
-            <!-- 飞书凭证 JSON -->
-            <template v-else>
-              <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
-                <span class="font-semibold">{{ t("config.remoteIm.credentialsJson") }}</span>
-                <textarea
-                  v-model="credentialDrafts[selectedChannel.id]"
-                  class="textarea textarea-bordered w-full min-h-20 font-mono"
-                  spellcheck="false"
-                  @blur="syncCredentialJson(selectedChannel)"
-                />
-              </div>
-            </template>
-
-          <!-- 连接状态区域 (仅 OneBot v11) -->
-          <template v-if="selectedChannel.platform === 'onebot_v11'">
-            <div class="border-t border-base-300 mt-2 pt-2">
-              <div class="flex items-center justify-between">
-                <span class="font-semibold">{{ t("config.remoteIm.connectionStatus") }}</span>
-                <button class="btn btn-square btn-ghost" :title="t('common.refresh')" @click="refreshChannelStatus">
-                  <RefreshCw class="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div class="mt-2 flex items-center gap-2">
-                <span class="size-2 rounded-full" :class="channelStatus?.connected ? 'bg-success' : 'bg-base-300'"></span>
-                <span class="text-xs">
-                  {{ channelStatus?.connected
-                    ? `${t("config.remoteIm.connected")} (${channelStatus.peerAddr})`
-                    : channelStatus?.listenAddr
-                      ? t("config.remoteIm.waitingForConnection")
-                      : t("config.remoteIm.serverNotStarted") }}
-                </span>
-              </div>
-            </div>
-
-            <!-- 日志区域 -->
-            <div class="border-t border-base-300 mt-2 pt-2 min-h-0 flex flex-col">
-              <div class="flex items-center justify-between shrink-0">
-                <span class="font-semibold">{{ t("config.remoteIm.channelLogs") }}</span>
-                <button class="btn btn-square btn-ghost" :title="t('common.refresh')" @click="refreshChannelLogs">
-                  <RefreshCw class="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div class="mt-2 mb-3 flex-1 min-h-0 overflow-y-auto">
-                <div v-if="channelLogs.length === 0" class="opacity-60 italic text-xs">{{ t("config.remoteIm.noLogs") }}</div>
-                <pre v-else class="bg-base-200 rounded-box p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all m-0"><template v-for="(log, idx) in channelLogs" :key="idx"><span :class="log.level === 'error' ? 'text-error' : log.level === 'warn' ? 'text-warning' : ''"><span class="opacity-50">{{ formatLogTime(log.timestamp) }}</span> {{ log.message }}</span>{{ '\n' }}</template></pre>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
-    </div>
-
     <!-- 右侧：联系人列表 -->
-    <div class="bg-base-100 rounded-box border border-base-300 w-full h-88 shrink-0 flex flex-col overflow-hidden">
-      <div class="relative flex items-center justify-between px-3 py-2 shrink-0">
+    <div class="self-start h-auto bg-base-100 rounded-box border border-base-300 w-2/3 flex flex-col overflow-hidden min-w-0">
+      <div class="flex items-center justify-between px-3 py-2 shrink-0">
         <span class="flex items-center gap-2 font-semibold text-sm">
           {{ t("config.remoteIm.contactsTitle") }}
           <span class="badge badge-ghost badge-xs">{{ currentChannelContacts.length }}</span>
         </span>
-        <div class="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
-          <button class="btn btn-xs btn-ghost" :disabled="contactPage <= 1" @click="contactPage -= 1">‹</button>
-          <span class="text-xs font-medium opacity-70">{{ contactPage }} / {{ contactPageCount }}</span>
-          <button class="btn btn-xs btn-ghost" :disabled="contactPage >= contactPageCount" @click="contactPage += 1">›</button>
-        </div>
         <button class="btn btn-square btn-ghost" :title="t('common.refresh')" @click="refreshContacts">
           <RefreshCw class="h-3.5 w-3.5" :class="contactsLoading ? 'animate-spin' : ''" />
         </button>
       </div>
-      <ul class="list w-full flex-1 overflow-y-auto">
-        <li v-if="selectedChannel && (selectedChannel.platform === 'feishu' || selectedChannel.platform === 'dingtalk')" class="menu-title">
-          <span class="text-xs text-warning font-medium">{{ t("config.remoteIm.experimental") }}</span>
-        </li>
+      <ul class="w-full flex-1 overflow-y-auto px-0">
         <li v-if="contactsError" class="menu-title">
           <span class="text-xs text-error">{{ contactsError }}</span>
         </li>
         <li v-if="currentChannelContacts.length === 0" class="menu-title">
           <span class="text-xs italic opacity-60">{{ t("config.remoteIm.contactsEmpty") }}</span>
         </li>
-        <li v-for="(item, idx) in pagedCurrentChannelContacts" :key="item.id" class="flex flex-col border-b border-base-200">
-          <!-- 主行（始终显示） -->
-          <div class="flex items-center gap-3 px-3 py-2 cursor-pointer bg-base-300" @click="toggleContactExpand(item.id)">
-            <span class="badge shrink-0" :class="item.remoteContactType === 'group' ? 'badge-secondary' : 'badge-primary'">{{ item.remoteContactType === "group" ? t("config.remoteIm.group") : t("config.remoteIm.private") }}</span>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2">
-                <span class="truncate font-semibold flex-1">{{ contactDisplayName(item) }}</span>
-              </div>
-              <div class="text-xs opacity-50">{{ item.remoteContactId }}</div>
-            </div>
-            <div class="text-base transition-transform duration-200" :class="expandedContactIds.has(item.id) ? 'rotate-90' : ''">›</div>
-          </div>
-
-          <!-- 展开的详情区域 -->
-          <div v-if="expandedContactIds.has(item.id)" class="px-3 pb-3 bg-base-100/50 text-xs">
-            <!-- 激活配置 -->
-            <div class="flex flex-col gap-2 mt-2 pt-2 border-t border-base-200">
-              <div class="flex items-center justify-between gap-2">
-                <span>消息路由</span>
-                <span class="text-xs opacity-70">{{ contactRouteLabel(item) }}</span>
-              </div>
-              <div class="flex items-center justify-between gap-2">
-                <span>处理部门</span>
-                <select
-                  class="select select-bordered select-sm w-40"
-                  :value="item.boundDepartmentId || ''"
-                  @change="(e) => onContactDepartmentChange(item, (e.target as HTMLSelectElement).value)"
-                >
-                  <option value="">主部门</option>
-                  <option v-for="dept in remoteImDepartmentOptions" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
-                </select>
-              </div>
-              <div class="text-[11px] opacity-50 leading-5">
-                主部门固定进入主会话；非主部门固定进入该联系人的独占联系人会话。切换处理部门不会清空联系人原有联系人会话历史。
-              </div>
-              <div class="flex items-center justify-between gap-2">
-                <span>处理模式</span>
-                <select
-                  class="select select-bordered select-sm w-40"
-                  :value="normalizeProcessingMode(item.processingMode)"
-                  @change="(e) => onContactProcessingModeChange(item, (e.target as HTMLSelectElement).value)"
-                >
-                  <option value="continuous">有上下文</option>
-                  <option value="qa">无上下文</option>
-                </select>
-              </div>
-              <div class="flex items-center justify-between gap-2">
-                <span>回复策略</span>
-                <select
-                  class="select select-bordered select-sm w-32"
-                  :value="item.activationMode"
-                  @change="(e) => onContactActivationModeChange(item, (e.target as HTMLSelectElement).value)"
-                >
-                  <option value="always">{{ t("config.remoteIm.activateModeAlways") }}</option>
-                  <option value="never">{{ t("config.remoteIm.activateModeNever") }}</option>
-                  <option value="keyword">{{ t("config.remoteIm.activateModeKeyword") }}</option>
-                </select>
-              </div>
-              <div class="text-[11px] opacity-50 leading-5">
-                {{ contactActivationHint(item) }}
-              </div>
-              <div class="flex items-center justify-between gap-2">
-                <span>处理间隔</span>
-                <div class="flex items-center gap-1">
-                  <input
-                    type="number"
-                    class="input input-bordered input-sm w-16"
-                    :value="item.activationCooldownSeconds"
-                    min="0"
-                    @change="(e) => onContactActivationCooldownChange(item, Number((e.target as HTMLInputElement).value || 0))"
-                  />
-                  <span class="opacity-60">{{ t("config.remoteIm.seconds") }}</span>
+        <template v-else>
+          <li v-for="item in currentChannelContacts" :key="item.id" class="border-b border-base-200 last:border-b-0">
+            <div class="flex items-center gap-2 px-3 py-2">
+                <span class="badge shrink-0" :class="item.remoteContactType === 'group' ? 'badge-secondary' : 'badge-primary'">{{ item.remoteContactType === "group" ? t("config.remoteIm.group") : t("config.remoteIm.private") }}</span>
+                <div class="flex-1 min-w-0">
+                  <div class="truncate font-semibold">{{ contactSafeDisplayName(item) }}</div>
+                  <div class="text-xs opacity-50">{{ contactSecondaryText(item) }}</div>
                 </div>
-              </div>
-              <div class="text-[11px] opacity-60">
-                {{ contactRoutingHint(item) }}
-              </div>
-              <div v-if="item.activationMode === 'keyword'" class="flex items-center justify-between gap-2">
-                <span>唤醒关键词</span>
-                <input
-                  type="text"
-                  class="input input-bordered input-sm flex-1"
-                  :placeholder="t('config.remoteIm.activateKeywordsPlaceholder')"
-                  :value="contactKeywordDrafts[item.id] ?? item.activationKeywords.join(', ')"
-                  @input="(e) => { contactKeywordDrafts[item.id] = (e.target as HTMLInputElement).value; }"
-                  @blur="() => onContactActivationKeywordsBlur(item)"
-                />
-              </div>
-              <div class="flex items-center justify-between gap-2 pt-1">
-                <span>{{ t("config.remoteIm.allowReceive") }}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary"
-                  :checked="item.allowReceive"
-                  @change="(e) => toggleContactAllowReceive(item, (e.target as HTMLInputElement).checked)"
-                />
-              </div>
-              <div class="flex items-center justify-between gap-2">
-                <span>{{ t("config.remoteIm.allowSend") }}</span>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-primary"
-                  :checked="item.allowSend"
-                  @change="(e) => toggleContactAllowSend(item, (e.target as HTMLInputElement).checked)"
-                />
-              </div>
+                <button
+                  class="btn btn-ghost btn-square btn-sm hover:bg-base-300"
+                  :title="t('config.remoteIm.channelDetails')"
+                  @click.stop="openContactConfigModal(item.id)"
+                >
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
             </div>
-          </div>
-        </li>
+          </li>
+        </template>
       </ul>
     </div>
 
-    <div class="modal" :class="{ 'modal-open': channelLogsModalOpen }" @click.self="closeChannelLogsModal">
+    <div class="modal z-90" :class="{ 'modal-open': channelLogsModalOpen }" @click.self="closeChannelLogsModal">
       <div class="modal-box max-w-4xl">
         <div class="flex items-center justify-between">
           <div class="font-semibold">
@@ -413,6 +111,346 @@
         </div>
       </div>
     </div>
+
+    <!-- 渠道配置模态框 -->
+    <div class="modal z-80" :class="{ 'modal-open': channelConfigModalOpen }" @click.self="closeChannelConfigModal">
+      <div class="modal-box max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div class="font-semibold text-lg">
+            {{ t("config.remoteIm.channelDetails") }} · {{ selectedChannel?.name || "-" }}
+          </div>
+          <button class="btn btn-sm btn-circle btn-ghost" @click="closeChannelConfigModal">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="selectedChannel" class="flex-1 min-h-0 overflow-hidden flex flex-col mt-4">
+          <!-- 头部 -->
+          <div class="flex items-center justify-between px-3 py-2 shrink-0">
+            <div></div>
+          </div>
+
+          <!-- 状态栏 -->
+          <div class="px-3 pb-2 shrink-0">
+            <div class="rounded-box border border-base-300 bg-base-200/60 px-3 py-2 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 min-w-0">
+                <span
+                  class="size-2 rounded-full shrink-0"
+                  :class="selectedChannel.platform === 'onebot_v11'
+                    ? (channelRuntimeStates[selectedChannel.id]?.connected ? 'bg-success' : (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300'))
+                    : (selectedChannel.platform === 'dingtalk'
+                      ? (channelRuntimeStates[selectedChannel.id]?.connected ? 'bg-success' : (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300'))
+                      : ((selectedChannel.platform === 'feishu')
+                        ? (selectedChannel.enabled ? 'bg-warning' : 'bg-base-300')
+                        : (selectedChannel.enabled ? 'bg-success' : 'bg-base-300')))"
+                ></span>
+                <span class="text-xs font-medium">{{ t("config.remoteIm.connectionStatus") }}</span>
+                <span class="text-xs opacity-80 truncate">{{ channelStatusPreview(selectedChannel!) }}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button class="btn btn-xs btn-ghost" @click="openChannelLogsModal">
+                  {{ t("config.remoteIm.viewLogs") }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 内容滚动区 -->
+          <div class="flex-1 overflow-y-auto px-3 text-xs pb-4">
+              <!-- 渠道名称 -->
+              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                <span>{{ t("config.remoteIm.channelName") }}</span>
+                <input v-model="selectedChannel.name" class="input input-bordered input-sm w-48" :placeholder="t('config.remoteIm.channelName')" />
+              </div>
+              <!-- 平台 -->
+              <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                <span>{{ t("config.remoteIm.platform") }}</span>
+                <select v-model="selectedChannel.platform" class="select select-bordered select-sm w-48">
+                  <option value="onebot_v11">{{ t("config.remoteIm.platformOptions.onebotV11") }}</option>
+                  <option value="feishu">{{ t("config.remoteIm.platformOptions.feishu") }}</option>
+                  <option value="dingtalk">{{ t("config.remoteIm.platformOptions.dingtalk") }}</option>
+                  <option value="weixin_oc">个人微信</option>
+                </select>
+              </div>
+
+              <!-- OneBot v11 凭证配置 -->
+              <template v-if="selectedChannel.platform === 'onebot_v11'">
+                <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
+                  <span class="font-semibold">{{ t("config.remoteIm.napcatConfig") }}</span>
+                </div>
+                <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                  <span>{{ t("config.remoteIm.wsHost") }}</span>
+                  <input v-model="napcatCredentials.wsHost" class="input input-bordered input-sm w-32" placeholder="0.0.0.0" />
+                </div>
+                <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                  <span>{{ t("config.remoteIm.wsPort") }}</span>
+                  <input v-model.number="napcatCredentials.wsPort" type="number" class="input input-bordered input-sm w-32" placeholder="6199" />
+                </div>
+                <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                  <span>{{ t("config.remoteIm.wsToken") }}</span>
+                  <input v-model="napcatCredentials.wsToken" class="input input-bordered input-sm w-32" :placeholder="t('config.remoteIm.wsTokenPlaceholder')" />
+                </div>
+              </template>
+
+              <!-- 钉钉凭证 -->
+              <template v-else-if="selectedChannel.platform === 'dingtalk'">
+                <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
+                  <span class="font-semibold">{{ t("config.remoteIm.dingtalkCredentials") }}</span>
+                </div>
+                <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                  <span>{{ t("config.remoteIm.dingtalkClientId") }}</span>
+                  <input
+                    v-model="dingtalkCredentials.clientId"
+                    class="input input-bordered input-sm w-72"
+                    placeholder="dingxxxxxxxxxxxxxxxx"
+                  />
+                </div>
+                <div class="border-b-base-content/5 flex items-center justify-between gap-2 border-b border-dashed py-2">
+                  <span>{{ t("config.remoteIm.dingtalkClientSecret") }}</span>
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model="dingtalkCredentials.clientSecret"
+                      :type="showDingtalkSecret ? 'text' : 'password'"
+                      class="input input-bordered input-sm w-72"
+                      placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                    />
+                    <button
+                      class="btn btn-xs btn-ghost"
+                      type="button"
+                      @click="showDingtalkSecret = !showDingtalkSecret"
+                    >
+                      {{ showDingtalkSecret ? "隐藏" : "显示" }}
+                    </button>
+                  </div>
+                </div>
+              </template>
+
+              <template v-else-if="selectedChannel.platform === 'weixin_oc'">
+                <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
+                  <span class="font-semibold">个人微信扫码登录</span>
+                </div>
+                <div class="border-b-base-content/5 flex items-start justify-between gap-2 border-b border-dashed py-2">
+                  <div class="flex flex-col gap-1">
+                    <span>登录状态</span>
+                    <span class="opacity-70 break-all">{{ weixinStatusText }}</span>
+                    <span v-if="weixinStatusMessage" class="opacity-60 break-all">{{ weixinStatusMessage }}</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button class="btn btn-primary" :disabled="weixinLoginBusy" @click="onWeixinLoginButtonClick">
+                      {{ weixinLoginBusy ? "处理中" : (isWeixinLoggedIn ? "退出登录并重新扫码" : "扫码登录") }}
+                    </button>
+                  </div>
+                </div>
+                <div v-if="isWeixinLoggedIn" class="border-b-base-content/5 flex items-center gap-2 border-b border-dashed py-2 text-success">
+                  <span class="font-semibold">已登录，可直接使用</span>
+                </div>
+                <div v-else-if="weixinLoginState.qrcodeImgContent" class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2">
+                  <span class="font-semibold">扫码二维码</span>
+                  <img :src="weixinQrImageSrc" alt="weixin login qr" class="w-48 h-48 rounded-box border border-base-300 object-contain bg-white p-2" />
+                </div>
+              </template>
+
+              <!-- 飞书凭证 JSON -->
+              <template v-else>
+                <div class="border-b-base-content/5 flex flex-col gap-2 border-b border-dashed py-2 mt-2">
+                  <span class="font-semibold">{{ t("config.remoteIm.credentialsJson") }}</span>
+                  <textarea
+                    v-model="credentialDrafts[selectedChannel.id]"
+                    class="textarea textarea-bordered w-full min-h-20 font-mono"
+                    spellcheck="false"
+                    @blur="syncCredentialJson(selectedChannel)"
+                  />
+                </div>
+              </template>
+
+            <!-- 连接状态区域 (仅 OneBot v11) -->
+            <template v-if="selectedChannel.platform === 'onebot_v11'">
+              <div class="border-t border-base-300 mt-2 pt-2">
+                <div class="flex items-center justify-between">
+                  <span class="font-semibold">{{ t("config.remoteIm.connectionStatus") }}</span>
+                  <button class="btn btn-square btn-ghost" :title="t('common.refresh')" @click="refreshChannelStatus">
+                    <RefreshCw class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div class="mt-2 flex items-center gap-2">
+                  <span class="size-2 rounded-full" :class="channelStatus?.connected ? 'bg-success' : 'bg-base-300'"></span>
+                  <span class="text-xs">
+                    {{ channelStatus?.connected
+                      ? `${t("config.remoteIm.connected")} (${channelStatus.peerAddr})`
+                      : channelStatus?.listenAddr
+                        ? t("config.remoteIm.waitingForConnection")
+                        : t("config.remoteIm.serverNotStarted") }}
+                  </span>
+                </div>
+              </div>
+
+            </template>
+          </div>
+
+          <!-- 底部操作区（固定在滚动区外） -->
+          <div class="px-3 py-2 shrink-0 border-t border-base-300 flex items-center justify-between">
+            <button
+              class="btn btn-ghost"
+              :title="t('common.delete')"
+              @click="removeChannelById(selectedChannel.id); closeChannelConfigModal()"
+            >
+              <Trash2 class="h-3.5 w-3.5" />
+              {{ t("common.delete") }}
+            </button>
+            <div class="flex items-center gap-2">
+              <button
+                v-if="selectedChannel.platform === 'onebot_v11'"
+                class="btn btn-ghost"
+                :title="t('common.reset')"
+                @click="resetNapcatCredentials"
+              >
+                <RotateCcw class="h-3.5 w-3.5" />
+                {{ t("common.reset") }}
+              </button>
+              <button
+                class="btn"
+                :class="channelDirty ? 'btn-primary' : 'btn-ghost'"
+                :disabled="!channelDirty || saving"
+                @click="saveChannels"
+              >
+                <Save v-if="!saving" class="h-3.5 w-3.5" />
+                <span v-else class="loading loading-spinner loading-xs"></span>
+                {{ t("common.save") }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 联系人配置模态框 -->
+    <div class="modal z-80" :class="{ 'modal-open': contactConfigModalOpen }" @click.self="closeContactConfigModal">
+      <div class="modal-box max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <div class="flex items-center justify-between shrink-0">
+          <div class="font-semibold text-lg flex items-center gap-2">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#07c160] text-white text-sm font-bold">微</span>
+            <span>联系人设置 · {{ contactModalTitle }}</span>
+          </div>
+          <button class="btn btn-sm btn-circle btn-ghost" @click="closeContactConfigModal">
+            <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div v-if="selectedContact && contactDraft" class="mt-4 flex-1 min-h-0 overflow-hidden flex flex-col">
+          <div class="flex-1 overflow-y-auto">
+            <ul class="list gap-2">
+              <li class="list-row flex items-start justify-between gap-3">
+                <div class="font-medium">处理部门</div>
+                <div class="flex w-64 flex-col gap-1">
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    v-model="contactDraft.boundDepartmentId"
+                  >
+                    <option value="">主部门</option>
+                    <option v-for="dept in remoteImDepartmentOptions" :key="dept.id" :value="dept.id">{{ dept.name }}</option>
+                  </select>
+                  <span class="text-[11px] opacity-60">{{ contactDraftRoutingHint }}</span>
+                </div>
+              </li>
+
+              <li class="list-row flex items-start justify-between gap-3">
+                <div class="font-medium">处理模式</div>
+                <div class="flex w-64 flex-col gap-1">
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    v-model="contactDraft.processingMode"
+                  >
+                    <option value="continuous">有上下文</option>
+                    <option value="qa">无上下文</option>
+                  </select>
+                  <span class="text-[11px] opacity-60">{{ contactDraftProcessingHint }}</span>
+                </div>
+              </li>
+
+              <li class="list-row flex items-start justify-between gap-3">
+                <div class="font-medium">回复策略</div>
+                <div class="flex w-64 flex-col gap-2">
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    v-model="contactDraft.activationMode"
+                  >
+                    <option value="always">{{ t("config.remoteIm.activateModeAlways") }}</option>
+                    <option value="never">{{ t("config.remoteIm.activateModeNever") }}</option>
+                    <option value="keyword">{{ t("config.remoteIm.activateModeKeyword") }}</option>
+                  </select>
+                  <span class="text-[11px] opacity-60">{{ contactDraftActivationHint }}</span>
+                  <input
+                    v-if="contactDraft.activationMode === 'keyword'"
+                    type="text"
+                    class="input input-bordered input-sm w-full"
+                    :placeholder="t('config.remoteIm.activateKeywordsPlaceholder')"
+                    v-model="contactDraft.activationKeywordsText"
+                  />
+                </div>
+              </li>
+
+              <li class="list-row flex items-center justify-between gap-3">
+                <div class="font-medium">处理间隔</div>
+                <div class="flex w-64 items-center gap-2">
+                  <input
+                    type="number"
+                    class="input input-bordered input-sm w-20"
+                    v-model.number="contactDraft.activationCooldownSeconds"
+                    min="0"
+                  />
+                  <span class="opacity-60">{{ t("config.remoteIm.seconds") }}</span>
+                </div>
+              </li>
+
+              <li class="list-row flex items-center justify-between gap-3">
+                <div class="font-medium">{{ t("config.remoteIm.allowReceive") }}</div>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  v-model="contactDraft.allowReceive"
+                />
+              </li>
+
+              <li class="list-row flex items-center justify-between gap-3">
+                <div class="font-medium">{{ t("config.remoteIm.allowSend") }}</div>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  v-model="contactDraft.allowSend"
+                />
+              </li>
+
+              <li class="list-row flex items-center justify-between gap-3">
+                <div class="font-medium">发送文件</div>
+                <input
+                  type="checkbox"
+                  class="toggle toggle-primary"
+                  v-model="contactDraft.allowSendFiles"
+                />
+              </li>
+            </ul>
+          <div class="mt-2 text-[11px] opacity-60 leading-5">
+            主部门固定进入主会话；非主部门固定进入该联系人的独占联系人会话。切换处理部门不会清空联系人原有联系人会话历史。
+          </div>
+          </div>
+          <div class="mt-3 pt-3 border-t border-base-300 flex items-center justify-end gap-2 shrink-0">
+            <button class="btn btn-ghost" :disabled="!contactDraftDirty || contactSaving" @click="resetContactDraft">
+              <RotateCcw class="h-3.5 w-3.5" />
+              {{ t("common.reset") }}
+            </button>
+            <button class="btn btn-primary" :disabled="!contactDraftDirty || contactSaving" @click="saveContactDraft">
+              <Save v-if="!contactSaving" class="h-3.5 w-3.5" />
+              <span v-else class="loading loading-spinner loading-xs"></span>
+              {{ t("common.save") }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -422,6 +460,17 @@ import { useI18n } from "vue-i18n";
 import { Plus, RefreshCw, RotateCcw, Save, Trash2 } from "lucide-vue-next";
 import { invokeTauri } from "../../../../services/tauri-api";
 import type { AppConfig, RemoteImChannelConfig, RemoteImContact } from "../../../../types/app";
+import type { ChannelConnectionStatus, ChannelLogEntry, WeixinLoginStatus } from "./remote-im/types";
+import {
+  contactActivationHint,
+  contactRoutingHint,
+  formatLogTime,
+  normalizeActivationMode,
+  normalizeProcessingMode,
+  parseActivationKeywords,
+  platformLabelOf,
+  processingModeHint,
+} from "./remote-im/helpers";
 
 const props = defineProps<{
   config: AppConfig;
@@ -430,6 +479,10 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+const WEIXIN_OC_BOT_TYPE = "3";
+const WEIXIN_OC_QR_POLL_INTERVAL = 1;
+const WEIXIN_OC_LONG_POLL_TIMEOUT_MS = 35000;
+const WEIXIN_OC_API_TIMEOUT_MS = 15000;
 const saving = ref(false);
 const contactsLoading = ref(false);
 const contactsError = ref("");
@@ -437,38 +490,116 @@ const contacts = ref<RemoteImContact[]>([]);
 const credentialDrafts = ref<Record<string, string>>({});
 const napcatCredentials = ref({ wsHost: "0.0.0.0", wsPort: 6199, wsToken: "" });
 const dingtalkCredentials = ref({ clientId: "", clientSecret: "" });
+const weixinCredentials = ref({
+  baseUrl: "https://ilinkai.weixin.qq.com",
+  botType: WEIXIN_OC_BOT_TYPE,
+  qrPollInterval: WEIXIN_OC_QR_POLL_INTERVAL,
+  longPollTimeoutMs: WEIXIN_OC_LONG_POLL_TIMEOUT_MS,
+  apiTimeoutMs: WEIXIN_OC_API_TIMEOUT_MS,
+});
 const showDingtalkSecret = ref(false);
 const suppressCredentialSync = ref(false);
 const selectedChannelId = ref<string>("");
 const channels = computed(() => props.config.remoteImChannels || []);
-const CHANNELS_PAGE_SIZE = 8;
-const CONTACTS_PAGE_SIZE = 6;
-const channelPage = ref(1);
-const contactPage = ref(1);
-
-// 连接状态和日志
-type ChannelConnectionStatus = {
-  channelId: string;
-  connected: boolean;
-  peerAddr?: string;
-  connectedAt?: string;
-  listenAddr: string;
-};
-type ChannelLogEntry = {
-  timestamp: string;
-  level: string;
-  message: string;
-};
 const channelStatus = ref<ChannelConnectionStatus | null>(null);
 const channelLogs = ref<ChannelLogEntry[]>([]);
 const channelLogsModalOpen = ref(false);
 const channelLogsLoading = ref(false);
+const channelConfigModalOpen = ref(false);
+const contactConfigModalOpen = ref(false);
+const selectedContactId = ref<string>("");
+const contactSaving = ref(false);
 const channelRuntimeStates = ref<Record<string, ChannelConnectionStatus | null>>({});
+const weixinLoginStates = ref<Record<string, WeixinLoginStatus | null>>({});
+const weixinLoginBusy = ref(false);
+let weixinLoginPollTimer: ReturnType<typeof setInterval> | null = null;
 let channelStatusTimer: ReturnType<typeof setInterval> | null = null;
 
 const selectedChannel = computed(() =>
   channels.value.find((ch) => ch.id === selectedChannelId.value) ?? null,
 );
+
+const weixinLoginState = computed(() => {
+  const channelId = selectedChannel.value?.id || "";
+  return weixinLoginStates.value[channelId] || {
+    channelId,
+    connected: false,
+    status: "",
+    message: "",
+    sessionKey: "",
+    qrcode: "",
+    qrcodeImgContent: "",
+    accountId: "",
+    userId: "",
+    baseUrl: "",
+    lastError: "",
+  };
+});
+
+function looksLikeBase64(value: string): boolean {
+  if (!value || value.length < 64) return false;
+  return /^[A-Za-z0-9+/=]+$/.test(value);
+}
+
+const weixinQrImageSrc = computed(() => {
+  const raw = String(weixinLoginState.value.qrcodeImgContent || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("data:image/")) return raw;
+  if (/^https?:\/\//i.test(raw)) {
+    return `https://api.qrserver.com/v1/create-qr-code/?size=384x384&margin=0&data=${encodeURIComponent(raw)}`;
+  }
+  if (looksLikeBase64(raw)) {
+    return `data:image/png;base64,${raw}`;
+  }
+  return raw;
+});
+const persistedWeixinCredentials = computed(() => {
+  const creds = selectedChannel.value?.credentials;
+  if (!creds || typeof creds !== "object") {
+    return { token: "", accountId: "", userId: "" };
+  }
+  const record = creds as Record<string, unknown>;
+  return {
+    token: String(record.token || "").trim(),
+    accountId: String(record.accountId || "").trim(),
+    userId: String(record.userId || "").trim(),
+  };
+});
+const weixinRuntimeStatus = computed(() =>
+  selectedChannel.value ? channelRuntimeStates.value[selectedChannel.value.id] ?? null : null,
+);
+const weixinStatusText = computed(() => {
+  if (weixinRuntimeStatus.value?.connected) return "已连接";
+  if (isWeixinLoggedIn.value) return "已登录";
+  const status = String(weixinLoginState.value.status || "").trim().toLowerCase();
+  if (status === "wait" || status === "scanned" || status === "scaned") return "等待扫码确认";
+  if (status === "need_login" || status === "idle") return "待扫码登录";
+  if (status === "confirmed" || status === "logged_in") return "已登录";
+  return "待扫码登录";
+});
+const weixinStatusMessage = computed(() => {
+  if (weixinRuntimeStatus.value?.connected) {
+    return "凭证已保存";
+  }
+  if (isWeixinLoggedIn.value) {
+    return "凭证已保存";
+  }
+  const status = String(weixinLoginState.value.status || "").trim().toLowerCase();
+  if (status === "wait" || status === "scanned" || status === "scaned") {
+    return "请在微信中确认登录";
+  }
+  const errorMessage = String(weixinLoginState.value.lastError || "").trim();
+  return errorMessage || "";
+});
+const isWeixinLoggedIn = computed(() => {
+  const status = String(weixinLoginState.value.status || "").trim().toLowerCase();
+  if (weixinLoginState.value.connected) return true;
+  if (weixinRuntimeStatus.value?.connected) return true;
+  if (status === "confirmed" || status === "logged_in") return true;
+  if (!!String(weixinLoginState.value.accountId || "").trim()) return true;
+  if (!!persistedWeixinCredentials.value.token) return true;
+  return !!persistedWeixinCredentials.value.accountId;
+});
 
 const channelSnapshot = computed(() => {
   const ch = selectedChannel.value;
@@ -480,7 +611,6 @@ const channelSnapshot = computed(() => {
     enabled: ch.enabled,
     activateAssistant: ch.activateAssistant,
     receiveFiles: ch.receiveFiles,
-    allowSendFiles: ch.allowSendFiles,
     streamingSend: ch.streamingSend,
     showToolCalls: ch.showToolCalls,
     credentials: credStr,
@@ -489,36 +619,53 @@ const channelSnapshot = computed(() => {
 const lastSavedChannelSnapshot = ref(channelSnapshot.value);
 const channelDirty = computed(() => channelSnapshot.value !== lastSavedChannelSnapshot.value);
 
-const channelMap = computed(() => {
-  const map = new Map<string, RemoteImChannelConfig>();
-  for (const item of channels.value) map.set(item.id, item);
-  return map;
-});
-
-const groupedContacts = computed(() => {
-  const groups = new Map<string, { channelId: string; channelName: string; platformLabel: string; channelEnabled: boolean; contacts: RemoteImContact[] }>();
-  for (const item of contacts.value) {
-    const channel = channelMap.value.get(item.channelId);
-    const channelName = channel?.name || item.channelId;
-    const platformLabel = platformLabelOf(String(channel?.platform || item.platform));
-    const channelEnabled = channel?.enabled !== false;
-    if (!groups.has(item.channelId)) {
-      groups.set(item.channelId, {
-        channelId: item.channelId,
-        channelName,
-        platformLabel,
-        channelEnabled,
-        contacts: [],
-      });
-    }
-    groups.get(item.channelId)!.contacts.push(item);
-  }
-  return [...groups.values()];
-});
-
 const currentChannelContacts = computed(() => {
   if (!selectedChannelId.value) return [];
   return contacts.value.filter((c) => c.channelId === selectedChannelId.value);
+});
+const selectedContact = computed(() =>
+  currentChannelContacts.value.find((item) => item.id === selectedContactId.value) ?? null,
+);
+const contactModalTitle = computed(() => {
+  if (!selectedContact.value) return "-";
+  if (selectedContact.value.platform === "weixin_oc") return "微信联系人";
+  return contactDisplayName(selectedContact.value);
+});
+type ContactEditDraft = {
+  boundDepartmentId: string;
+  processingMode: "qa" | "continuous";
+  activationMode: RemoteImContact["activationMode"];
+  activationKeywordsText: string;
+  activationCooldownSeconds: number;
+  allowReceive: boolean;
+  allowSend: boolean;
+  allowSendFiles: boolean;
+};
+const contactDraft = ref<ContactEditDraft | null>(null);
+const contactDraftSnapshot = ref("");
+const contactDraftDirty = computed(() =>
+  !!contactDraft.value && JSON.stringify(contactDraft.value) !== contactDraftSnapshot.value,
+);
+const contactDraftRoutingHint = computed(() => {
+  if (!selectedContact.value || !contactDraft.value) return "";
+  return contactRoutingHint({
+    ...selectedContact.value,
+    boundDepartmentId: contactDraft.value.boundDepartmentId || undefined,
+  } as RemoteImContact);
+});
+const contactDraftProcessingHint = computed(() => {
+  if (!selectedContact.value || !contactDraft.value) return "";
+  return processingModeHint({
+    ...selectedContact.value,
+    processingMode: contactDraft.value.processingMode,
+  } as RemoteImContact);
+});
+const contactDraftActivationHint = computed(() => {
+  if (!selectedContact.value || !contactDraft.value) return "";
+  return contactActivationHint({
+    ...selectedContact.value,
+    activationMode: contactDraft.value.activationMode,
+  } as RemoteImContact);
 });
 
 const remoteImDepartmentOptions = computed(() =>
@@ -527,43 +674,30 @@ const remoteImDepartmentOptions = computed(() =>
     .map((dept) => ({ id: dept.id, name: dept.name || dept.id })),
 );
 
-const channelPageCount = computed(() =>
-  Math.max(1, Math.ceil(channels.value.length / CHANNELS_PAGE_SIZE)),
-);
-
-const pagedChannels = computed(() => {
-  const start = (channelPage.value - 1) * CHANNELS_PAGE_SIZE;
-  return channels.value.slice(start, start + CHANNELS_PAGE_SIZE);
-});
-
-const contactPageCount = computed(() =>
-  Math.max(1, Math.ceil(currentChannelContacts.value.length / CONTACTS_PAGE_SIZE)),
-);
-
-const pagedCurrentChannelContacts = computed(() => {
-  const start = (contactPage.value - 1) * CONTACTS_PAGE_SIZE;
-  return currentChannelContacts.value.slice(start, start + CONTACTS_PAGE_SIZE);
-});
-
-// 展开的联系人ID集合
-const expandedContactIds = ref<Set<string>>(new Set());
 const contactKeywordDrafts = ref<Record<string, string>>({});
 
-function toggleContactExpand(contactId: string) {
-  const newSet = new Set(expandedContactIds.value);
-  if (newSet.has(contactId)) {
-    newSet.delete(contactId);
-  } else {
-    newSet.add(contactId);
-  }
-  expandedContactIds.value = newSet;
+function buildContactDraftFromContact(item: RemoteImContact): ContactEditDraft {
+  return {
+    boundDepartmentId: String(item.boundDepartmentId || ""),
+    processingMode: normalizeProcessingMode(item.processingMode),
+    activationMode: normalizeActivationMode(item.activationMode || "never"),
+    activationKeywordsText: item.activationKeywords.join(", "),
+    activationCooldownSeconds: Math.max(0, Number(item.activationCooldownSeconds || 0)),
+    allowReceive: !!item.allowReceive,
+    allowSend: !!item.allowSend,
+    allowSendFiles: !!item.allowSendFiles,
+  };
 }
 
-function platformLabelOf(platform: string): string {
-  const value = String(platform || "").trim().toLowerCase();
-  if (value === "feishu") return "Feishu";
-  if (value === "dingtalk") return "DingTalk";
-  return "OneBot v11";
+function syncSelectedContactDraft() {
+  if (!selectedContact.value) {
+    contactDraft.value = null;
+    contactDraftSnapshot.value = "";
+    return;
+  }
+  const draft = buildContactDraftFromContact(selectedContact.value);
+  contactDraft.value = draft;
+  contactDraftSnapshot.value = JSON.stringify(draft);
 }
 
 function asNonEmptyString(value: unknown): string {
@@ -585,6 +719,17 @@ function validateChannelBeforeEnable(channel: RemoteImChannelConfig): string {
     if (!appId || !appSecret) {
       return t("config.remoteIm.enableNeedFeishuCredentials");
     }
+  }
+  if (channel.platform === "weixin_oc") {
+    const baseUrl = asNonEmptyString(creds.baseUrl) || "https://ilinkai.weixin.qq.com";
+    channel.credentials = {
+      ...creds,
+      baseUrl,
+      botType: WEIXIN_OC_BOT_TYPE,
+      qrPollInterval: WEIXIN_OC_QR_POLL_INTERVAL,
+      longPollTimeoutMs: WEIXIN_OC_LONG_POLL_TIMEOUT_MS,
+      apiTimeoutMs: WEIXIN_OC_API_TIMEOUT_MS,
+    };
   }
   return "";
 }
@@ -610,12 +755,14 @@ function addChannel() {
   selectedChannelId.value = ch.id;
 }
 
-function removeSelectedChannel() {
-  const idx = channels.value.findIndex((ch) => ch.id === selectedChannelId.value);
+function removeChannelById(channelId: string) {
+  const idx = channels.value.findIndex((ch) => ch.id === channelId);
   if (idx >= 0) {
     props.config.remoteImChannels.splice(idx, 1);
-    const nextIdx = Math.min(idx, channels.value.length - 1);
-    selectedChannelId.value = nextIdx >= 0 ? channels.value[nextIdx].id : "";
+    if (selectedChannelId.value === channelId) {
+      const nextIdx = Math.min(idx, channels.value.length - 1);
+      selectedChannelId.value = nextIdx >= 0 ? channels.value[nextIdx].id : "";
+    }
   }
 }
 
@@ -661,6 +808,21 @@ function loadDingtalkCredentials(channel: RemoteImChannelConfig) {
   });
 }
 
+function loadWeixinCredentials(channel: RemoteImChannelConfig) {
+  suppressCredentialSync.value = true;
+  const creds = channel.credentials || {};
+  weixinCredentials.value = {
+    baseUrl: String(creds.baseUrl || "https://ilinkai.weixin.qq.com"),
+    botType: WEIXIN_OC_BOT_TYPE,
+    qrPollInterval: WEIXIN_OC_QR_POLL_INTERVAL,
+    longPollTimeoutMs: WEIXIN_OC_LONG_POLL_TIMEOUT_MS,
+    apiTimeoutMs: WEIXIN_OC_API_TIMEOUT_MS,
+  };
+  nextTick(() => {
+    suppressCredentialSync.value = false;
+  });
+}
+
 function resetNapcatCredentials() {
   if (!selectedChannel.value) return;
   loadNapcatCredentials(selectedChannel.value);
@@ -681,21 +843,29 @@ async function saveChannels() {
       if (channels.value.some((ch) => ch.id === savedId)) {
         selectedChannelId.value = savedId;
       }
-      if (selectedChannel.value && selectedChannel.value.platform === "onebot_v11") {
-        loadNapcatCredentials(selectedChannel.value);
-        try {
-          const status = await invokeTauri<ChannelConnectionStatus>(
-            "remote_im_restart_channel",
-            { channelId: selectedChannel.value.id },
-          );
-          channelStatus.value = status;
-          channelRuntimeStates.value = {
-            ...channelRuntimeStates.value,
-            [selectedChannel.value.id]: status,
-          };
-        } catch (err) {
-          console.warn("[RemoteImTab] restart channel failed:", err);
-          void refreshChannelStatus();
+      if (selectedChannel.value) {
+        if (selectedChannel.value.platform === "onebot_v11") {
+          loadNapcatCredentials(selectedChannel.value);
+        } else if (selectedChannel.value.platform === "dingtalk") {
+          loadDingtalkCredentials(selectedChannel.value);
+        } else if (selectedChannel.value.platform === "weixin_oc") {
+          loadWeixinCredentials(selectedChannel.value);
+        }
+        if (selectedChannel.value.platform === "onebot_v11" || selectedChannel.value.platform === "dingtalk" || selectedChannel.value.platform === "weixin_oc") {
+          try {
+            const status = await invokeTauri<ChannelConnectionStatus>(
+              "remote_im_restart_channel",
+              { channelId: selectedChannel.value.id },
+            );
+            channelStatus.value = status;
+            channelRuntimeStates.value = {
+              ...channelRuntimeStates.value,
+              [selectedChannel.value.id]: status,
+            };
+          } catch (err) {
+            console.warn("[RemoteImTab] restart channel failed:", err);
+            void refreshChannelStatus();
+          }
         }
       }
       await nextTick();
@@ -708,6 +878,7 @@ async function saveChannels() {
 
 async function toggleChannelEnabled(channel: RemoteImChannelConfig, enabled: boolean) {
   const previousEnabled = channel.enabled;
+  props.setStatusAction(`正在${enabled ? "启用" : "停用"}渠道：${channel.name || channel.id}`);
   if (enabled) {
     const validationError = validateChannelBeforeEnable(channel);
     if (validationError) {
@@ -720,7 +891,8 @@ async function toggleChannelEnabled(channel: RemoteImChannelConfig, enabled: boo
   try {
     const result = await Promise.resolve(props.saveConfigAction());
     if (result) {
-      if (channel.platform === "onebot_v11" || channel.platform === "dingtalk") {
+      props.setStatusAction(enabled ? "渠道已启用" : "渠道已停用");
+      if (channel.platform === "onebot_v11" || channel.platform === "dingtalk" || channel.platform === "weixin_oc") {
         try {
           const status = await invokeTauri<ChannelConnectionStatus>(
             "remote_im_restart_channel",
@@ -733,6 +905,7 @@ async function toggleChannelEnabled(channel: RemoteImChannelConfig, enabled: boo
           };
         } catch (err) {
           console.warn("[RemoteImTab] restart channel failed:", err);
+          props.setStatusAction(`渠道重启失败，开关未完全生效: ${String(err)}`);
           void refreshChannelStatus();
         }
       }
@@ -740,6 +913,7 @@ async function toggleChannelEnabled(channel: RemoteImChannelConfig, enabled: boo
       lastSavedChannelSnapshot.value = channelSnapshot.value;
     } else {
       channel.enabled = previousEnabled;
+      props.setStatusAction("保存失败，渠道状态未生效。");
     }
   } catch (error) {
     channel.enabled = previousEnabled;
@@ -782,53 +956,18 @@ async function toggleContactAllowReceive(item: RemoteImContact, enabled: boolean
   }
 }
 
-function normalizeActivationMode(value: string): RemoteImContact["activationMode"] {
-  const mode = String(value || "").trim().toLowerCase();
-  if (mode === "always" || mode === "keyword") return mode;
-  if (mode === "never") return "never";
-  return "never";
-}
-
-function normalizeProcessingMode(value?: string): "qa" | "continuous" {
-  return value === "qa" ? "qa" : "continuous";
-}
-
-function isMainDepartmentContact(item: RemoteImContact): boolean {
-  return !String(item.boundDepartmentId || "").trim();
-}
-
-function contactRouteLabel(item: RemoteImContact): string {
-  return isMainDepartmentContact(item) ? "主会话" : "联系人独占会话";
-}
-
-function contactRoutingHint(item: RemoteImContact): string {
-  const processingMode = normalizeProcessingMode(item.processingMode);
-  const routeLabel = isMainDepartmentContact(item) ? "当前走主会话" : "当前走联系人独占会话";
-  const processingLabel = processingMode === "qa" ? "无上下文" : "有上下文";
-  return `${routeLabel} · ${processingLabel}`;
-}
-
-function contactActivationHint(item: RemoteImContact): string {
-  const mode = normalizeActivationMode(item.activationMode);
-  if (mode === "always") {
-    return "始终回复：任何时候都回复。";
+async function toggleContactAllowSendFiles(item: RemoteImContact, enabled: boolean) {
+  const oldValue = item.allowSendFiles;
+  item.allowSendFiles = enabled;
+  try {
+    await invokeTauri<RemoteImContact>("remote_im_update_contact_allow_send_files", {
+      input: { contactId: item.id, allowSendFiles: enabled },
+    });
+    await refreshContacts();
+  } catch (error) {
+    item.allowSendFiles = oldValue;
+    props.setStatusAction(t("status.saveConfigFailed", { err: String(error) }));
   }
-  if (mode === "keyword") {
-    return "关键字触发：消息命中关键字时回复。";
-  }
-  return "不回复：任何时候都不回复。";
-}
-
-function parseActivationKeywords(raw: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const item of String(raw || "").split(/[,\n，]/)) {
-    const keyword = item.trim();
-    if (!keyword || seen.has(keyword)) continue;
-    seen.add(keyword);
-    out.push(keyword);
-  }
-  return out;
 }
 
 async function saveContactActivation(
@@ -923,6 +1062,192 @@ function onContactActivationKeywordsBlur(item: RemoteImContact) {
   void saveContactActivation(item, { activationKeywords: keywords });
 }
 
+function resetContactDraft() {
+  syncSelectedContactDraft();
+}
+
+async function saveContactDraft() {
+  if (!selectedContact.value || !contactDraft.value || !contactDraftDirty.value || contactSaving.value) return;
+  const item = selectedContact.value;
+  const draft = contactDraft.value;
+  contactSaving.value = true;
+  try {
+    const nextDepartmentId = String(draft.boundDepartmentId || "").trim();
+    const currentDepartmentId = String(item.boundDepartmentId || "").trim();
+    if (nextDepartmentId !== currentDepartmentId) {
+      await onContactDepartmentChange(item, nextDepartmentId);
+    }
+
+    const nextProcessingMode = normalizeProcessingMode(draft.processingMode);
+    if (nextProcessingMode !== normalizeProcessingMode(item.processingMode)) {
+      await onContactProcessingModeChange(item, nextProcessingMode);
+    }
+
+    const nextKeywords = parseActivationKeywords(draft.activationKeywordsText);
+    const currentKeywords = Array.isArray(item.activationKeywords) ? item.activationKeywords : [];
+    const keywordsChanged = JSON.stringify(nextKeywords) !== JSON.stringify(currentKeywords);
+    const nextActivationMode = normalizeActivationMode(draft.activationMode);
+    const modeChanged = nextActivationMode !== normalizeActivationMode(item.activationMode || "never");
+    const nextCooldown = Math.max(0, Math.floor(Number(draft.activationCooldownSeconds) || 0));
+    const cooldownChanged = nextCooldown !== Math.max(0, Math.floor(Number(item.activationCooldownSeconds || 0)));
+    if (modeChanged || keywordsChanged || cooldownChanged) {
+      await saveContactActivation(item, {
+        activationMode: nextActivationMode,
+        activationKeywords: nextKeywords,
+        activationCooldownSeconds: nextCooldown,
+      });
+    }
+
+    if (!!draft.allowReceive !== !!item.allowReceive) {
+      await toggleContactAllowReceive(item, !!draft.allowReceive);
+    }
+    if (!!draft.allowSend !== !!item.allowSend) {
+      await toggleContactAllowSend(item, !!draft.allowSend);
+    }
+    if (!!draft.allowSendFiles !== !!item.allowSendFiles) {
+      await toggleContactAllowSendFiles(item, !!draft.allowSendFiles);
+    }
+    await refreshContacts();
+    syncSelectedContactDraft();
+  } finally {
+    contactSaving.value = false;
+  }
+}
+
+async function startWeixinLogin() {
+  if (!selectedChannel.value || selectedChannel.value.platform !== "weixin_oc") return;
+  weixinLoginBusy.value = true;
+  try {
+    const result = await invokeTauri<WeixinLoginStatus | {
+      channelId: string;
+      sessionKey: string;
+      qrcode: string;
+      qrcodeImgContent: string;
+      status: string;
+      message: string;
+    }>("remote_im_weixin_oc_start_login", {
+      input: {
+        channelId: selectedChannel.value.id,
+        forceRefresh: true,
+      },
+    });
+    weixinLoginStates.value = {
+      ...weixinLoginStates.value,
+      [selectedChannel.value.id]: {
+        channelId: result.channelId,
+        connected: false,
+        status: result.status,
+        message: result.message,
+        sessionKey: result.sessionKey,
+        qrcode: result.qrcode,
+        qrcodeImgContent: result.qrcodeImgContent,
+        accountId: "",
+        userId: "",
+        baseUrl: "",
+        lastError: "",
+      },
+    };
+    if (weixinLoginPollTimer) clearInterval(weixinLoginPollTimer);
+    weixinLoginPollTimer = setInterval(() => {
+      void pollWeixinLoginStatus();
+    }, 2500);
+  } catch (error) {
+    props.setStatusAction(`个人微信扫码登录失败: ${String(error)}`);
+  } finally {
+    weixinLoginBusy.value = false;
+  }
+}
+
+async function onWeixinLoginButtonClick() {
+  if (weixinLoginBusy.value) return;
+  if (isWeixinLoggedIn.value) {
+    await logoutWeixin();
+  }
+  await startWeixinLogin();
+}
+
+async function pollWeixinLoginStatus() {
+  if (!selectedChannel.value || selectedChannel.value.platform !== "weixin_oc") return;
+  const channelId = selectedChannel.value.id;
+  try {
+    const result = await invokeTauri<WeixinLoginStatus>("remote_im_weixin_oc_get_login_status", {
+      input: { channelId },
+    });
+    weixinLoginStates.value = {
+      ...weixinLoginStates.value,
+      [channelId]: result,
+    };
+    if (result.connected || result.status === "expired") {
+      if (weixinLoginPollTimer) {
+        clearInterval(weixinLoginPollTimer);
+        weixinLoginPollTimer = null;
+      }
+      if (result.connected) {
+        await refreshChannelStatus();
+        await refreshContacts();
+      }
+    }
+  } catch (error) {
+    const errMsg = `个人微信登录状态查询失败: ${String(error)}`;
+    weixinLoginStates.value = {
+      ...weixinLoginStates.value,
+      [channelId]: {
+        ...(weixinLoginStates.value[channelId] || {
+          channelId,
+          connected: false,
+          status: "wait",
+          message: "",
+          sessionKey: "",
+          qrcode: "",
+          qrcodeImgContent: "",
+          accountId: "",
+          userId: "",
+          baseUrl: "",
+          lastError: "",
+        }),
+        message: errMsg,
+        lastError: errMsg,
+      },
+    };
+    props.setStatusAction(errMsg);
+  }
+}
+
+async function syncWeixinContacts() {
+  if (!selectedChannel.value || selectedChannel.value.platform !== "weixin_oc") return;
+  try {
+    const result = await invokeTauri<{ message: string }>("remote_im_weixin_oc_sync_contacts", {
+      input: { channelId: selectedChannel.value.id },
+    });
+    props.setStatusAction(result.message);
+    await refreshContacts();
+  } catch (error) {
+    props.setStatusAction(`个人微信联系人同步失败: ${String(error)}`);
+  }
+}
+
+async function logoutWeixin() {
+  if (!selectedChannel.value || selectedChannel.value.platform !== "weixin_oc") return;
+  try {
+    await invokeTauri<boolean>("remote_im_weixin_oc_logout", {
+      input: { channelId: selectedChannel.value.id },
+    });
+    weixinLoginStates.value = {
+      ...weixinLoginStates.value,
+      [selectedChannel.value.id]: {
+        channelId: selectedChannel.value.id,
+        connected: false,
+        status: "logged_out",
+        message: "已退出登录",
+      },
+    };
+    await refreshChannelStatus();
+    props.setStatusAction("个人微信已退出登录。");
+  } catch (error) {
+    props.setStatusAction(`个人微信退出登录失败: ${String(error)}`);
+  }
+}
+
 async function refreshContacts() {
   contactsLoading.value = true;
   contactsError.value = "";
@@ -933,7 +1258,12 @@ async function refreshContacts() {
       item.activationKeywords = Array.isArray(item.activationKeywords) ? item.activationKeywords : [];
       item.activationCooldownSeconds = Math.max(0, Number(item.activationCooldownSeconds || 0));
       item.processingMode = normalizeProcessingMode(item.processingMode);
+      item.allowSendFiles = !!item.allowSendFiles;
       contactKeywordDrafts.value[item.id] = item.activationKeywords.join(", ");
+    }
+    if (selectedContactId.value && !contacts.value.some((item) => item.id === selectedContactId.value)) {
+      contactConfigModalOpen.value = false;
+      selectedContactId.value = "";
     }
   } catch (error) {
     contactsError.value = String(error);
@@ -950,48 +1280,22 @@ function contactDisplayName(item: RemoteImContact): string {
   return item.remoteContactId;
 }
 
-async function deleteContact(contactId: string) {
-  try {
-    await invokeTauri<boolean>("remote_im_delete_contact", { input: { contactId } });
-    await refreshContacts();
-  } catch (error) {
-    contactsError.value = String(error);
+function contactSafeDisplayName(item: RemoteImContact): string {
+  if (item.platform === "weixin_oc") {
+    const remark = String(item.remarkName || "").trim();
+    if (remark) return remark;
+    const remoteName = String(item.remoteContactName || "").trim();
+    if (remoteName && !remoteName.includes("@")) return remoteName;
+    return "微信联系人";
   }
+  return contactDisplayName(item);
 }
 
-async function saveRemark(contactId: string, remarkName: string) {
-  try {
-    await invokeTauri<RemoteImContact>("remote_im_update_contact_remark", {
-      input: {
-        contactId,
-        remarkName,
-      },
-    });
-    await refreshContacts();
-  } catch (error) {
-    contactsError.value = String(error);
+function contactSecondaryText(item: RemoteImContact): string {
+  if (item.platform === "weixin_oc") {
+    return item.remoteContactType === "group" ? "微信群联系人" : "微信个人联系人";
   }
-}
-
-function onRemarkChange(contactId: string, event: Event) {
-  const value = (event.target as HTMLInputElement).value || "";
-  void saveRemark(contactId, value.trim());
-}
-
-function formatRelativeTime(raw?: string): string {
-  const now = Date.now();
-  const ts = Date.parse(String(raw || ""));
-  if (!Number.isFinite(ts)) return "-";
-  const diff = Math.max(0, now - ts);
-  const minute = 60 * 1000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (diff < minute) return t("config.remoteIm.justNow");
-  if (diff < hour) return t("config.remoteIm.minutesAgo", { count: Math.floor(diff / minute) });
-  if (diff < day) return t("config.remoteIm.hoursAgo", { count: Math.floor(diff / hour) });
-  if (diff < 7 * day) return t("config.remoteIm.daysAgo", { count: Math.floor(diff / day) });
-  const d = new Date(ts);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+  return item.remoteContactId;
 }
 
 async function refreshChannelStatus() {
@@ -1043,12 +1347,31 @@ async function refreshChannelStatusById(channelId: string) {
 
 async function refreshAllChannelStatuses() {
   const jobs = channels.value
-    .filter((item) => item.platform === "onebot_v11" || item.platform === "dingtalk")
+    .filter((item) => item.platform === "onebot_v11" || item.platform === "dingtalk" || item.platform === "weixin_oc")
     .map((item) => refreshChannelStatusById(item.id));
   await Promise.all(jobs);
 }
 
 function channelStatusPreview(channel: RemoteImChannelConfig): string {
+  if (channel.platform === "weixin_oc") {
+    const status = channelRuntimeStates.value[channel.id];
+    if (!status) return "未初始化";
+    if (status.connected) return "已连接";
+    if (!channel.enabled) {
+      if (status.statusText === "confirmed" || status.statusText === "logged_in") {
+        return "已登录未启用";
+      }
+      if (status.accountId) return "已登录未启用";
+      if (status.statusText === "need_login") return "未启用（待扫码登录）";
+      return t("config.remoteIm.disabledState");
+    }
+    if (status.statusText === "need_login") return "待扫码登录";
+    if (status.statusText === "confirmed" || status.statusText === "logged_in") {
+      return "已登录";
+    }
+    if (status.statusText === "wait" || status.statusText === "scaned") return "等待扫码确认";
+    return status.lastError || status.statusText || "未连接";
+  }
   if (channel.platform === "dingtalk") {
     const status = channelRuntimeStates.value[channel.id];
     if (!channel.enabled) return t("config.remoteIm.disabledState");
@@ -1076,9 +1399,10 @@ function channelStatusPreview(channel: RemoteImChannelConfig): string {
 
 function channelListStatusBadgeText(channel: RemoteImChannelConfig): string {
   if (!channel.enabled) return t("config.remoteIm.disabledState");
-  if (channel.platform === "onebot_v11" || channel.platform === "dingtalk") {
+  if (channel.platform === "onebot_v11" || channel.platform === "dingtalk" || channel.platform === "weixin_oc") {
     const status = channelRuntimeStates.value[channel.id];
     if (status?.connected) return t("config.remoteIm.connected");
+    if (channel.platform === "weixin_oc" && status?.statusText === "need_login") return "待登录";
     return t("config.remoteIm.enabledState");
   }
   return t("config.remoteIm.enabledState");
@@ -1086,8 +1410,9 @@ function channelListStatusBadgeText(channel: RemoteImChannelConfig): string {
 
 function channelListStatusBadgeClass(channel: RemoteImChannelConfig): string {
   if (!channel.enabled) return "badge-ghost";
-  if (channel.platform === "onebot_v11" || channel.platform === "dingtalk") {
+  if (channel.platform === "onebot_v11" || channel.platform === "dingtalk" || channel.platform === "weixin_oc") {
     const status = channelRuntimeStates.value[channel.id];
+    if (channel.platform === "weixin_oc" && status?.statusText === "need_login") return "badge-warning";
     return status?.connected ? "badge-success" : "badge-warning";
   }
   return "badge-success";
@@ -1117,17 +1442,29 @@ function closeChannelLogsModal() {
   channelLogsModalOpen.value = false;
 }
 
-function formatLogTime(timestamp: string): string {
-  const d = new Date(timestamp);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+function openChannelConfigModal(channelId: string) {
+  selectedChannelId.value = channelId;
+  channelConfigModalOpen.value = true;
+}
+
+function closeChannelConfigModal() {
+  channelConfigModalOpen.value = false;
+}
+
+function openContactConfigModal(contactId: string) {
+  selectedContactId.value = contactId;
+  syncSelectedContactDraft();
+  contactConfigModalOpen.value = true;
+}
+
+function closeContactConfigModal() {
+  contactConfigModalOpen.value = false;
+  syncSelectedContactDraft();
 }
 
 watch(
   channels,
   (list) => {
-    if (channelPage.value > channelPageCount.value) {
-      channelPage.value = channelPageCount.value;
-    }
     if (list.length > 0 && !list.some((ch) => ch.id === selectedChannelId.value)) {
       selectedChannelId.value = list[0].id;
     }
@@ -1141,11 +1478,6 @@ watch(
 );
 
 watch(selectedChannelId, () => {
-  contactPage.value = 1;
-  const selectedIndex = channels.value.findIndex((item) => item.id === selectedChannelId.value);
-  if (selectedIndex >= 0) {
-    channelPage.value = Math.floor(selectedIndex / CHANNELS_PAGE_SIZE) + 1;
-  }
   if (selectedChannel.value) {
     credentialDrafts.value[selectedChannel.value.id] = JSON.stringify(
       selectedChannel.value.credentials || {}, null, 2,
@@ -1158,6 +1490,10 @@ watch(selectedChannelId, () => {
       loadDingtalkCredentials(selectedChannel.value);
       channelStatus.value = channelRuntimeStates.value[selectedChannel.value.id] ?? null;
       void refreshChannelStatus();
+    } else if (selectedChannel.value.platform === "weixin_oc") {
+      loadWeixinCredentials(selectedChannel.value);
+      channelStatus.value = channelRuntimeStates.value[selectedChannel.value.id] ?? null;
+      void refreshChannelStatus();
     } else {
       channelStatus.value = null;
     }
@@ -1168,12 +1504,6 @@ watch(selectedChannelId, () => {
     }
   }
   lastSavedChannelSnapshot.value = channelSnapshot.value;
-});
-
-watch(currentChannelContacts, () => {
-  if (contactPage.value > contactPageCount.value) {
-    contactPage.value = contactPageCount.value;
-  }
 });
 
 watch(napcatCredentials, () => {
@@ -1199,6 +1529,21 @@ watch(dingtalkCredentials, () => {
   }
 }, { deep: true });
 
+watch(weixinCredentials, () => {
+  if (suppressCredentialSync.value) return;
+  if (selectedChannel.value && selectedChannel.value.platform === "weixin_oc") {
+    const current = selectedChannel.value.credentials || {};
+    selectedChannel.value.credentials = {
+      ...current,
+      baseUrl: weixinCredentials.value.baseUrl || "https://ilinkai.weixin.qq.com",
+      botType: WEIXIN_OC_BOT_TYPE,
+      qrPollInterval: WEIXIN_OC_QR_POLL_INTERVAL,
+      longPollTimeoutMs: WEIXIN_OC_LONG_POLL_TIMEOUT_MS,
+      apiTimeoutMs: WEIXIN_OC_API_TIMEOUT_MS,
+    };
+  }
+}, { deep: true });
+
 onMounted(() => {
   if (channels.value.length > 0 && !selectedChannelId.value) {
     selectedChannelId.value = channels.value[0].id;
@@ -1216,6 +1561,10 @@ onMounted(() => {
       void refreshChannelStatus();
     } else if (selectedChannel.value.platform === "dingtalk") {
       loadDingtalkCredentials(selectedChannel.value);
+      channelStatus.value = channelRuntimeStates.value[selectedChannel.value.id] ?? null;
+      void refreshChannelStatus();
+    } else if (selectedChannel.value.platform === "weixin_oc") {
+      loadWeixinCredentials(selectedChannel.value);
       channelStatus.value = channelRuntimeStates.value[selectedChannel.value.id] ?? null;
       void refreshChannelStatus();
     }
@@ -1236,6 +1585,10 @@ onUnmounted(() => {
   if (channelStatusTimer) {
     clearInterval(channelStatusTimer);
     channelStatusTimer = null;
+  }
+  if (weixinLoginPollTimer) {
+    clearInterval(weixinLoginPollTimer);
+    weixinLoginPollTimer = null;
   }
 });
 </script>

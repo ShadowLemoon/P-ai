@@ -2,6 +2,11 @@
 
 ## 未发布
 
+- 新增（remote-im-weixin-oc-login-and-ui-polish）：完成个人微信扫码接入与配置页收口
+  - 远程 IM 新增个人微信渠道接入，打通扫码登录、长轮询收发与渠道重启后的运行态恢复
+  - 配置页改为手动保存流，补齐渠道/联系人设置弹窗、联系人发送文件权限与日志查看等收尾交互
+  - 个人微信相关界面不再向用户暴露微信侧标识、联系人原始 ID 与扫码原始链接，统一改为安全状态文案
+
 - 修复（responses-tool-id-replay-and-remote-im-platform-fallback）：修正 Responses 工具历史回放 ID，并放宽远程 IM 平台值读取
   - OpenAI Responses 工具历史回放改为严格区分 `id` 与 `call_id`，旧式缺少 `call_id` 的工具历史不再伪装为结构化 function call，避免因把 `call_*` 当作 `fc_*` 发送而触发 400
   - 远程 IM 渠道 `platform` 反序列化改为宽松模式，未知值统一按 `onebot_v11` 处理，避免单个旧值或手写值导致整份 `app_config.toml` 解析失败

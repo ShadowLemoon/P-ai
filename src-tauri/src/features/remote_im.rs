@@ -89,6 +89,13 @@ struct RemoteImContactAllowSendUpdateInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RemoteImContactAllowSendFilesUpdateInput {
+    contact_id: String,
+    allow_send_files: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RemoteImContactAllowReceiveUpdateInput {
     contact_id: String,
     allow_receive: bool,
@@ -222,6 +229,7 @@ fn remote_im_upsert_contact_for_inbound(
             .to_string(),
         remark_name: String::new(),
         allow_send: false,
+        allow_send_files: false,
         allow_receive: default_allow_receive,
         activation_mode: "never".to_string(),
         activation_keywords: Vec::new(),
@@ -697,6 +705,28 @@ fn remote_im_update_contact_allow_send(
         .find(|item| item.id == input.contact_id)
         .ok_or_else(|| format!("未找到远程联系人：{}", input.contact_id))?;
     contact.allow_send = input.allow_send;
+    let output = contact.clone();
+    state_write_app_data_cached(&state, &data)?;
+    drop(guard);
+    Ok(output)
+}
+
+#[tauri::command]
+fn remote_im_update_contact_allow_send_files(
+    input: RemoteImContactAllowSendFilesUpdateInput,
+    state: State<'_, AppState>,
+) -> Result<RemoteImContact, String> {
+    let guard = state
+        .state_lock
+        .lock()
+        .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
+    let mut data = state_read_app_data_cached(&state)?;
+    let contact = data
+        .remote_im_contacts
+        .iter_mut()
+        .find(|item| item.id == input.contact_id)
+        .ok_or_else(|| format!("未找到远程联系人：{}", input.contact_id))?;
+    contact.allow_send_files = input.allow_send_files;
     let output = contact.clone();
     state_write_app_data_cached(&state, &data)?;
     drop(guard);

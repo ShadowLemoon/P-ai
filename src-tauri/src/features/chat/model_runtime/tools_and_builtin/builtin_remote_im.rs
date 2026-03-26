@@ -226,11 +226,6 @@ async fn builtin_remote_im_send(
     if !channel.enabled {
         return Err(format!("远程IM渠道未启用: {channel_id}"));
     }
-    if !file_paths.is_empty() && !channel.allow_send_files {
-        return Err(format!(
-            "远程IM渠道未开启文件发送: channel_id={channel_id}"
-        ));
-    }
     let data = state_read_app_data_cached(state)?;
     let contact = data
         .remote_im_contacts
@@ -242,6 +237,12 @@ async fn builtin_remote_im_send(
     if !contact.allow_send {
         return Err(format!(
             "用户已禁止向该联系人发送消息: channel_id={}, contact_id={}",
+            channel_id, contact_id_input
+        ));
+    }
+    if !file_paths.is_empty() && !contact.allow_send_files {
+        return Err(format!(
+            "用户已禁止向该联系人发送文件: channel_id={}, contact_id={}",
             channel_id, contact_id_input
         ));
     }

@@ -99,39 +99,95 @@ struct TerminalWorkspaceResolved {
     path: PathBuf,
 }
 
-fn ensure_default_shell_workspace_in_config(config: &mut AppConfig, state: &AppState) {
+fn terminal_paths_match(left: &Path, right: &Path) -> bool {
+    if let (Ok(left_canonical), Ok(right_canonical)) = (left.canonicalize(), right.canonicalize()) {
+        return normalize_terminal_path_for_compare(&left_canonical)
+            == normalize_terminal_path_for_compare(&right_canonical);
+    }
+    normalize_terminal_path_for_compare(left) == normalize_terminal_path_for_compare(right)
+}
+
+fn legacy_default_shell_workspace_path() -> Option<PathBuf> {
+    ProjectDirs::from("ai", "easycall", "easy-call-ai").map(|dirs| {
+        dirs.config_dir()
+            .parent()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| dirs.config_dir().to_path_buf())
+            .join("llm-workspace")
+    })
+}
+
+fn ensure_default_shell_workspace_in_config(config: &mut AppConfig, state: &AppState) -> bool {
     let default_path = terminal_path_for_user(&state.llm_workspace_path);
-    let default_canonical = PathBuf::from(&default_path).canonicalize().ok();
-    for workspace in &mut config.shell_workspaces {
+    let default_path_buf = PathBuf::from(&default_path);
+    let legacy_default_path = legacy_default_shell_workspace_path();
+
+    let match_default_index = |workspace: &ShellWorkspaceConfig| {
         let candidate = PathBuf::from(workspace.path.trim());
-        let matches_default = if let (Some(default_dir), Ok(candidate_dir)) =
-            (default_canonical.as_ref(), candidate.canonicalize())
-        {
-            normalize_terminal_path_for_compare(default_dir)
-                == normalize_terminal_path_for_compare(&candidate_dir)
-        } else {
-            normalize_terminal_path_for_compare(&candidate)
-                == normalize_terminal_path_for_compare(&PathBuf::from(&default_path))
-        };
-        if matches_default {
-            workspace.built_in = true;
-            if workspace.name.trim().is_empty() {
-                workspace.name = "默认工作空间".to_string();
-            }
-            return;
-        }
+        terminal_paths_match(&candidate, &default_path_buf)
+    };
+
+    let target_index = config
+        .shell_workspaces
+        .iter()
+        .position(|workspace| workspace.built_in)
+        .or_else(|| {
+            config
+                .shell_workspaces
+                .iter()
+                .position(match_default_index)
+        });
+
+    let Some(target_index) = target_index else {
+        config.shell_workspaces.insert(
+            0,
+            ShellWorkspaceConfig {
+                name: "默认工作空间".to_string(),
+                path: default_path,
+                built_in: true,
+            },
+        );
+        return true;
+    };
+
+    let moved_position = target_index != 0;
+    let cleared_other_built_ins = config
+        .shell_workspaces
+        .iter()
+        .enumerate()
+        .any(|(index, workspace)| index != target_index && workspace.built_in);
+    let mut target = config.shell_workspaces.remove(target_index);
+    let previous_name = target.name.trim().to_string();
+    let previous_path = target.path.trim().to_string();
+    let previous_built_in = target.built_in;
+    if target.name.trim().is_empty() {
+        target.name = "默认工作空间".to_string();
     }
-    if config.shell_workspaces.iter().any(|w| w.built_in) {
-        return;
+    let previous_path_buf = PathBuf::from(&previous_path);
+    if target.built_in
+        && legacy_default_path
+            .as_deref()
+            .map(|legacy_path| terminal_paths_match(&previous_path_buf, legacy_path))
+            .unwrap_or(false)
+        && !terminal_paths_match(&previous_path_buf, &default_path_buf)
+    {
+        target.path = default_path.clone();
+        runtime_log_info(format!(
+            "[终端工作空间迁移] 内置工作空间路径已更新: '{}' -> '{}'",
+            previous_path, target.path
+        ));
     }
-    config.shell_workspaces.insert(
-        0,
-        ShellWorkspaceConfig {
-            name: "默认工作空间".to_string(),
-            path: default_path,
-            built_in: true,
-        },
-    );
+    target.built_in = true;
+    for workspace in &mut config.shell_workspaces {
+        workspace.built_in = false;
+    }
+    config.shell_workspaces.insert(0, target);
+    let current = &config.shell_workspaces[0];
+    moved_position
+        || cleared_other_built_ins
+        || previous_built_in != current.built_in
+        || previous_name != current.name.trim()
+        || !terminal_paths_match(&previous_path_buf, &PathBuf::from(current.path.trim()))
 }
 
 fn terminal_allowed_workspaces_canonical(
@@ -139,7 +195,7 @@ fn terminal_allowed_workspaces_canonical(
 ) -> Result<Vec<TerminalWorkspaceResolved>, String> {
     let mut config = read_config(&state.config_path)?;
     normalize_app_config(&mut config);
-    ensure_default_shell_workspace_in_config(&mut config, state);
+    let _ = ensure_default_shell_workspace_in_config(&mut config, state);
     let mut out = Vec::<TerminalWorkspaceResolved>::new();
     let mut seen_names = std::collections::HashSet::<String>::new();
     for raw in &config.shell_workspaces {
@@ -323,4 +379,111 @@ fn terminal_normalize_for_access_check(path: &Path) -> PathBuf {
         }
     }
     path.to_path_buf()
+}
+
+#[cfg(test)]
+mod terminal_workspace_tests {
+    use super::*;
+    use std::collections::{HashMap, HashSet, VecDeque};
+    use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
+
+    fn build_test_state(llm_workspace_path: PathBuf) -> AppState {
+        let terminal_shell = detect_default_terminal_shell();
+        AppState {
+            app_handle: Arc::new(Mutex::new(None)),
+            config_path: llm_workspace_path.join("app_config.toml"),
+            data_path: llm_workspace_path.join("app_data.json"),
+            llm_workspace_path,
+            terminal_shell: terminal_shell.clone(),
+            terminal_shell_candidates: vec![terminal_shell],
+            state_lock: Arc::new(Mutex::new(())),
+            cached_config: Arc::new(Mutex::new(None)),
+            cached_config_mtime: Arc::new(Mutex::new(None)),
+            cached_app_data: Arc::new(Mutex::new(None)),
+            cached_app_data_mtime: Arc::new(Mutex::new(None)),
+            last_panic_snapshot: Arc::new(Mutex::new(None)),
+            inflight_chat_abort_handles: Arc::new(Mutex::new(HashMap::new())),
+            inflight_tool_abort_handles: Arc::new(Mutex::new(HashMap::new())),
+            terminal_session_roots: Arc::new(Mutex::new(HashMap::new())),
+            terminal_live_sessions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+            terminal_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+            llm_round_logs: Arc::new(Mutex::new(VecDeque::new())),
+            task_dispatch_queue: Arc::new(Mutex::new(VecDeque::new())),
+            conversation_runtime_slots: Arc::new(Mutex::new(HashMap::new())),
+            conversation_processing_claims: Arc::new(Mutex::new(HashSet::new())),
+            pending_chat_result_senders: Arc::new(Mutex::new(HashMap::new())),
+            pending_chat_delta_channels: Arc::new(Mutex::new(HashMap::new())),
+            active_chat_view_bindings: Arc::new(Mutex::new(HashMap::new())),
+            dequeue_lock: Arc::new(Mutex::new(())),
+            delegate_runtime_threads: Arc::new(Mutex::new(HashMap::new())),
+            delegate_recent_threads: Arc::new(Mutex::new(VecDeque::new())),
+            provider_streaming_disabled_keys: Arc::new(Mutex::new(HashSet::new())),
+            preferred_release_source: Arc::new(Mutex::new(String::new())),
+        }
+    }
+
+    #[test]
+    fn ensure_default_shell_workspace_preserves_custom_built_in_path() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "easy-call-ai-terminal-workspace-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let llm_workspace_path = temp_root.join("p-ai").join("llm-workspace");
+        let custom_workspace_path = temp_root.join("outer-space");
+        std::fs::create_dir_all(&llm_workspace_path).expect("create llm workspace");
+        std::fs::create_dir_all(&custom_workspace_path).expect("create custom workspace");
+        let state = build_test_state(llm_workspace_path);
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![ShellWorkspaceConfig {
+            name: "派蒙的家".to_string(),
+            path: custom_workspace_path.to_string_lossy().to_string(),
+            built_in: true,
+        }];
+
+        let changed = ensure_default_shell_workspace_in_config(&mut config, &state);
+
+        assert_eq!(config.shell_workspaces.len(), 1);
+        assert_eq!(config.shell_workspaces[0].name, "派蒙的家".to_string());
+        assert_eq!(
+            config.shell_workspaces[0].path,
+            terminal_path_for_user(&custom_workspace_path)
+        );
+        assert!(config.shell_workspaces[0].built_in);
+        assert!(!changed);
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn ensure_default_shell_workspace_migrates_legacy_builtin_path_only() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "easy-call-ai-terminal-workspace-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let llm_workspace_path = temp_root.join("p-ai").join("llm-workspace");
+        std::fs::create_dir_all(&llm_workspace_path).expect("create llm workspace");
+        let state = build_test_state(llm_workspace_path.clone());
+        let legacy_workspace_path = legacy_default_shell_workspace_path()
+            .expect("legacy default workspace path");
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![ShellWorkspaceConfig {
+            name: "派蒙的家".to_string(),
+            path: legacy_workspace_path.to_string_lossy().to_string(),
+            built_in: true,
+        }];
+
+        let changed = ensure_default_shell_workspace_in_config(&mut config, &state);
+
+        assert_eq!(config.shell_workspaces.len(), 1);
+        assert_eq!(config.shell_workspaces[0].name, "派蒙的家".to_string());
+        assert_eq!(
+            config.shell_workspaces[0].path,
+            terminal_path_for_user(&llm_workspace_path)
+        );
+        assert!(config.shell_workspaces[0].built_in);
+        assert!(changed);
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
 }

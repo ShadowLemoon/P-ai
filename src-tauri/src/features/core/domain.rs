@@ -705,7 +705,13 @@ impl<'de> serde::Deserialize<'de> for RemoteImPlatform {
             "dingtalk" => Self::Dingtalk,
             "onebot_v11" | "napcat" => Self::OnebotV11,
             "weixin_oc" => Self::WeixinOc,
-            _ => Self::OnebotV11,
+            _ => {
+                runtime_log_warn(format!(
+                    "[RemoteImPlatform反序列化] 收到未知平台值: '{}' (规范化后: '{}'), 回退到OnebotV11",
+                    raw, normalized
+                ));
+                Self::OnebotV11
+            }
         };
         Ok(platform)
     }
@@ -1713,6 +1719,10 @@ impl AppState {
             .parent()
             .map(ToOwned::to_owned)
             .unwrap_or_else(|| config_dir.clone());
+        let legacy_app_root = legacy_config_dir
+            .parent()
+            .map(ToOwned::to_owned)
+            .unwrap_or_else(|| legacy_config_dir.clone());
         for dir_name in ["avatars", "media", "exports"] {
             let legacy = config_dir.join(dir_name);
             let target = app_root.join(dir_name);
@@ -1727,15 +1737,20 @@ impl AppState {
             }
         }
         let llm_workspace_path = app_root.join("llm-workspace");
-        let legacy_llm_workspace_path = config_dir.join("llm-workspace");
-        if legacy_llm_workspace_path.exists() && !llm_workspace_path.exists() {
-            fs::rename(&legacy_llm_workspace_path, &llm_workspace_path).map_err(|err| {
-                format!(
-                    "Migrate llm workspace failed ({} -> {}): {err}",
-                    legacy_llm_workspace_path.display(),
-                    llm_workspace_path.display()
-                )
-            })?;
+        for legacy_llm_workspace_path in [
+            legacy_app_root.join("llm-workspace"),
+            config_dir.join("llm-workspace"),
+        ] {
+            if legacy_llm_workspace_path.exists() && !llm_workspace_path.exists() {
+                fs::rename(&legacy_llm_workspace_path, &llm_workspace_path).map_err(|err| {
+                    format!(
+                        "Migrate llm workspace failed ({} -> {}): {err}",
+                        legacy_llm_workspace_path.display(),
+                        llm_workspace_path.display()
+                    )
+                })?;
+                break;
+            }
         }
         fs::create_dir_all(&llm_workspace_path)
             .map_err(|err| format!("Create llm workspace failed: {err}"))?;

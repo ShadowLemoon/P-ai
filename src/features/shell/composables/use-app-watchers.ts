@@ -21,6 +21,7 @@ type UseAppWatchersOptions = {
   toolApiConfig: ComputedRef<ApiConfigItem | null>;
   activeChatApiConfigId: ComputedRef<string>;
   suppressChatReloadWatch: Ref<boolean>;
+  suppressAutosave: Ref<boolean>;
   modelRefreshError: Ref<string>;
   toolStatuses: Ref<ToolLoadStatus[]>;
   defaultApiTools: () => ApiConfigItem["tools"];
@@ -28,7 +29,8 @@ type UseAppWatchersOptions = {
   normalizeApiBindingsLocal: () => void;
   syncUserAliasFromPersona: () => void;
   syncTrayIcon: (id?: string) => Promise<void>;
-  saveChatSettings: () => Promise<void>;
+  saveChatPreferences: () => Promise<void>;
+  saveConversationApiSettings: () => Promise<void>;
   refreshToolsStatus: () => Promise<void>;
   refreshImageCacheStats: () => Promise<void>;
   refreshConversationHistory: () => Promise<void>;
@@ -197,7 +199,8 @@ export function useAppWatchers(options: UseAppWatchersOptions) {
       backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
     }),
     () => {
-      void options.saveChatSettings();
+      if (options.suppressAutosave.value) return;
+      void options.saveChatPreferences();
     },
   );
 
@@ -209,7 +212,8 @@ export function useAppWatchers(options: UseAppWatchersOptions) {
       sttAutoSend: options.config.sttAutoSend,
     }),
     () => {
-      void options.saveChatSettings();
+      if (options.suppressAutosave.value) return;
+      void options.saveConversationApiSettings();
     },
   );
 }

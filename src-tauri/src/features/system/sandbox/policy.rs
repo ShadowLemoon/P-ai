@@ -82,6 +82,7 @@ fn sandbox_workspace_canonical(state: &AppState) -> Result<PathBuf, String> {
 fn sandbox_allowed_project_roots_canonical(state: &AppState) -> Result<Vec<PathBuf>, String> {
     let mut config = read_config(&state.config_path)?;
     normalize_app_config(&mut config);
+    let _ = ensure_default_shell_workspace_in_config(&mut config, state);
     let mut roots = Vec::<PathBuf>::new();
     let mut seen = std::collections::HashSet::<String>::new();
 

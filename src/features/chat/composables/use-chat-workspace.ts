@@ -36,7 +36,8 @@ export function useChatWorkspace(options: UseChatWorkspaceOptions) {
       const state = await invokeTauri<ChatShellWorkspaceState>("get_chat_shell_workspace", {
         input: { apiConfigId, agentId, conversationId: conversationId || null },
       });
-      chatWorkspaceName.value = String(state.workspaceName || "").trim() || "默认工作空间";
+      const workspaceNameRaw = String(state.workspaceName || "").trim() || "默认工作空间";
+      chatWorkspaceName.value = workspaceNameRaw;
       chatWorkspaceLocked.value = !!state.locked;
       chatWorkspacePath.value = String(state.rootPath || "").trim();
     } catch (error) {

@@ -280,7 +280,10 @@ fn load_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut result = state_read_config_cached(&state)?;
     normalize_app_config(&mut result);
-    ensure_default_shell_workspace_in_config(&mut result, &state);
+    let workspace_changed = ensure_default_shell_workspace_in_config(&mut result, &state);
+    if workspace_changed {
+        state_write_config_cached(&state, &result)?;
+    }
     let mut data = state_read_app_data_cached(&state)?;
     let changed = ensure_default_agent(&mut data);
     if changed {
@@ -313,7 +316,7 @@ fn save_config(
     }
     let mut config = config;
     normalize_app_config(&mut config);
-    ensure_default_shell_workspace_in_config(&mut config, &state);
+    let _ = ensure_default_shell_workspace_in_config(&mut config, &state);
     set_record_hotkey_probe_background_wake_enabled(config.record_background_wake_enabled);
 
     let guard = state
@@ -2033,6 +2036,27 @@ fn resolve_unarchived_conversation_index_with_fallback(
         }) {
             return Ok(idx);
         }
+        // 请求的conversation_id未找到，记录警告并开始回退
+        if let Some(existing_idx) = latest_active_conversation_index(data, "", effective_agent_id) {
+            runtime_log_warn(format!(
+                "[解析对话索引] 请求的conversation_id不存在: '{}' (agent_id: '{}'), 回退到最近活跃对话索引: {}",
+                conversation_id, effective_agent_id, existing_idx
+            ));
+            return Ok(existing_idx);
+        }
+        // 连最近活跃都没有，继续到确保活跃流程
+        let api_config = resolve_selected_api_config(app_config, None)
+            .ok_or_else(|| "No API config available".to_string())?;
+        let fallback_idx = ensure_active_conversation_index(
+            data,
+            &api_config.id,
+            effective_agent_id,
+        );
+        runtime_log_warn(format!(
+            "[解析对话索引] 请求的conversation_id不存在: '{}' (agent_id: '{}'), 回退到确保活跃新建对话索引: {}",
+            conversation_id, effective_agent_id, fallback_idx
+        ));
+        return Ok(fallback_idx);
     }
 
     if let Some(existing_idx) = latest_active_conversation_index(data, "", effective_agent_id) {
@@ -2549,4 +2573,3 @@ fn rewind_conversation_from_message(
         recalled_user_message,
     })
 }
-

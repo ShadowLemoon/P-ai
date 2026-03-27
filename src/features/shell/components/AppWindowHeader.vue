@@ -1,10 +1,10 @@
 <template>
   <div
-    class="navbar min-h-10 h-10 px-2 relative z-20 overflow-visible cursor-move select-none"
+    class="navbar min-h-10 h-10 px-2 relative z-20 overflow-visible select-none"
     :class="viewMode === 'chat' ? '' : 'bg-base-200 border-b border-base-300'"
-    @mousedown.left.prevent="$emit('start-drag')"
   >
-    <div class="flex-none" @mousedown.stop>
+    <div data-tauri-drag-region class="absolute inset-0 cursor-move" aria-hidden="true"></div>
+    <div class="relative z-10 flex-none" @mousedown.stop>
       <div v-if="viewMode === 'chat'" class="flex items-center gap-1">
         <button
           class="btn btn-ghost btn-sm"
@@ -31,10 +31,10 @@
         </button>
       </div>
     </div>
-    <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center px-2">
+    <div class="pointer-events-none absolute left-1/2 top-1/2 z-0 flex -translate-x-1/2 -translate-y-1/2 items-center px-2">
       <span class="font-semibold text-sm">{{ titleText }}</span>
       <template v-if="viewMode === 'chat'">
-        <div class="tooltip tooltip-bottom" :data-tip="forceArchiveTip">
+        <div class="pointer-events-auto tooltip tooltip-bottom" :data-tip="forceArchiveTip">
           <button
             class="btn btn-sm bg-base-100 ml-2"
             :disabled="forcingArchive || chatting"
@@ -46,7 +46,7 @@
         </div>
       </template>
     </div>
-    <div class="flex-none flex gap-1 ml-auto" @mousedown.stop>
+    <div class="relative z-10 ml-auto flex flex-none gap-1" @mousedown.stop>
       <button
         class="btn btn-ghost btn-sm"
         title="最小化"
@@ -96,7 +96,6 @@ defineProps<{
 }>();
 
 defineEmits<{
-  (e: "start-drag"): void;
   (e: "force-archive"): void;
   (e: "toggle-always-on-top"): void;
   (e: "minimize-window"): void;

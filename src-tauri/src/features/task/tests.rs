@@ -12,13 +12,10 @@
     fn task_store_should_persist_conversation_id() {
         let data_path = test_task_data_path("persist_conversation_id");
         let input = TaskCreateInput {
-            title: "跟进并发会话".to_string(),
+            goal: "跟进并发会话".to_string(),
             conversation_id: Some("conversation-a".to_string()),
-            cause: String::new(),
-            goal: String::new(),
-            flow: String::new(),
-            todos: vec!["检查调度".to_string()],
-            status_summary: "待处理".to_string(),
+            why: String::new(),
+            todo: "检查调度".to_string(),
             trigger: TaskTriggerInputLocal {
                 run_at_local: None,
                 every_minutes: None,

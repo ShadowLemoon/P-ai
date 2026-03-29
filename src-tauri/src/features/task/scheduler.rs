@@ -140,6 +140,7 @@ fn task_dequeue_dispatch(state: &AppState, chat_key: &str) -> Result<Option<Task
 async fn task_try_dispatch_or_enqueue(state: &AppState, task: &TaskRecordStored) -> Result<(), String> {
     let (_api_id, _department_id, _agent_id, _conversation_id, chat_key) =
         task_resolve_dispatch_session(state, task)?;
+    let task_goal = task_goal_from_legacy_fields(&task.title, &task.goal);
     if task_is_chat_busy(state, &chat_key)? {
         let queued = task_enqueue_dispatch(state, &task.task_id)?;
         if queued {
@@ -148,9 +149,9 @@ async fn task_try_dispatch_or_enqueue(state: &AppState, task: &TaskRecordStored)
                 &task.task_id,
                 "queued",
                 &format!(
-                    "聊天繁忙，已排队等待分发，taskId={}，title={}，chatKey={}",
+                    "聊天繁忙，已排队等待分发，taskId={}，goal={}，chatKey={}",
                     task.task_id,
-                    task.title.trim(),
+                    task_goal.trim(),
                     chat_key
                 ),
             )?;
@@ -192,10 +193,10 @@ pub(crate) async fn task_process_dispatch_queue(state: &AppState) -> Result<(), 
         &task.task_id,
         "dequeued",
         &format!(
-            "从队列恢复分发，queuedAt={}，taskId={}，title={}",
+            "从队列恢复分发，queuedAt={}，taskId={}，goal={}",
             item.queued_at_local,
             task.task_id,
-            task.title.trim()
+            task_goal_from_legacy_fields(&task.title, &task.goal).trim()
         ),
     )?;
     task_dispatch_due_task(state, &task).await
@@ -307,21 +308,14 @@ fn build_hidden_task_board_block(state: &AppState) -> Option<String> {
     lines.push(format!("currentLocalTime: {}", now_local_rfc3339()));
     lines.push("timeFormatNote: all task times below use local RFC3339 with timezone offset; copy the same format directly when writing runAtLocal".to_string());
     lines.push(format!("trackedTaskId: {}", tracked.task_id));
-    lines.push(format!("title: {}", tracked.title.trim()));
     if !tracked.goal.trim().is_empty() {
         lines.push(format!("goal: {}", tracked.goal.trim()));
     }
-    if !tracked.cause.trim().is_empty() {
-        lines.push(format!("cause: {}", tracked.cause.trim()));
+    if !tracked.why.trim().is_empty() {
+        lines.push(format!("why: {}", tracked.why.trim()));
     }
-    if !tracked.flow.trim().is_empty() {
-        lines.push(format!("flow: {}", tracked.flow.trim()));
-    }
-    if !tracked.status_summary.trim().is_empty() {
-        lines.push(format!("statusSummary: {}", tracked.status_summary.trim()));
-    }
-    if !tracked.todos.is_empty() {
-        lines.push(format!("todos: {}", tracked.todos.join(" | ")));
+    if !tracked.todo.trim().is_empty() {
+        lines.push(format!("todo: {}", tracked.todo.trim()));
     }
     if let Some(run_at_local) = tracked.trigger.run_at_local.as_deref() {
         lines.push(format!("runAtLocal: {}", run_at_local));
@@ -336,7 +330,7 @@ fn build_hidden_task_board_block(state: &AppState) -> Option<String> {
         .tasks
         .iter()
         .filter(|item| item.task_id != tracked.task_id)
-        .map(|item| format!("{} ({})", item.title.trim(), item.completion_state))
+        .map(|item| format!("{} ({})", item.goal.trim(), item.completion_state))
         .collect::<Vec<_>>();
     if !other_tasks.is_empty() {
         lines.push(format!("otherTasks: {}", other_tasks.join("; ")));
@@ -346,21 +340,15 @@ fn build_hidden_task_board_block(state: &AppState) -> Option<String> {
 
 fn build_task_trigger_hidden_prompt(task: &TaskRecordStored) -> String {
     let mut lines = Vec::<String>::new();
-    lines.push(format!("任务提醒：{}", task.title.trim()));
-    if !task.cause.trim().is_empty() {
-        lines.push(format!("起因：{}", task.cause.trim()));
+    let goal = task_goal_from_legacy_fields(&task.title, &task.goal);
+    let why = task_why_from_legacy_record(task);
+    let todo = task_todo_from_legacy_fields(&task.status_summary, &task.todos);
+    lines.push(format!("任务提醒：{}", goal.trim()));
+    if !why.trim().is_empty() {
+        lines.push(format!("为什么做：{}", why.trim()));
     }
-    if !task.goal.trim().is_empty() {
-        lines.push(format!("目标：{}", task.goal.trim()));
-    }
-    if !task.flow.trim().is_empty() {
-        lines.push(format!("流程：{}", task.flow.trim()));
-    }
-    if !task.status_summary.trim().is_empty() {
-        lines.push(format!("当前状态：{}", task.status_summary.trim()));
-    }
-    if !task.todos.is_empty() {
-        lines.push(format!("待办：{}", task.todos.join(" | ")));
+    if !todo.trim().is_empty() {
+        lines.push(format!("当前待办：{}", todo.trim()));
     }
     lines.push("请立刻继续推进这个任务；如果确实受阻，请写明失败结论并完成任务，不要将它悬置。".to_string());
     lines.join("\n")
@@ -368,17 +356,17 @@ fn build_task_trigger_hidden_prompt(task: &TaskRecordStored) -> String {
 
 fn build_task_trigger_provider_meta(task: &TaskRecordStored) -> Value {
     let trigger_view = task_trigger_view_from_stored(&task.trigger);
+    let goal = task_goal_from_legacy_fields(&task.title, &task.goal);
+    let why = task_why_from_legacy_record(task);
+    let todo = task_todo_from_legacy_fields(&task.status_summary, &task.todos);
     serde_json::json!({
         "messageKind": "task_trigger",
         "hiddenPromptText": build_task_trigger_hidden_prompt(task),
         "taskTrigger": {
             "taskId": task.task_id,
-            "title": task.title.trim(),
-            "cause": task.cause.trim(),
-            "goal": task.goal.trim(),
-            "flow": task.flow.trim(),
-            "statusSummary": task.status_summary.trim(),
-            "todos": task.todos,
+            "goal": goal.trim(),
+            "why": why.trim(),
+            "todo": todo.trim(),
             "runAtLocal": trigger_view.run_at_local,
             "endAtLocal": trigger_view.end_at_local,
             "nextRunAtLocal": trigger_view.next_run_at_local,
@@ -432,7 +420,8 @@ async fn task_dispatch_due_task(state: &AppState, task: &TaskRecordStored) -> Re
     } else {
         "once"
     };
-    let todo_count = task.todos.len();
+    let todo_count = task_legacy_todos_from_todo(&task_todo_from_legacy_fields(&task.status_summary, &task.todos)).len();
+    let task_goal = task_goal_from_legacy_fields(&task.title, &task.goal);
 
     // 入队
     match ingress_chat_event(state, event) {
@@ -446,8 +435,8 @@ async fn task_dispatch_due_task(state: &AppState, task: &TaskRecordStored) -> Re
                 &task.task_id,
                 "queued",
                 &format!(
-                    "任务已入队，title={}，conversationId={}，trigger={}，todoCount={}，hasRunAt={}，everyMinutes={}，durationMs={}",
-                    task.title.trim(),
+                    "任务已入队，goal={}，conversationId={}，trigger={}，todoCount={}，hasRunAt={}，everyMinutes={}，durationMs={}",
+                    task_goal.trim(),
                     conversation_id,
                     trigger_label,
                     todo_count,
@@ -465,8 +454,8 @@ async fn task_dispatch_due_task(state: &AppState, task: &TaskRecordStored) -> Re
                 &task.task_id,
                 "failed",
                 &format!(
-                    "任务入队失败，title={}，conversationId={}，trigger={}，todoCount={}，hasRunAt={}，everyMinutes={}，durationMs={}，error={}",
-                    task.title.trim(),
+                    "任务入队失败，goal={}，conversationId={}，trigger={}，todoCount={}，hasRunAt={}，everyMinutes={}，durationMs={}，error={}",
+                    task_goal.trim(),
                     conversation_id,
                     trigger_label,
                     todo_count,

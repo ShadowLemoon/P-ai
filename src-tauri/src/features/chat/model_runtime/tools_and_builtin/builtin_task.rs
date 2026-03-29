@@ -8,6 +8,123 @@ where
         .map_err(|err| format!("task store worker join failed: {err}"))?
 }
 
+fn task_tool_goal_from_args(args: &TaskToolArgsWire) -> Option<String> {
+    args.goal
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            args.title
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        })
+}
+
+fn task_tool_why_from_args(args: &TaskToolArgsWire) -> Option<String> {
+    args.why
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            let mut parts = Vec::<String>::new();
+            if let Some(cause) = args
+                .cause
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(cause.to_string());
+            }
+            if let Some(title) = args
+                .title
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                let goal = task_tool_goal_from_args(args).unwrap_or_default();
+                if title != goal {
+                    parts.push(format!("原标题：{}", title));
+                }
+            }
+            if let Some(flow) = args
+                .flow
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(format!("原流程：{}", flow));
+            }
+            if let Some(stage_key) = args
+                .stage_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(format!("原阶段：{}", stage_key));
+            }
+            if let Some(append_note) = args
+                .append_note
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                parts.push(format!("原补充：{}", append_note));
+            }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("\n"))
+            }
+        })
+}
+
+fn task_tool_todo_from_args(args: &TaskToolArgsWire) -> Option<String> {
+    args.todo
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            let status_summary = args
+                .status_summary
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            let todo_list = args
+                .todos
+                .as_ref()
+                .map(|items| {
+                    items
+                        .iter()
+                        .map(|item| item.trim().to_string())
+                        .filter(|item| !item.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            if status_summary.is_none() && todo_list.is_empty() {
+                return None;
+            }
+            let mut parts = Vec::<String>::new();
+            if let Some(status_summary) = status_summary {
+                parts.push(status_summary);
+            }
+            if !todo_list.is_empty() {
+                let joined = todo_list.join("；");
+                if parts.is_empty() {
+                    parts.push(joined);
+                } else {
+                    parts.push(format!("待办：{}", joined));
+                }
+            }
+            Some(parts.join("\n"))
+        })
+}
+
 async fn builtin_task(
     app_state: &AppState,
     session_id: &str,
@@ -32,24 +149,21 @@ async fn builtin_task(
         }
         "create" => {
             let create_input = TaskCreateInput {
-                title: args.title.unwrap_or_default(),
+                goal: task_tool_goal_from_args(&args).unwrap_or_default(),
                 conversation_id: bound_conversation_id,
-                cause: args.cause.unwrap_or_default(),
-                goal: args.goal.unwrap_or_default(),
-                flow: args.flow.unwrap_or_default(),
-                todos: args.todos.unwrap_or_default(),
-                status_summary: args.status_summary.unwrap_or_default(),
+                why: task_tool_why_from_args(&args).unwrap_or_default(),
+                todo: task_tool_todo_from_args(&args).unwrap_or_default(),
                 trigger: args
                     .trigger
                     .ok_or_else(|| "task.trigger is required for action=create".to_string())?,
             };
             eprintln!(
-                "[任务] 状态=开始 action=create title={} conversation_id={} trigger={} todos_count={}",
-                create_input.title.trim(),
+                "[任务] 状态=开始 action=create goal={} conversation_id={} trigger={} todo_present={}",
+                create_input.goal.trim(),
                 create_input.conversation_id.as_deref().unwrap_or(""),
                 serde_json::to_string(&create_input.trigger)
                     .unwrap_or_else(|_| "<invalid trigger>".to_string()),
-                create_input.todos.len()
+                !create_input.todo.trim().is_empty()
             );
             let data_path = app_state.data_path.clone();
             let create_input_for_io = create_input.clone();
@@ -62,31 +176,22 @@ async fn builtin_task(
         "update" => {
             let task_id = args
                 .task_id
+                .clone()
                 .ok_or_else(|| "task.taskId is required for action=update".to_string())?;
             let update_input = TaskUpdateInput {
                 task_id,
                 conversation_id: None,
-                title: args.title,
-                cause: args.cause,
-                goal: args.goal,
-                flow: args.flow,
-                todos: args.todos,
-                status_summary: args.status_summary,
-                stage_key: args.stage_key,
-                append_note: args.append_note,
-                trigger: args.trigger,
+                goal: task_tool_goal_from_args(&args),
+                why: task_tool_why_from_args(&args),
+                todo: task_tool_todo_from_args(&args),
+                trigger: args.trigger.clone(),
             };
             eprintln!(
-                "[任务] 状态=开始 action=update task_id={} changed_fields=title:{},cause:{},goal:{},flow:{},todos:{},status_summary:{},stage_key:{},append_note:{},trigger:{}",
+                "[任务] 状态=开始 action=update task_id={} changed_fields=goal:{},why:{},todo:{},trigger:{}",
                 update_input.task_id,
-                update_input.title.is_some(),
-                update_input.cause.is_some(),
                 update_input.goal.is_some(),
-                update_input.flow.is_some(),
-                update_input.todos.is_some(),
-                update_input.status_summary.is_some(),
-                update_input.stage_key.is_some(),
-                update_input.append_note.is_some(),
+                update_input.why.is_some(),
+                update_input.todo.is_some(),
                 update_input.trigger.is_some(),
             );
             let data_path = app_state.data_path.clone();
@@ -108,8 +213,6 @@ async fn builtin_task(
                 task_id,
                 completion_state,
                 completion_conclusion: args.completion_conclusion.unwrap_or_default(),
-                status_summary: args.status_summary.unwrap_or_default(),
-                append_note: args.append_note,
             };
             eprintln!(
                 "[任务] 状态=开始 action=complete task_id={} completion_state={}",

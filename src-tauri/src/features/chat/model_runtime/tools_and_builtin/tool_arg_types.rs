@@ -265,11 +265,15 @@ struct TaskToolArgsWire {
     #[serde(default)]
     task_id: Option<String>,
     #[serde(default)]
+    goal: Option<String>,
+    #[serde(default)]
+    why: Option<String>,
+    #[serde(default)]
+    todo: Option<String>,
+    #[serde(default)]
     title: Option<String>,
     #[serde(default)]
     cause: Option<String>,
-    #[serde(default)]
-    goal: Option<String>,
     #[serde(default)]
     flow: Option<String>,
     #[serde(default)]

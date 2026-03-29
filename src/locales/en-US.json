@@ -474,7 +474,7 @@
       "editTask": "Edit Task",
       "trackedShort": "Tracked",
       "empty": "No tasks yet.",
-      "noStatus": "No status summary",
+        "noTodo": "No current to-do",
       "detail": "Task Detail",
       "readonlyHint": "Task detail is read-only, please use Task tool in chat to update.",
       "createTask": "Create Task",
@@ -524,32 +524,27 @@
         "dequeued": "Restored",
         "failed": "Failed"
       },
-      "validation": {
-        "titleRequired": "Task title is required.",
-        "everyMinutesPositive": "Every Minutes must be an integer greater than 0."
-      },
-      "todosPlaceholder": "Separate multiple todos with ;",
+        "validation": {
+          "goalRequired": "Task goal is required.",
+          "everyMinutesPositive": "Every Minutes must be an integer greater than 0."
+        },
+        "todoPlaceholder": "Describe the current next step",
       "filters": {
         "active": "Active",
         "tracked": "Tracked",
         "completed": "Completed",
         "all": "All"
       },
-      "fields": {
-        "title": "Title",
-        "triggerKind": "Trigger",
-        "runAt": "Start Time",
-        "everyMinutes": "Every Minutes",
-        "statusSummary": "Status Summary",
-        "goal": "Goal",
-        "cause": "Cause",
-        "flow": "Flow",
-        "todos": "To-do",
-        "stageKey": "Stage Key",
-        "appendNote": "Append Note",
-        "completionConclusion": "Completion Conclusion",
-        "completionState": "Completion State",
-        "nextRunAt": "Next Run",
+        "fields": {
+          "triggerKind": "Trigger",
+          "runAt": "Start Time",
+          "everyMinutes": "Every Minutes",
+          "goal": "Goal",
+          "why": "Why",
+          "todo": "Current To-do",
+          "completionConclusion": "Completion Conclusion",
+          "completionState": "Completion State",
+          "nextRunAt": "Next Run",
         "updatedAt": "Updated At",
         "endAt": "End Time"
       }

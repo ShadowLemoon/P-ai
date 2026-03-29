@@ -291,12 +291,9 @@ export type ToolCallMessage = {
 
 export type TaskTriggerMessageCard = {
   taskId?: string;
-  title: string;
-  cause?: string;
-  goal?: string;
-  flow?: string;
-  statusSummary?: string;
-  todos: string[];
+  goal: string;
+  why?: string;
+  todo?: string;
   runAtLocal?: string;
   endAtLocal?: string;
   nextRunAtLocal?: string;

@@ -1,5 +1,22 @@
 # 变更日志
 
+## 更新（v0.8.6）：任务字段瘦身为 goal / why / todo
+
+- 调整（task-goal-why-todo-field-slimming）：统一任务主字段为 `goal / why / todo`
+  - 任务对外模型、前端编辑表单、任务列表摘要与聊天任务触发卡统一改为 `goal / why / todo` 三字段
+  - `goal` 兼任任务标题展示，`why` 用于保留方向约束，`todo` 用于表达当前下一步
+  - 任务完成链路仅保留完成状态与完成结论，移除旧的主编辑字段 `title / cause / flow / todos / statusSummary / stageKey / appendNote`
+
+- 调整（task-legacy-storage-and-tool-compat）：保留旧存储列并兼容旧工具入参
+  - 数据库存储暂不强制迁列，继续兼容旧 `task_record` 字段，并在读写时自动映射到新三字段口径
+  - `task` 工具 schema 改为主推 `goal / why / todo`，同时兼容历史 `title / cause / flow / todos / statusSummary / stageKey / appendNote` 入参
+  - 隐藏任务板、任务触发 provider meta 与调度日志一并切换到新字段语义，减少模型继续沿用旧口径的机会
+
+- 调整（task-skill-and-locale-alignment）：统一技能文案与界面词汇
+  - `task-guide` 的推荐工作流、反模式和质量要求全部改写到 `goal / why / todo` 方案
+  - 中英繁 locale 删除旧字段标签与占位词，任务面板、编辑卡和聊天触发卡的文案同步更新
+  - 补充兼容解析，旧任务触发消息卡仍可回退读取旧字段，避免历史消息直接失去展示内容
+
 ## 更新（v0.8.6）：重构任务面板为列表 + 编辑卡，并引入日期时间选择组件
 
 - 新增（task-board-editor-card-redesign）：任务面板重构为“列表 + 独立编辑卡”

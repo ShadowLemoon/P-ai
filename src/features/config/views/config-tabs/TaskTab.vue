@@ -6,9 +6,9 @@
           <span class="text-sm font-medium text-primary">{{ t("config.task.currentTracked") }}</span>
           <span class="badge badge-primary">#{{ trackedTask.orderIndex }}</span>
         </div>
-        <div class="text-lg font-semibold wrap-break-word">{{ trackedTask.title }}</div>
-        <div v-if="trackedTask.statusSummary" class="text-sm opacity-70 whitespace-pre-wrap wrap-break-word">
-          {{ trackedTask.statusSummary }}
+        <div class="text-lg font-semibold wrap-break-word">{{ trackedTask.goal }}</div>
+        <div v-if="trackedTask.todo" class="text-sm opacity-70 whitespace-pre-wrap wrap-break-word">
+          {{ trackedTask.todo }}
         </div>
       </div>
     </div>
@@ -59,11 +59,11 @@
             <div class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full" :class="task.currentTracked ? 'bg-primary' : (task.completionState === 'completed' ? 'bg-success' : (task.completionState === 'failed_completed' ? 'bg-warning' : 'bg-base-300'))"></div>
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-2">
-                <div class="font-medium text-sm wrap-break-word">{{ task.title }}</div>
+                <div class="font-medium text-sm wrap-break-word">{{ task.goal }}</div>
                 <span v-if="task.currentTracked" class="badge badge-primary">{{ t("config.task.trackedShort") }}</span>
                 <span class="badge badge-ghost">{{ completionStateLabel(task.completionState) }}</span>
               </div>
-              <div class="mt-1 text-[11px] opacity-60 line-clamp-2">{{ task.statusSummary || t("config.task.noStatus") }}</div>
+              <div class="mt-1 text-[11px] opacity-60 line-clamp-2">{{ task.todo || t("config.task.noTodo") }}</div>
               <div class="mt-2 flex flex-wrap items-center gap-2 text-[11px] opacity-50">
                 <span>#{{ task.orderIndex }}</span>
                 <span v-if="task.trigger.nextRunAtLocal">{{ formatTaskTime(task.trigger.nextRunAtLocal) }}</span>
@@ -120,7 +120,6 @@ import {
   createEmptyTaskEditorForm,
   taskEditorFormFromEntry,
   taskEditorSnapshot,
-  taskEditorTodosFromText,
   taskUpsertEntry,
   type TaskEditorForm,
   type TaskEditorMode,
@@ -136,25 +135,17 @@ type TaskTriggerInputLocalWire = {
 };
 
 type TaskCreateInputWire = {
-  title: string;
-  cause: string;
   goal: string;
-  flow: string;
-  todos: string[];
-  statusSummary: string;
+  why: string;
+  todo: string;
   trigger: TaskTriggerInputLocalWire;
 };
 
 type TaskUpdateInputWire = {
   taskId: string;
-  title?: string;
-  cause?: string;
   goal?: string;
-  flow?: string;
-  todos?: string[];
-  statusSummary?: string;
-  stageKey?: string;
-  appendNote?: string;
+  why?: string;
+  todo?: string;
   trigger?: TaskTriggerInputLocalWire;
 };
 
@@ -162,8 +153,6 @@ type TaskCompleteInputWire = {
   taskId: string;
   completionState: string;
   completionConclusion: string;
-  statusSummary: string;
-  appendNote?: string;
 };
 
 type TaskDeleteInputWire = {
@@ -251,22 +240,6 @@ function completionStateLabel(value: string): string {
   return value || "-";
 }
 
-function runLogLabel(outcome: string): string {
-  if (outcome === "sent") return t("config.task.runLogOutcomes.sent");
-  if (outcome === "queued") return t("config.task.runLogOutcomes.queued");
-  if (outcome === "dequeued") return t("config.task.runLogOutcomes.dequeued");
-  if (outcome === "failed") return t("config.task.runLogOutcomes.failed");
-  return outcome || "-";
-}
-
-function runLogBadgeClass(outcome: string): string {
-  if (outcome === "sent") return "badge-success";
-  if (outcome === "queued") return "badge-warning";
-  if (outcome === "dequeued") return "badge-info";
-  if (outcome === "failed") return "badge-error";
-  return "badge-ghost";
-}
-
 function resetFilter() {
   filter.value = "";
 }
@@ -328,19 +301,16 @@ function buildTriggerInputFromForm(): TaskTriggerInputLocalWire | null {
 }
 
 function editorCreatePayload(): TaskCreateInputWire | null {
-  if (!String(editorForm.value.title || "").trim()) {
-    editorError.value = t("config.task.validation.titleRequired");
+  if (!String(editorForm.value.goal || "").trim()) {
+    editorError.value = t("config.task.validation.goalRequired");
     return null;
   }
   const trigger = buildTriggerInputFromForm();
   if (!trigger) return null;
   return {
-    title: editorForm.value.title.trim(),
-    cause: editorForm.value.cause.trim(),
     goal: editorForm.value.goal.trim(),
-    flow: editorForm.value.flow.trim(),
-    todos: taskEditorTodosFromText(editorForm.value.todosText),
-    statusSummary: editorForm.value.statusSummary.trim(),
+    why: editorForm.value.why.trim(),
+    todo: editorForm.value.todo.trim(),
     trigger,
   };
 }
@@ -350,22 +320,17 @@ function editorUpdatePayload(): TaskUpdateInputWire | null {
     editorError.value = t("config.task.detailLoadFailed");
     return null;
   }
-  if (!String(editorForm.value.title || "").trim()) {
-    editorError.value = t("config.task.validation.titleRequired");
+  if (!String(editorForm.value.goal || "").trim()) {
+    editorError.value = t("config.task.validation.goalRequired");
     return null;
   }
   const trigger = buildTriggerInputFromForm();
   if (!trigger) return null;
   return {
     taskId: editorForm.value.taskId.trim(),
-    title: editorForm.value.title.trim(),
-    cause: editorForm.value.cause.trim(),
     goal: editorForm.value.goal.trim(),
-    flow: editorForm.value.flow.trim(),
-    todos: taskEditorTodosFromText(editorForm.value.todosText),
-    statusSummary: editorForm.value.statusSummary.trim(),
-    stageKey: editorForm.value.stageKey.trim() || undefined,
-    appendNote: editorForm.value.appendNote.trim() || undefined,
+    why: editorForm.value.why.trim(),
+    todo: editorForm.value.todo.trim(),
     trigger,
   };
 }
@@ -379,8 +344,6 @@ function editorCompletePayload(): TaskCompleteInputWire | null {
     taskId: editorForm.value.taskId.trim(),
     completionState: editorForm.value.completionState,
     completionConclusion: editorForm.value.completionConclusion.trim(),
-    statusSummary: editorForm.value.statusSummary.trim(),
-    appendNote: editorForm.value.appendNote.trim() || undefined,
   };
 }
 

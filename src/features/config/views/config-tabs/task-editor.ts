@@ -16,17 +16,12 @@ export type TaskEntry = {
   taskId: string;
   conversationId?: string;
   orderIndex: number;
-  title: string;
-  cause: string;
   goal: string;
-  flow: string;
-  todos: string[];
-  statusSummary: string;
+  why: string;
+  todo: string;
   completionState: string;
   completionConclusion: string;
   progressNotes: TaskProgressNote[];
-  stageKey: string;
-  stageUpdatedAtLocal?: string;
   trigger: TaskTrigger;
   createdAtLocal: string;
   updatedAtLocal: string;
@@ -47,14 +42,9 @@ export type TaskEditorMode = "create" | "edit";
 
 export type TaskEditorForm = {
   taskId: string;
-  title: string;
-  cause: string;
   goal: string;
-  flow: string;
-  statusSummary: string;
-  todosText: string;
-  stageKey: string;
-  appendNote: string;
+  why: string;
+  todo: string;
   runAtLocal: string;
   everyMinutesText: string;
   endAtLocal: string;
@@ -65,14 +55,9 @@ export type TaskEditorForm = {
 export function createEmptyTaskEditorForm(): TaskEditorForm {
   return {
     taskId: "",
-    title: "",
-    cause: "",
     goal: "",
-    flow: "",
-    statusSummary: "",
-    todosText: "",
-    stageKey: "",
-    appendNote: "",
+    why: "",
+    todo: "",
     runAtLocal: "",
     everyMinutesText: "",
     endAtLocal: "",
@@ -84,14 +69,9 @@ export function createEmptyTaskEditorForm(): TaskEditorForm {
 export function taskEditorFormFromEntry(task: TaskEntry): TaskEditorForm {
   return {
     taskId: task.taskId,
-    title: task.title || "",
-    cause: task.cause || "",
     goal: task.goal || "",
-    flow: task.flow || "",
-    statusSummary: task.statusSummary || "",
-    todosText: (task.todos || []).join("；"),
-    stageKey: task.stageKey || "",
-    appendNote: "",
+    why: task.why || "",
+    todo: task.todo || "",
     runAtLocal: task.trigger.runAtLocal || "",
     everyMinutesText:
       typeof task.trigger.everyMinutes === "number" && Number.isFinite(task.trigger.everyMinutes)
@@ -103,24 +83,12 @@ export function taskEditorFormFromEntry(task: TaskEntry): TaskEditorForm {
   };
 }
 
-export function taskEditorTodosFromText(value: string): string[] {
-  return String(value || "")
-    .split(/[\r\n；;|]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 export function taskEditorSnapshot(form: TaskEditorForm): string {
   const normalized = {
     taskId: String(form.taskId || "").trim(),
-    title: String(form.title || "").trim(),
-    cause: String(form.cause || "").trim(),
     goal: String(form.goal || "").trim(),
-    flow: String(form.flow || "").trim(),
-    statusSummary: String(form.statusSummary || "").trim(),
-    todos: taskEditorTodosFromText(form.todosText),
-    stageKey: String(form.stageKey || "").trim(),
-    appendNote: String(form.appendNote || "").trim(),
+    why: String(form.why || "").trim(),
+    todo: String(form.todo || "").trim(),
     runAtLocal: String(form.runAtLocal || "").trim(),
     everyMinutesText: String(form.everyMinutesText || "").trim(),
     endAtLocal: String(form.endAtLocal || "").trim(),

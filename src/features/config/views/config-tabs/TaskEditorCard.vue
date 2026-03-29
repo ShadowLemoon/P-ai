@@ -27,39 +27,24 @@
       <div class="space-y-4 p-2">
         <details class="collapse collapse-arrow border border-base-300 bg-base-100" :name="accordionName" open>
           <summary class="collapse-title flex items-center justify-between gap-3 pr-10 text-base font-semibold">
-            <span>{{ mode === "create" ? t("config.task.editorCreateTitle") : (form.title || t("config.task.editorEditTitle")) }}</span>
+            <span>{{ mode === "create" ? t("config.task.editorCreateTitle") : (form.goal || t("config.task.editorEditTitle")) }}</span>
             <span v-if="task" class="text-sm font-normal">#{{ task.orderIndex }}</span>
           </summary>
           <div class="collapse-content pt-1">
             <div class="space-y-5">
-              <label class="block space-y-2">
-                <span class="block text-sm font-medium">{{ t("config.task.fields.title") }}</span>
-                <input v-model="form.title" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
-              </label>
-
-              <label class="block space-y-2">
-                <span class="block text-sm font-medium">{{ t("config.task.fields.statusSummary") }}</span>
-                <input v-model="form.statusSummary" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
-              </label>
-
               <label class="block space-y-2">
                 <span class="block text-sm font-medium">{{ t("config.task.fields.goal") }}</span>
                 <input v-model="form.goal" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
               </label>
 
               <label class="block space-y-2">
-                <span class="block text-sm font-medium">{{ t("config.task.fields.cause") }}</span>
-                <input v-model="form.cause" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
+                <span class="block text-sm font-medium">{{ t("config.task.fields.why") }}</span>
+                <input v-model="form.why" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
               </label>
 
               <label class="block space-y-2">
-                <span class="block text-sm font-medium">{{ t("config.task.fields.flow") }}</span>
-                <input v-model="form.flow" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
-              </label>
-
-              <label class="block space-y-2">
-                <span class="block text-sm font-medium">{{ t("config.task.fields.todos") }}</span>
-                <input v-model="form.todosText" class="input input-bordered w-full" type="text" :placeholder="t('config.task.todosPlaceholder')" :disabled="!editable || saving" />
+                <span class="block text-sm font-medium">{{ t("config.task.fields.todo") }}</span>
+                <input v-model="form.todo" class="input input-bordered w-full" type="text" :placeholder="t('config.task.todoPlaceholder')" :disabled="!editable || saving" />
               </label>
 
               <div class="divider my-1"></div>
@@ -88,20 +73,6 @@
                   :disabled="!editable || saving"
                 />
               </label>
-
-              <template v-if="mode === 'edit'">
-                <div class="divider my-1"></div>
-
-                <label class="block space-y-2">
-                  <span class="block text-sm font-medium">{{ t("config.task.fields.stageKey") }}</span>
-                  <input v-model="form.stageKey" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
-                </label>
-
-                <label class="block space-y-2">
-                  <span class="block text-sm font-medium">{{ t("config.task.fields.appendNote") }}</span>
-                  <input v-model="form.appendNote" class="input input-bordered w-full" type="text" :disabled="!editable || saving" />
-                </label>
-              </template>
 
               <template v-if="mode === 'edit' && canComplete">
                 <div class="divider my-1"></div>
@@ -135,7 +106,6 @@
                 <div v-if="task"><span class="font-medium">#</span>{{ task.orderIndex }}</div>
                 <div v-if="task?.currentTracked"><span class="font-medium">{{ t("config.task.currentTracked") }}:</span> {{ t("config.task.trackedShort") }}</div>
                 <div v-if="task?.completionState"><span class="font-medium">{{ t("config.task.fields.completionState") }}:</span> {{ completionStateLabel(task.completionState) }}</div>
-                <div v-if="task?.stageKey"><span class="font-medium">{{ t("config.task.fields.stageKey") }}:</span> {{ task.stageKey }}</div>
                 <div v-if="task"><span class="font-medium">{{ t("config.task.fields.updatedAt") }}:</span> {{ formatTaskTime(task.updatedAtLocal) }}</div>
                 <div v-if="task?.createdAtLocal"><span class="font-medium">{{ t("config.task.createdAt") }}:</span> {{ formatTaskTime(task.createdAtLocal) }}</div>
                 <div v-if="task?.trigger.nextRunAtLocal"><span class="font-medium">{{ t("config.task.fields.nextRunAt") }}:</span> {{ formatTaskTime(task.trigger.nextRunAtLocal) }}</div>

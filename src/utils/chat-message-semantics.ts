@@ -175,16 +175,16 @@ function resolveTaskTrigger(message: ChatMessage): TaskTriggerMessageCard | unde
   const raw = meta.taskTrigger;
   if (!raw || typeof raw !== "object") return undefined;
   const card = raw as Record<string, unknown>;
-  const title = String(card.title || "").trim();
-  if (!title) return undefined;
+  const goal = String(card.goal || card.title || "").trim();
+  const legacyTodos = Array.isArray(card.todos)
+    ? card.todos.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (!goal) return undefined;
   return {
     taskId: String(card.taskId || "").trim() || undefined,
-    title,
-    cause: String(card.cause || "").trim() || undefined,
-    goal: String(card.goal || "").trim() || undefined,
-    flow: String(card.flow || "").trim() || undefined,
-    statusSummary: String(card.statusSummary || "").trim() || undefined,
-    todos: Array.isArray(card.todos) ? card.todos.map((item) => String(item || "").trim()).filter(Boolean) : [],
+    goal,
+    why: String(card.why || card.cause || "").trim() || undefined,
+    todo: String(card.todo || card.statusSummary || "").trim() || legacyTodos.join("；") || undefined,
     runAtLocal: String(card.runAtLocal || card.runAt || "").trim() || undefined,
     endAtLocal: String(card.endAtLocal || card.endAt || "").trim() || undefined,
     nextRunAtLocal: String(card.nextRunAtLocal || card.nextRunAt || "").trim() || undefined,

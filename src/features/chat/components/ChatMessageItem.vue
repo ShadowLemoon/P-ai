@@ -52,22 +52,17 @@
         <div class="flex items-center gap-2">
           <span class="badge badge-sm badge-outline">{{ t("chat.taskTrigger.badge") }}</span>
         </div>
-        <div class="text-base font-medium leading-6">{{ block.taskTrigger.title }}</div>
-        <div v-if="block.taskTrigger.cause" class="space-y-0.5">
-          <div class="text-[11px] opacity-55">{{ t("config.task.fields.cause") }}</div>
-          <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.cause }}</div>
-        </div>
         <div v-if="block.taskTrigger.goal" class="space-y-0.5">
           <div class="text-[11px] opacity-55">{{ t("config.task.fields.goal") }}</div>
           <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.goal }}</div>
         </div>
-        <div v-if="block.taskTrigger.flow" class="space-y-0.5">
-          <div class="text-[11px] opacity-55">{{ t("config.task.fields.flow") }}</div>
-          <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.flow }}</div>
+        <div v-if="block.taskTrigger.why" class="space-y-0.5">
+          <div class="text-[11px] opacity-55">{{ t("config.task.fields.why") }}</div>
+          <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.why }}</div>
         </div>
-        <div v-if="block.taskTrigger.statusSummary" class="space-y-0.5">
-          <div class="text-[11px] opacity-55">{{ t("config.task.fields.statusSummary") }}</div>
-          <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.statusSummary }}</div>
+        <div v-if="block.taskTrigger.todo" class="space-y-0.5">
+          <div class="text-[11px] opacity-55">{{ t("config.task.fields.todo") }}</div>
+          <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.todo }}</div>
         </div>
         <div v-if="block.taskTrigger.runAtLocal || block.taskTrigger.endAtLocal || block.taskTrigger.everyMinutes" class="grid gap-1 text-sm leading-6">
           <div v-if="block.taskTrigger.runAtLocal">
@@ -82,15 +77,6 @@
             <span class="text-[11px] opacity-55">{{ t("config.task.fields.everyMinutes") }}</span>
             <span class="ml-2">{{ block.taskTrigger.everyMinutes }}</span>
           </div>
-        </div>
-        <div v-if="(block.taskTrigger?.todos ?? []).length > 0" class="space-y-1">
-          <div class="text-[11px] opacity-55">{{ t("config.task.fields.todos") }}</div>
-          <ul class="space-y-1 text-sm leading-6">
-            <li v-for="(todo, todoIdx) in block.taskTrigger?.todos ?? []" :key="`${block.id}-todo-${todoIdx}`" class="flex items-start gap-2">
-              <span class="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60"></span>
-              <span class="min-w-0 whitespace-pre-wrap">{{ todo }}</span>
-            </li>
-          </ul>
         </div>
       </div>
       <details
@@ -297,22 +283,17 @@
           <div class="flex items-center gap-2">
             <span class="badge badge-sm badge-outline">{{ t("chat.taskTrigger.badge") }}</span>
           </div>
-          <div class="text-base font-medium leading-6">{{ block.taskTrigger.title }}</div>
-          <div v-if="block.taskTrigger.cause" class="space-y-0.5">
-            <div class="text-[11px] opacity-55">{{ t("config.task.fields.cause") }}</div>
-            <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.cause }}</div>
-          </div>
           <div v-if="block.taskTrigger.goal" class="space-y-0.5">
             <div class="text-[11px] opacity-55">{{ t("config.task.fields.goal") }}</div>
             <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.goal }}</div>
           </div>
-          <div v-if="block.taskTrigger.flow" class="space-y-0.5">
-            <div class="text-[11px] opacity-55">{{ t("config.task.fields.flow") }}</div>
-            <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.flow }}</div>
+          <div v-if="block.taskTrigger.why" class="space-y-0.5">
+            <div class="text-[11px] opacity-55">{{ t("config.task.fields.why") }}</div>
+            <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.why }}</div>
           </div>
-          <div v-if="block.taskTrigger.statusSummary" class="space-y-0.5">
-            <div class="text-[11px] opacity-55">{{ t("config.task.fields.statusSummary") }}</div>
-            <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.statusSummary }}</div>
+          <div v-if="block.taskTrigger.todo" class="space-y-0.5">
+            <div class="text-[11px] opacity-55">{{ t("config.task.fields.todo") }}</div>
+            <div class="text-sm leading-6 whitespace-pre-wrap">{{ block.taskTrigger.todo }}</div>
           </div>
           <div v-if="block.taskTrigger.runAtLocal || block.taskTrigger.endAtLocal || block.taskTrigger.everyMinutes" class="grid gap-1 text-sm leading-6">
             <div v-if="block.taskTrigger.runAtLocal">
@@ -327,15 +308,6 @@
               <span class="text-[11px] opacity-55">{{ t("config.task.fields.everyMinutes") }}</span>
               <span class="ml-2">{{ block.taskTrigger.everyMinutes }}</span>
             </div>
-          </div>
-          <div v-if="(block.taskTrigger?.todos ?? []).length > 0" class="space-y-1">
-            <div class="text-[11px] opacity-55">{{ t("config.task.fields.todos") }}</div>
-            <ul class="space-y-1 text-sm leading-6">
-              <li v-for="(todo, todoIdx) in block.taskTrigger?.todos ?? []" :key="`${block.id}-todo-${todoIdx}`" class="flex items-start gap-2">
-                <span class="mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-current opacity-60"></span>
-                <span class="min-w-0 whitespace-pre-wrap">{{ todo }}</span>
-              </li>
-            </ul>
           </div>
         </div>
         <details

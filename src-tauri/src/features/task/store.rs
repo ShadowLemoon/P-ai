@@ -239,17 +239,6 @@ fn task_notes_from_json(raw: &str) -> Vec<TaskProgressNoteStored> {
     serde_json::from_str(raw).unwrap_or_default()
 }
 
-fn task_append_progress_note_utc(notes: &mut Vec<TaskProgressNoteStored>, note: &str) {
-    let trimmed = note.trim();
-    if trimmed.is_empty() {
-        return;
-    }
-    notes.push(TaskProgressNoteStored {
-        at_utc: now_utc_rfc3339(),
-        note: trimmed.to_string(),
-    });
-}
-
 fn task_store_get_runtime_state(conn: &Connection, key: &str) -> Result<Option<String>, String> {
     conn.query_row(
         "SELECT state_value FROM task_runtime_state WHERE state_key = ?1",
@@ -401,9 +390,9 @@ fn task_store_next_order_index(conn: &Connection) -> Result<i64, String> {
 }
 
 fn task_store_create_task(data_path: &PathBuf, input: &TaskCreateInput) -> Result<TaskEntry, String> {
-    let title = input.title.trim();
-    if title.is_empty() {
-        return Err("task.title is required".to_string());
+    let goal = input.goal.trim();
+    if goal.is_empty() {
+        return Err("task.goal is required".to_string());
     }
     let trigger = task_trigger_from_local_input(&input.trigger)?;
     let conn = task_store_open(data_path)?;
@@ -416,12 +405,7 @@ fn task_store_create_task(data_path: &PathBuf, input: &TaskCreateInput) -> Resul
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
-    let todos = input
-        .todos
-        .iter()
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>();
+    let todos = task_legacy_todos_from_todo(&input.todo);
     conn.execute(
         "INSERT INTO task_record (
             task_id, conversation_id, order_index, title, cause, goal, flow, todos_json, status_summary,
@@ -433,12 +417,12 @@ fn task_store_create_task(data_path: &PathBuf, input: &TaskCreateInput) -> Resul
             task_id,
             conversation_id,
             order_index,
-            title,
-            input.cause.trim(),
-            input.goal.trim(),
-            input.flow.trim(),
+            task_legacy_title_from_goal(goal),
+            task_legacy_cause_from_why(&input.why),
+            task_legacy_goal_from_goal(goal),
+            task_legacy_flow_from_why(&input.why),
             task_list_to_json(&todos)?,
-            input.status_summary.trim(),
+            task_legacy_status_summary_from_todo(&input.todo),
             TASK_STATE_ACTIVE,
             task_notes_to_json(&Vec::<TaskProgressNoteStored>::new())?,
             task_trigger_kind_from_fields(trigger.run_at_utc.as_deref(), trigger.every_minutes),
@@ -464,33 +448,28 @@ fn task_store_update_task(data_path: &PathBuf, input: &TaskUpdateInput) -> Resul
     } else {
         existing.trigger.clone()
     };
-    let mut notes = existing.progress_notes.clone();
-    if let Some(note) = &input.append_note {
-        task_append_progress_note_utc(&mut notes, note);
-    }
-    let title = input.title.as_deref().unwrap_or(&existing.title).trim().to_string();
-    if title.is_empty() {
-        return Err("task.title cannot be empty".to_string());
-    }
-    let todos = input
-        .todos
-        .clone()
-        .unwrap_or(existing.todos.clone())
-        .into_iter()
-        .map(|item| item.trim().to_string())
-        .filter(|item| !item.is_empty())
-        .collect::<Vec<_>>();
-    let stage_key = input
-        .stage_key
+    let next_goal = input
+        .goal
         .as_deref()
-        .unwrap_or(&existing.stage_key)
-        .trim()
-        .to_string();
-    let stage_updated_at_utc = if input.stage_key.is_some() || input.append_note.is_some() {
-        Some(now_utc_rfc3339())
-    } else {
-        existing.stage_updated_at_utc.clone()
-    };
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| task_goal_from_legacy_fields(&existing.title, &existing.goal));
+    if next_goal.trim().is_empty() {
+        return Err("task.goal cannot be empty".to_string());
+    }
+    let next_why = input
+        .why
+        .as_deref()
+        .map(str::trim)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| task_why_from_legacy_record(&existing));
+    let next_todo = input
+        .todo
+        .as_deref()
+        .map(str::trim)
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| task_todo_from_legacy_fields(&existing.status_summary, &existing.todos));
     let conversation_id = input
         .conversation_id
         .as_ref()
@@ -498,6 +477,9 @@ fn task_store_update_task(data_path: &PathBuf, input: &TaskUpdateInput) -> Resul
         .map(|value| value.trim())
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
+    let existing_notes_json = task_notes_to_json(&existing.progress_notes)?;
+    let existing_stage_key = existing.stage_key.clone();
+    let existing_stage_updated_at_utc = existing.stage_updated_at_utc.clone();
     let conn = task_store_open(data_path)?;
     conn.execute(
         "UPDATE task_record SET
@@ -520,15 +502,15 @@ fn task_store_update_task(data_path: &PathBuf, input: &TaskUpdateInput) -> Resul
         params![
             input.task_id,
             conversation_id,
-            title,
-            input.cause.as_deref().unwrap_or(&existing.cause).trim(),
-            input.goal.as_deref().unwrap_or(&existing.goal).trim(),
-            input.flow.as_deref().unwrap_or(&existing.flow).trim(),
-            task_list_to_json(&todos)?,
-            input.status_summary.as_deref().unwrap_or(&existing.status_summary).trim(),
-            task_notes_to_json(&notes)?,
-            stage_key,
-            stage_updated_at_utc,
+            task_legacy_title_from_goal(&next_goal),
+            task_legacy_cause_from_why(&next_why),
+            task_legacy_goal_from_goal(&next_goal),
+            task_legacy_flow_from_why(&next_why),
+            task_list_to_json(&task_legacy_todos_from_todo(&next_todo))?,
+            task_legacy_status_summary_from_todo(&next_todo),
+            existing_notes_json,
+            existing_stage_key,
+            existing_stage_updated_at_utc,
             task_trigger_kind_from_fields(trigger.run_at_utc.as_deref(), trigger.every_minutes),
             trigger.run_at_utc.as_deref(),
             trigger.every_minutes,
@@ -550,16 +532,9 @@ fn task_store_complete_task(data_path: &PathBuf, input: &TaskCompleteInput) -> R
     if completion_state == TASK_STATE_ACTIVE {
         return Err("Complete task cannot keep completionState=active".to_string());
     }
-    let mut notes = existing.progress_notes.clone();
-    if let Some(note) = &input.append_note {
-        task_append_progress_note_utc(&mut notes, note);
-    }
-    let final_status = if input.status_summary.trim().is_empty() {
-        existing.status_summary.trim().to_string()
-    } else {
-        input.status_summary.trim().to_string()
-    };
     let now_utc = now_utc_rfc3339();
+    let existing_status_summary = existing.status_summary.clone();
+    let existing_notes_json = task_notes_to_json(&existing.progress_notes)?;
     let conn = task_store_open(data_path)?;
     conn.execute(
         "UPDATE task_record SET
@@ -574,8 +549,8 @@ fn task_store_complete_task(data_path: &PathBuf, input: &TaskCompleteInput) -> R
             input.task_id,
             completion_state,
             input.completion_conclusion.trim(),
-            final_status,
-            task_notes_to_json(&notes)?,
+            existing_status_summary,
+            existing_notes_json,
             now_utc,
             now_utc,
         ],

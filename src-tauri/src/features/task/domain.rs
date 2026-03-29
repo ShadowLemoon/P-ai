@@ -62,20 +62,13 @@ struct TaskEntry {
     #[serde(default)]
     conversation_id: Option<String>,
     order_index: i64,
-    title: String,
-    cause: String,
     goal: String,
-    flow: String,
-    todos: Vec<String>,
-    status_summary: String,
+    why: String,
+    todo: String,
     completion_state: String,
     #[serde(default)]
     completion_conclusion: String,
     progress_notes: Vec<TaskProgressNoteView>,
-    #[serde(default)]
-    stage_key: String,
-    #[serde(default)]
-    stage_updated_at_local: Option<String>,
     trigger: TaskTriggerView,
     created_at_local: String,
     updated_at_local: String,
@@ -157,19 +150,13 @@ struct TaskRunLogListInput {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TaskCreateInput {
-    title: String,
+    goal: String,
     #[serde(default)]
     conversation_id: Option<String>,
     #[serde(default)]
-    cause: String,
+    why: String,
     #[serde(default)]
-    goal: String,
-    #[serde(default)]
-    flow: String,
-    #[serde(default)]
-    todos: Vec<String>,
-    #[serde(default)]
-    status_summary: String,
+    todo: String,
     trigger: TaskTriggerInputLocal,
 }
 
@@ -180,21 +167,11 @@ struct TaskUpdateInput {
     #[serde(default)]
     conversation_id: Option<String>,
     #[serde(default)]
-    title: Option<String>,
-    #[serde(default)]
-    cause: Option<String>,
-    #[serde(default)]
     goal: Option<String>,
     #[serde(default)]
-    flow: Option<String>,
+    why: Option<String>,
     #[serde(default)]
-    todos: Option<Vec<String>>,
-    #[serde(default)]
-    status_summary: Option<String>,
-    #[serde(default)]
-    stage_key: Option<String>,
-    #[serde(default)]
-    append_note: Option<String>,
+    todo: Option<String>,
     #[serde(default)]
     trigger: Option<TaskTriggerInputLocal>,
 }
@@ -206,10 +183,6 @@ struct TaskCompleteInput {
     completion_state: String,
     #[serde(default)]
     completion_conclusion: String,
-    #[serde(default)]
-    status_summary: String,
-    #[serde(default)]
-    append_note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -249,17 +222,91 @@ fn task_progress_note_view_from_stored(note: &TaskProgressNoteStored) -> TaskPro
     }
 }
 
+fn task_goal_from_legacy_fields(title: &str, goal: &str) -> String {
+    let normalized_goal = goal.trim();
+    if !normalized_goal.is_empty() {
+        return normalized_goal.to_string();
+    }
+    title.trim().to_string()
+}
+
+fn task_why_from_legacy_record(record: &TaskRecordStored) -> String {
+    let normalized_goal = task_goal_from_legacy_fields(&record.title, &record.goal);
+    let normalized_title = record.title.trim();
+    let mut parts = Vec::<String>::new();
+    if !record.cause.trim().is_empty() {
+        parts.push(record.cause.trim().to_string());
+    }
+    if !normalized_title.is_empty() && normalized_title != normalized_goal {
+        parts.push(format!("原标题：{}", normalized_title));
+    }
+    if !record.flow.trim().is_empty() {
+        parts.push(format!("原流程：{}", record.flow.trim()));
+    }
+    if !record.stage_key.trim().is_empty() {
+        parts.push(format!("原阶段：{}", record.stage_key.trim()));
+    }
+    parts.join("\n")
+}
+
+fn task_todo_from_legacy_fields(status_summary: &str, todos: &[String]) -> String {
+    let normalized_status = status_summary.trim();
+    let normalized_todos = todos
+        .iter()
+        .map(|item| item.trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect::<Vec<_>>();
+    let mut parts = Vec::<String>::new();
+    if !normalized_status.is_empty() {
+        parts.push(normalized_status.to_string());
+    }
+    if !normalized_todos.is_empty() {
+        let joined = normalized_todos.join("；");
+        if normalized_status.is_empty() {
+            parts.push(joined);
+        } else {
+            parts.push(format!("待办：{}", joined));
+        }
+    }
+    parts.join("\n")
+}
+
+fn task_legacy_title_from_goal(goal: &str) -> String {
+    goal.trim().to_string()
+}
+
+fn task_legacy_goal_from_goal(goal: &str) -> String {
+    goal.trim().to_string()
+}
+
+fn task_legacy_cause_from_why(why: &str) -> String {
+    why.trim().to_string()
+}
+
+fn task_legacy_flow_from_why(_why: &str) -> String {
+    String::new()
+}
+
+fn task_legacy_todos_from_todo(todo: &str) -> Vec<String> {
+    let normalized = todo.trim();
+    if normalized.is_empty() {
+        return Vec::new();
+    }
+    vec![normalized.to_string()]
+}
+
+fn task_legacy_status_summary_from_todo(todo: &str) -> String {
+    todo.trim().to_string()
+}
+
 fn task_entry_view_from_stored(record: &TaskRecordStored) -> TaskEntry {
     TaskEntry {
         task_id: record.task_id.clone(),
         conversation_id: record.conversation_id.clone(),
         order_index: record.order_index,
-        title: record.title.clone(),
-        cause: record.cause.clone(),
-        goal: record.goal.clone(),
-        flow: record.flow.clone(),
-        todos: record.todos.clone(),
-        status_summary: record.status_summary.clone(),
+        goal: task_goal_from_legacy_fields(&record.title, &record.goal),
+        why: task_why_from_legacy_record(record),
+        todo: task_todo_from_legacy_fields(&record.status_summary, &record.todos),
         completion_state: record.completion_state.clone(),
         completion_conclusion: record.completion_conclusion.clone(),
         progress_notes: record
@@ -267,11 +314,6 @@ fn task_entry_view_from_stored(record: &TaskRecordStored) -> TaskEntry {
             .iter()
             .map(task_progress_note_view_from_stored)
             .collect(),
-        stage_key: record.stage_key.clone(),
-        stage_updated_at_local: record
-            .stage_updated_at_utc
-            .as_deref()
-            .map(format_utc_storage_time_to_local_rfc3339),
         trigger: task_trigger_view_from_stored(&record.trigger),
         created_at_local: format_utc_storage_time_to_local_rfc3339(&record.created_at_utc),
         updated_at_local: format_utc_storage_time_to_local_rfc3339(&record.updated_at_utc),

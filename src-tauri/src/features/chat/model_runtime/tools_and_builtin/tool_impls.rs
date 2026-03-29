@@ -499,20 +499,15 @@ impl Tool for BuiltinTaskTool {
     async fn definition(&self, _prompt: String) -> ToolDefinition {
         ToolDefinition {
             name: "task".to_string(),
-            description: "管理持久化任务板。支持 list、get、create、update、complete 五种动作。若未填写 trigger.runAtLocal，任务会立即生效；若填写 trigger.runAtLocal，则在该本地时间执行一次；若同时填写 trigger.everyMinutes，则会从 trigger.runAtLocal 开始按分钟重复执行，并且必须同时填写 trigger.endAtLocal 作为停止时间。trigger.runAtLocal 与 trigger.endAtLocal 必须使用当前提示中提供的本地 RFC3339 时间格式，保留时区偏移与秒级精度，不要包含毫秒；系统会在数据层自动转成 UTC 真实时间存储与调度。".to_string(),
+            description: "管理持久化任务板。支持 list、get、create、update、complete 五种动作。任务主字段统一使用 goal / why / todo：goal 是任务目标与标题，why 用来防止后续推进走偏，todo 表示当前下一步。若未填写 trigger.runAtLocal，任务会立即生效；若填写 trigger.runAtLocal，则在该本地时间执行一次；若同时填写 trigger.everyMinutes，则会从 trigger.runAtLocal 开始按分钟重复执行，并且必须同时填写 trigger.endAtLocal 作为停止时间。trigger.runAtLocal 与 trigger.endAtLocal 必须使用当前提示中提供的本地 RFC3339 时间格式，保留时区偏移与秒级精度，不要包含毫秒；系统会在数据层自动转成 UTC 真实时间存储与调度。".to_string(),
             parameters: serde_json::json!({
               "type": "object",
               "properties": {
                 "action": { "type": "string", "enum": ["list", "get", "create", "update", "complete"] },
                 "task_id": { "type": "string" },
-                "title": { "type": "string" },
-                "cause": { "type": "string" },
-                "goal": { "type": "string" },
-                "flow": { "type": "string" },
-                "todos": { "type": "array", "items": { "type": "string" } },
-                "status_summary": { "type": "string" },
-                "stage_key": { "type": "string" },
-                "append_note": { "type": "string" },
+                "goal": { "type": "string", "description": "任务目标，也是列表标题。" },
+                "why": { "type": "string", "description": "为什么要做这件事，用来避免后续推进时走偏。" },
+                "todo": { "type": "string", "description": "当前下一步要做什么；可以写短计划，但重点是下一步。" },
                 "completion_state": { "type": "string", "enum": ["completed", "failed_completed"] },
                 "completion_conclusion": { "type": "string" },
                 "trigger": {

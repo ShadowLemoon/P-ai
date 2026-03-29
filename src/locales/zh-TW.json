@@ -474,7 +474,7 @@
       "editTask": "編輯任務",
       "trackedShort": "追蹤中",
       "empty": "暫無任務。",
-      "noStatus": "暫無狀態摘要",
+        "noTodo": "暫無當前待辦",
       "detail": "任務詳情",
       "readonlyHint": "任務詳情為唯讀，請在對話中使用 Task 工具進行更新。",
       "createTask": "新建任務",
@@ -524,32 +524,27 @@
         "dequeued": "已恢復",
         "failed": "失敗"
       },
-      "validation": {
-        "titleRequired": "任務標題不能為空。",
-        "everyMinutesPositive": "間隔分鐘必須是大於 0 的整數。"
-      },
-      "todosPlaceholder": "多個 todo 可用；分隔",
+        "validation": {
+          "goalRequired": "任務目標不能為空。",
+          "everyMinutesPositive": "間隔分鐘必須是大於 0 的整數。"
+        },
+        "todoPlaceholder": "寫當前下一步要做什麼",
       "filters": {
         "active": "進行中",
         "tracked": "追蹤中",
         "completed": "已完成",
         "all": "全部"
       },
-      "fields": {
-        "title": "標題",
-        "triggerKind": "觸發器",
-        "runAt": "開始時間",
-        "everyMinutes": "間隔分鐘",
-        "statusSummary": "當前狀態",
-        "goal": "目標",
-        "cause": "起因",
-        "flow": "流程",
-        "todos": "待辦",
-        "stageKey": "階段鍵",
-        "appendNote": "追加筆記",
-        "completionConclusion": "完成結論",
-        "completionState": "完成狀態",
-        "nextRunAt": "下次觸發",
+        "fields": {
+          "triggerKind": "觸發器",
+          "runAt": "開始時間",
+          "everyMinutes": "間隔分鐘",
+          "goal": "目標",
+          "why": "為什麼做",
+          "todo": "當前待辦",
+          "completionConclusion": "完成結論",
+          "completionState": "完成狀態",
+          "nextRunAt": "下次觸發",
         "updatedAt": "更新時間",
         "endAt": "結束時間"
       }

@@ -4,8 +4,6 @@ type ViewMode = "chat" | "archives" | "config";
 
 type UseViewRefreshOptions = {
   viewMode: Ref<ViewMode>;
-  recordHotkeySuppressAfterPopup: (ms: number) => void;
-  recordHotkeySuppressMs: number;
   loadConfig: () => Promise<void>;
   loadPersonas: () => Promise<void>;
   loadChatSettings: () => Promise<void>;
@@ -63,7 +61,6 @@ export function useViewRefresh(options: UseViewRefreshOptions) {
   }
 
   async function handleWindowRefreshSignal() {
-    options.recordHotkeySuppressAfterPopup(options.recordHotkeySuppressMs);
     if (!windowBootstrapped.value) {
       try {
         await refreshAllViewData();

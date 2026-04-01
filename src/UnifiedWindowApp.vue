@@ -624,8 +624,6 @@ const avatarError = ref("");
 const personaSaving = ref(false);
 const apiModelOptions = ref<Record<string, string[]>>({});
 const suppressAutosave = ref(false);
-const RECORD_HOTKEY_SUPPRESS_AFTER_POPUP_MS = 700;
-const CHAT_WINDOW_FOCUS_SYNC_DEBOUNCE_MS = 180;
 const CHAT_WINDOW_MIC_PREWARM_DEBOUNCE_MS = 260;
 const lastSavedConfigJson = ref("");
 const lastSavedPersonasJson = ref("");
@@ -915,7 +913,6 @@ function syncChatWindowActiveState(reason = "unknown") {
   chatWindowActiveSynced.value = active;
   if (active) {
     void stopRecording(false);
-    recordHotkey.suppressAfterPopup(RECORD_HOTKEY_SUPPRESS_AFTER_POPUP_MS);
     const activeConversationId = String(currentChatConversationId.value || "").trim();
     if (!activeConversationId) {
       void refreshChatUnarchivedConversations()
@@ -931,11 +928,11 @@ function syncChatWindowActiveState(reason = "unknown") {
 }
 
 function handleWindowFocusForStateSync() {
-  scheduleChatWindowActiveStateSync("focus", CHAT_WINDOW_FOCUS_SYNC_DEBOUNCE_MS);
+  scheduleChatWindowActiveStateSync("focus");
 }
 
 function handleWindowBlurForStateSync() {
-  scheduleChatWindowActiveStateSync("blur", CHAT_WINDOW_FOCUS_SYNC_DEBOUNCE_MS);
+  scheduleChatWindowActiveStateSync("blur");
 }
 
 function handleVisibilityForStateSync() {
@@ -2023,8 +2020,6 @@ const {
 
 const { suppressChatReloadWatch, refreshAllViewData } = useViewRefresh({
   viewMode,
-  recordHotkeySuppressAfterPopup: recordHotkey.suppressAfterPopup,
-  recordHotkeySuppressMs: RECORD_HOTKEY_SUPPRESS_AFTER_POPUP_MS,
   loadConfig,
   loadPersonas,
   loadChatSettings,

@@ -1307,6 +1307,8 @@ struct UnarchivedConversationSummary {
     last_message_at: Option<String>,
     message_count: usize,
     agent_id: String,
+    department_id: String,
+    department_name: String,
     workspace_label: String,
     #[serde(default)]
     is_active: bool,
@@ -1457,10 +1459,20 @@ fn workspace_label_for_unarchived_conversation(
 
 fn build_unarchived_conversation_summary(
     state: &AppState,
+    app_config: &AppConfig,
     main_conversation_id: &str,
     conversation: &Conversation,
 ) -> UnarchivedConversationSummary {
     let last_message_at = conversation.messages.last().map(|m| m.created_at.clone());
+    let department_id = resolved_foreground_department_id_for_conversation(
+        app_config,
+        conversation,
+        conversation.id.trim() == main_conversation_id,
+    );
+    let department_name = department_by_id(app_config, &department_id)
+        .map(|department| department.name.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| department_id.clone());
     UnarchivedConversationSummary {
         conversation_id: conversation.id.clone(),
         title: if conversation.title.trim().is_empty() {
@@ -1472,6 +1484,8 @@ fn build_unarchived_conversation_summary(
         last_message_at,
         message_count: conversation.messages.len(),
         agent_id: conversation.agent_id.clone(),
+        department_id,
+        department_name,
         workspace_label: workspace_label_for_unarchived_conversation(state, conversation),
         is_active: conversation.status.trim() == "active",
         is_main_conversation: conversation.id.trim() == main_conversation_id,
@@ -1482,6 +1496,7 @@ fn build_unarchived_conversation_summary(
 
 fn collect_unarchived_conversation_summaries(
     state: &AppState,
+    app_config: &AppConfig,
     data: &AppData,
 ) -> Vec<UnarchivedConversationSummary> {
     let main_conversation_id = data
@@ -1497,7 +1512,14 @@ fn collect_unarchived_conversation_summaries(
             conversation.summary.trim().is_empty()
                 && conversation_visible_in_foreground_lists(conversation)
         })
-        .map(|conversation| build_unarchived_conversation_summary(state, &main_conversation_id, conversation))
+        .map(|conversation| {
+            build_unarchived_conversation_summary(
+                state,
+                app_config,
+                &main_conversation_id,
+                conversation,
+            )
+        })
         .collect::<Vec<_>>();
     summaries.sort_by(|a, b| {
         if a.is_main_conversation != b.is_main_conversation {
@@ -1575,10 +1597,12 @@ fn list_unarchived_conversations(state: State<'_, AppState>) -> Result<Vec<Unarc
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(&state)?;
+    let app_config = state_read_config_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    let summaries = collect_unarchived_conversation_summaries(state.inner(), &data);
-    if defaults_changed || normalized_changed {
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    let summaries = collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
+    if defaults_changed || normalized_changed || department_changed {
         state_write_app_data_cached(&state, &data)?;
     }
     drop(guard);
@@ -1628,9 +1652,10 @@ struct UnarchivedConversationOverviewUpdatedPayload {
 
 fn build_unarchived_conversation_overview_payload(
     state: &AppState,
+    app_config: &AppConfig,
     data: &AppData,
 ) -> UnarchivedConversationOverviewUpdatedPayload {
-    let unarchived_conversations = collect_unarchived_conversation_summaries(state, data);
+    let unarchived_conversations = collect_unarchived_conversation_summaries(state, app_config, data);
     let preferred_conversation_id = unarchived_conversations
         .first()
         .map(|item| item.conversation_id.clone());
@@ -1663,12 +1688,14 @@ fn emit_unarchived_conversation_overview_updated_from_state(state: &AppState) ->
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(state)?;
+    let app_config = state_read_config_cached(state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    if defaults_changed || normalized_changed {
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    if defaults_changed || normalized_changed || department_changed {
         state_write_app_data_cached(state, &data)?;
     }
-    let payload = build_unarchived_conversation_overview_payload(state, &data);
+    let payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
     drop(guard);
     emit_unarchived_conversation_overview_updated_payload(state, &payload);
     Ok(())
@@ -1688,6 +1715,7 @@ fn set_active_unarchived_conversation(
     let mut data = state_read_app_data_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let requested_conversation_id = input
         .conversation_id
         .as_deref()
@@ -1737,7 +1765,7 @@ fn set_active_unarchived_conversation(
         .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
     ensure_unarchived_conversation_not_organizing(state.inner(), &conversation_id)?;
 
-    let mut changed = defaults_changed || normalized_changed;
+    let mut changed = defaults_changed || normalized_changed || department_changed;
     for (_idx, conversation) in data.conversations.iter_mut().enumerate() {
         if !conversation_visible_in_foreground_lists(conversation) || !conversation.summary.trim().is_empty() {
             continue;
@@ -1770,6 +1798,7 @@ fn switch_active_conversation_snapshot(
     let mut data = state_read_app_data_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let requested_conversation_id = input
         .conversation_id
         .as_deref()
@@ -1795,7 +1824,7 @@ fn switch_active_conversation_snapshot(
         .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
     ensure_unarchived_conversation_not_organizing(state.inner(), &target_conversation_id)?;
 
-    let mut changed = defaults_changed || normalized_changed;
+    let mut changed = defaults_changed || normalized_changed || department_changed;
     for (_idx, conversation) in data.conversations.iter_mut().enumerate() {
         if !conversation_visible_in_foreground_lists(conversation) || !conversation.summary.trim().is_empty() {
             continue;
@@ -1821,7 +1850,8 @@ fn switch_active_conversation_snapshot(
     let start = total_messages.saturating_sub(SWITCH_SNAPSHOT_RECENT_LIMIT);
     let mut messages = all_messages[start..].to_vec();
     let has_more_history = start > 0;
-    let unarchived_conversations = collect_unarchived_conversation_summaries(state.inner(), &data);
+    let unarchived_conversations =
+        collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
 
     if changed {
         state_write_app_data_cached(&state, &data)?;
@@ -1846,6 +1876,8 @@ struct CreateUnarchivedConversationInput {
     #[serde(default)]
     agent_id: Option<String>,
     #[serde(default)]
+    department_id: Option<String>,
+    #[serde(default)]
     title: Option<String>,
 }
 
@@ -1868,15 +1900,39 @@ fn create_unarchived_conversation(
     let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
     ensure_default_agent(&mut data);
-
+    let requested_department_id = input
+        .department_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let department = if let Some(department_id) = requested_department_id {
+        department_by_id(&app_config, department_id)
+            .ok_or_else(|| format!("Department '{department_id}' not found."))?
+    } else {
+        assistant_department(&app_config)
+            .ok_or_else(|| "No assistant department configured.".to_string())?
+    };
     let api_config_id = input
         .api_config_id
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
-        .or_else(|| resolve_selected_api_config(&app_config, None).map(|item| item.id.clone()))
-        .ok_or_else(|| "No API config available".to_string())?;
+        .unwrap_or_else(|| department_primary_api_config_id(department));
+    let agent_id = input
+        .agent_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            department
+                .agent_ids
+                .iter()
+                .find(|id| !id.trim().is_empty())
+                .cloned()
+        })
+        .unwrap_or_else(|| data.assistant_department_agent_id.clone());
     let conversation_title = input
         .title
         .as_deref()
@@ -1894,7 +1950,8 @@ fn create_unarchived_conversation(
         &state.data_path,
         &data,
         &api_config_id,
-        &data.assistant_department_agent_id,
+        &agent_id,
+        &department.id,
         conversation_title,
     );
     let conversation_id = conversation.id.clone();
@@ -1908,7 +1965,8 @@ fn create_unarchived_conversation(
     {
         data.main_conversation_id = Some(conversation_id.clone());
     }
-    let overview_payload = build_unarchived_conversation_overview_payload(state.inner(), &data);
+    let overview_payload =
+        build_unarchived_conversation_overview_payload(state.inner(), &app_config, &data);
     state_write_app_data_cached(&state, &data)?;
     drop(guard);
     emit_unarchived_conversation_overview_updated_payload(state.inner(), &overview_payload);
@@ -2071,7 +2129,13 @@ fn delete_unarchived_conversation(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
+    let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
+    let deleted_is_main = data
+        .main_conversation_id
+        .as_deref()
+        .map(str::trim)
+        == Some(conversation_id);
     let before = data.conversations.len();
     data.conversations.retain(|conversation| {
         !(conversation.id == conversation_id
@@ -2083,13 +2147,22 @@ fn delete_unarchived_conversation(
         return Err("Unarchived conversation not found.".to_string());
     }
     let _ = normalize_main_conversation_marker(&mut data, "");
-    if latest_main_conversation_index(&data, "").is_none() {
-        let _ = ensure_active_foreground_conversation_index_atomic(
-            &mut data,
+    if deleted_is_main {
+        let main_api_config_id = assistant_department(&app_config)
+            .map(department_primary_api_config_id)
+            .or_else(|| resolve_selected_api_config(&app_config, None).map(|item| item.id.clone()))
+            .ok_or_else(|| "No API config available".to_string())?;
+        let conversation = build_foreground_chat_conversation_record(
             &state.data_path,
-            "",
+            &data,
+            &main_api_config_id,
+            &data.assistant_department_agent_id,
+            ASSISTANT_DEPARTMENT_ID,
             "",
         );
+        let next_main_id = conversation.id.clone();
+        data.conversations.push(conversation);
+        data.main_conversation_id = Some(next_main_id);
     }
     let _ = normalize_single_active_main_conversation(&mut data);
     let active_conversation_id = data
@@ -2110,7 +2183,8 @@ fn delete_unarchived_conversation(
                 .map(|conversation| conversation.id.clone())
         })
         .unwrap_or_default();
-    let overview_payload = build_unarchived_conversation_overview_payload(state.inner(), &data);
+    let overview_payload =
+        build_unarchived_conversation_overview_payload(state.inner(), &app_config, &data);
     state_write_app_data_cached(&state, &data)?;
     eprintln!(
         "[会话] 已删除未归档主会话: conversation_id={}",
@@ -2140,7 +2214,8 @@ fn get_active_conversation_messages(
     let mut data = state_read_app_data_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    if defaults_changed || normalized_changed {
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    if defaults_changed || normalized_changed || department_changed {
         state_write_app_data_cached(&state, &data)?;
     }
     let mut runtime_data = data.clone();
@@ -2284,6 +2359,10 @@ fn resolve_unarchived_conversation_index_with_fallback(
         ));
     }
 
+    if let Some(existing_idx) = main_conversation_index(data, effective_agent_id) {
+        return Ok(existing_idx);
+    }
+
     if let Some(existing_idx) = latest_active_conversation_index(data, "", effective_agent_id) {
         return Ok(existing_idx);
     }
@@ -2359,7 +2438,8 @@ fn get_active_conversation_messages_before(
     let mut data = state_read_app_data_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    if defaults_changed || normalized_changed {
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    if defaults_changed || normalized_changed || department_changed {
         state_write_app_data_cached(&state, &data)?;
     }
     let mut runtime_data = data.clone();
@@ -2444,7 +2524,8 @@ fn get_active_conversation_messages_after(
     let mut data = state_read_app_data_cached(&state)?;
     let defaults_changed = ensure_default_agent(&mut data);
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    if defaults_changed || normalized_changed {
+    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    if defaults_changed || normalized_changed || department_changed {
         state_write_app_data_cached(&state, &data)?;
     }
     let mut runtime_data = data.clone();

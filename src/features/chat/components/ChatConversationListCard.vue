@@ -7,7 +7,7 @@
         type="button"
         class="w-full rounded-box text-left transition-colors"
         :class="[
-          item.conversationId === props.activeConversationId ? 'bg-primary/10' : 'bg-base-100 hover:bg-base-200',
+          item.conversationId === props.activeConversationId ? 'bg-base-300' : 'bg-base-100 hover:bg-base-200',
           isConversationItemDisabled(item) ? 'cursor-not-allowed opacity-60' : '',
         ]"
         :disabled="isConversationItemDisabled(item)"
@@ -34,25 +34,22 @@
 
           <div class="flex-1 min-w-0">
             <!-- 标题 + 会话类型标签 -->
-            <div class="flex items-center gap-2">
-              <div class="truncate text-sm font-medium">
-                {{ item.title || t("chat.untitledConversation") }}
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="truncate text-sm font-medium">
+                  {{ conversationDisplayTitle(item) }}
+                </div>
               </div>
-              <span v-if="item.isMainConversation" class="badge badge-primary badge-xs shrink-0">
-                {{ t("chat.mainConversation") }}
-              </span>
-              <span v-if="item.conversationId === props.activeConversationId" class="badge badge-outline badge-xs shrink-0">
-                {{ t("chat.currentConversation") }}
+              <span class="shrink-0 text-[11px] text-base-content/60">
+                {{ formatConversationTime(item.updatedAt) }}
               </span>
             </div>
 
-            <!-- 蓝色区域：工作空间 + 日期 + 消息数 -->
-            <div class="flex items-center gap-2 mt-1 text-xs">
-              <span class="font-medium">
+            <div class="mt-1 flex items-center justify-between gap-2 text-xs">
+              <span class="min-w-0 truncate font-medium">
                 {{ item.workspaceLabel || t("chat.defaultWorkspace") }}
               </span>
-              <span class="text-base-content/70">{{ formatConversationTime(item.updatedAt) }}</span>
-              <span class="font-medium">
+              <span class="shrink-0 text-[11px] text-base-content/60">
                 {{ t("chat.messageCount", { count: item.messageCount }) }}
               </span>
             </div>
@@ -89,6 +86,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ChatConversationOverviewItem, ConversationPreviewMessage } from "../../../types/app";
+import { formatConversationListTime } from "../utils/conversation-time";
 
 const props = defineProps<{
   items: ChatConversationOverviewItem[];
@@ -118,6 +116,11 @@ function conversationItemTitle(item: ChatConversationOverviewItem): string {
     return t("chat.organizingContextDisabled");
   }
   return item.workspaceLabel || t("chat.defaultWorkspace");
+}
+
+function conversationDisplayTitle(item: ChatConversationOverviewItem): string {
+  if (item.isMainConversation) return t("chat.mainConversation");
+  return item.title || t("chat.untitledConversation");
 }
 
 function normalizedPreviewMessages(item: ChatConversationOverviewItem): ConversationPreviewMessage[] {
@@ -150,15 +153,7 @@ function previewText(preview: ConversationPreviewMessage): string {
 }
 
 function formatConversationTime(value?: string): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(locale.value, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatConversationListTime(value, locale.value);
 }
 
 function lastSpeakerInitial(item: ChatConversationOverviewItem): string {

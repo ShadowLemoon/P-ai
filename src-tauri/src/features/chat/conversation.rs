@@ -44,6 +44,58 @@ fn latest_main_conversation_index(data: &AppData, _agent_id: &str) -> Option<usi
         .map(|(idx, _)| idx)
 }
 
+fn fallback_foreground_department_id() -> String {
+    ASSISTANT_DEPARTMENT_ID.to_string()
+}
+
+fn resolved_foreground_department_id_for_conversation(
+    config: &AppConfig,
+    conversation: &Conversation,
+    is_main_conversation: bool,
+) -> String {
+    let existing = conversation.department_id.trim();
+    if !existing.is_empty() && department_by_id(config, existing).is_some() {
+        return existing.to_string();
+    }
+    if is_main_conversation {
+        return fallback_foreground_department_id();
+    }
+    department_for_agent_id(config, &conversation.agent_id)
+        .map(|department| department.id.clone())
+        .or_else(|| assistant_department(config).map(|department| department.id.clone()))
+        .unwrap_or_else(fallback_foreground_department_id)
+}
+
+fn normalize_foreground_conversation_departments(
+    config: &AppConfig,
+    data: &mut AppData,
+) -> bool {
+    let main_conversation_id = data
+        .main_conversation_id
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
+    let mut changed = false;
+    for conversation in &mut data.conversations {
+        if !conversation_visible_in_foreground_lists(conversation)
+            || !conversation.summary.trim().is_empty()
+        {
+            continue;
+        }
+        let next_department_id = resolved_foreground_department_id_for_conversation(
+            config,
+            conversation,
+            conversation.id.trim() == main_conversation_id,
+        );
+        if conversation.department_id.trim() != next_department_id {
+            conversation.department_id = next_department_id;
+            changed = true;
+        }
+    }
+    changed
+}
+
 fn main_conversation_index(data: &AppData, _agent_id: &str) -> Option<usize> {
     let target_id = data
         .main_conversation_id
@@ -61,15 +113,10 @@ fn normalize_main_conversation_marker(data: &mut AppData, _agent_id: &str) -> bo
     if main_conversation_index(data, "").is_some() {
         return false;
     }
-
-    let next_main_id = latest_active_conversation_index(data, "", "")
-        .or_else(|| latest_main_conversation_index(data, ""))
-        .and_then(|idx| data.conversations.get(idx))
-        .map(|conversation| conversation.id.clone());
-    if data.main_conversation_id == next_main_id {
+    if data.main_conversation_id.is_none() {
         return false;
     }
-    data.main_conversation_id = next_main_id;
+    data.main_conversation_id = None;
     true
 }
 
@@ -160,6 +207,7 @@ fn sanitize_tool_history_events(events: &[Value]) -> Vec<Value> {
 fn build_conversation_record(
     _api_config_id: &str,
     agent_id: &str,
+    department_id: &str,
     title: &str,
     conversation_kind: &str,
     root_conversation_id: Option<String>,
@@ -174,6 +222,7 @@ fn build_conversation_record(
             title.trim().to_string()
         },
         agent_id: agent_id.to_string(),
+        department_id: department_id.trim().to_string(),
         conversation_kind: conversation_kind.trim().to_string(),
         root_conversation_id,
         delegate_id,
@@ -199,11 +248,13 @@ fn build_foreground_chat_conversation_record(
     data: &AppData,
     api_config_id: &str,
     agent_id: &str,
+    department_id: &str,
     title: &str,
 ) -> Conversation {
     let mut conversation = build_conversation_record(
         api_config_id,
         agent_id,
+        department_id,
         title,
         CONVERSATION_KIND_CHAT,
         None,
@@ -273,6 +324,7 @@ fn ensure_active_conversation_index(
         api_config_id,
         "",
         "",
+        "",
         CONVERSATION_KIND_CHAT,
         None,
         None,
@@ -306,21 +358,25 @@ fn ensure_main_conversation_index(
     if let Some(idx) = main_conversation_index(data, agent_id) {
         return idx;
     }
-
-    if let Some(idx) = latest_active_conversation_index(data, api_config_id, agent_id)
-        .or_else(|| latest_main_conversation_index(data, agent_id))
-    {
-        if let Some(conversation) = data.conversations.get(idx) {
-            data.main_conversation_id = Some(conversation.id.clone());
+    let conversation = build_conversation_record(
+        api_config_id,
+        agent_id,
+        ASSISTANT_DEPARTMENT_ID,
+        "",
+        CONVERSATION_KIND_CHAT,
+        None,
+        None,
+    );
+    let conversation_id = conversation.id.clone();
+    for item in &mut data.conversations {
+        if !conversation_visible_in_foreground_lists(item) || !item.summary.trim().is_empty() {
+            continue;
         }
-        return idx;
+        item.status = "active".to_string();
     }
-
-    let idx = ensure_active_conversation_index(data, api_config_id, agent_id);
-    if let Some(conversation) = data.conversations.get(idx) {
-        data.main_conversation_id = Some(conversation.id.clone());
-    }
-    idx
+    data.conversations.push(conversation);
+    data.main_conversation_id = Some(conversation_id);
+    data.conversations.len() - 1
 }
 
 fn ensure_active_foreground_conversation_index_atomic(
@@ -331,11 +387,7 @@ fn ensure_active_foreground_conversation_index_atomic(
 ) -> usize {
     let _ = normalize_main_conversation_marker(data, agent_id);
     let _ = normalize_single_active_main_conversation(data);
-    if let Some(idx) = latest_active_conversation_index(data, api_config_id, agent_id) {
-        return idx;
-    }
-
-    if let Some(idx) = latest_main_conversation_index(data, agent_id) {
+    if let Some(idx) = main_conversation_index(data, agent_id) {
         for conversation in &mut data.conversations {
             if !conversation_visible_in_foreground_lists(conversation)
                 || !conversation.summary.trim().is_empty()
@@ -348,7 +400,14 @@ fn ensure_active_foreground_conversation_index_atomic(
     }
 
     let conversation =
-        build_foreground_chat_conversation_record(data_path, data, api_config_id, agent_id, "");
+        build_foreground_chat_conversation_record(
+            data_path,
+            data,
+            api_config_id,
+            agent_id,
+            ASSISTANT_DEPARTMENT_ID,
+            "",
+        );
     for item in &mut data.conversations {
         if !conversation_visible_in_foreground_lists(item) || !item.summary.trim().is_empty() {
             continue;
@@ -1579,6 +1638,7 @@ fn build_prompt_with_mode(
         id: conversation.id.clone(),
         title: conversation.title.clone(),
         agent_id: conversation.agent_id.clone(),
+        department_id: conversation.department_id.clone(),
         conversation_kind: conversation.conversation_kind.clone(),
         root_conversation_id: conversation.root_conversation_id.clone(),
         delegate_id: conversation.delegate_id.clone(),

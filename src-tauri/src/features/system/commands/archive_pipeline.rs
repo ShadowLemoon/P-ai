@@ -318,6 +318,7 @@ fn prepare_background_archive_active_conversation(
         let conversation = build_conversation_record(
             &selected_api.id,
             "",
+            ASSISTANT_DEPARTMENT_ID,
             "",
             CONVERSATION_KIND_CHAT,
             None,
@@ -403,7 +404,8 @@ fn prepare_background_archive_active_conversation(
         conversation_id
     };
 
-    let overview_payload = build_unarchived_conversation_overview_payload(state, &data);
+    let app_config = state_read_config_cached(state)?;
+    let overview_payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
     state_write_app_data_cached(state, &data)?;
     drop(guard);
     emit_unarchived_conversation_overview_updated_payload(state, &overview_payload);
@@ -982,26 +984,12 @@ fn delete_main_conversation_and_activate_latest(
     }
 
     let _ = normalize_main_conversation_marker(&mut data, "");
-
-    let active_idx = if let Some(existing_idx) = latest_main_conversation_index(&data, "") {
-        for (_idx, conversation) in data.conversations.iter_mut().enumerate() {
-            if conversation_is_delegate(conversation) || !conversation.summary.trim().is_empty() {
-                continue;
-            }
-            conversation.status = "active".to_string();
-        }
-        if let Some(conversation) = data.conversations.get(existing_idx) {
-            data.main_conversation_id = Some(conversation.id.clone());
-        }
-        existing_idx
-    } else {
-        ensure_active_foreground_conversation_index_atomic(
-            &mut data,
-            &state.data_path,
-            &selected_api.id,
-            "",
-        )
-    };
+    let active_idx = ensure_active_foreground_conversation_index_atomic(
+        &mut data,
+        &state.data_path,
+        &selected_api.id,
+        "",
+    );
     let active_conversation_id = data
         .conversations
         .get(active_idx)

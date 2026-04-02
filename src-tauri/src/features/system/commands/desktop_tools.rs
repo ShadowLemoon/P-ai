@@ -448,7 +448,8 @@ fn update_conversation_shell_workspace_path(
         return Err(format!("指定会话不存在：{conversation_id}"));
     };
     conversation.shell_workspace_path = shell_workspace_path;
-    let overview_payload = build_unarchived_conversation_overview_payload(state, &data);
+    let app_config = state_read_config_cached(state)?;
+    let overview_payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
     state_write_app_data_cached(state, &data)?;
     emit_unarchived_conversation_overview_updated_payload(state, &overview_payload);
     Ok(())

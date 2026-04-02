@@ -70,11 +70,11 @@
       :hotkey-test-recording-ms="hotkeyTestRecordingMs"
       :hotkey-test-audio="hotkeyTestAudio"
       :user-alias="userAlias"
-      :selected-persona-name="assistantDepartmentPersona?.name || t('archives.roleAssistant')"
+      :selected-persona-name="currentForegroundPersona?.name || t('archives.roleAssistant')"
       :current-chat-workspace-name="chatWorkspaceName"
       :chat-workspace-locked="chatWorkspaceLocked"
       :user-avatar-url="userAvatarUrl"
-      :selected-persona-avatar-url="selectedPersonaAvatarUrl"
+      :selected-persona-avatar-url="currentForegroundPersonaAvatarUrl"
       :chat-persona-name-map="chatPersonaNameMap"
       :chat-persona-avatar-url-map="chatPersonaAvatarUrlMap"
       :chat-persona-presence-chips="chatPersonaPresenceChips"
@@ -104,6 +104,8 @@
       :conversation-scroll-to-bottom-request="conversationScrollToBottomRequest"
       :current-chat-conversation-id="currentChatConversationId"
       :chat-unarchived-conversation-items="chatUnarchivedConversationItems"
+      :create-conversation-department-options="createConversationDepartmentOptions"
+      :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
       :archives="archives"
       :selected-archive-id="selectedArchiveId"
       :archive-messages="archiveMessages"
@@ -753,7 +755,7 @@ function clearForegroundConversationCacheRaf() {
 
 const titleText = computed(() => {
   if (viewMode.value === "chat") {
-    return t("window.chatTitle", { name: assistantDepartmentPersona.value?.name || t("archives.roleAssistant") });
+    return t("window.chatTitle", { name: currentForegroundPersona.value?.name || t("archives.roleAssistant") });
   }
   if (viewMode.value === "archives") {
     return t("window.archivesTitle");
@@ -989,7 +991,7 @@ const chatMedia = useChatMedia({
   chatting,
   forcingArchive,
   isRecording: () => recording.value,
-  activeChatApiConfig: assistantDepartmentApiConfig,
+  activeChatApiConfig: computed(() => currentForegroundApiConfig.value),
   hasVisionFallback,
   chatInput,
   clipboardImages,
@@ -1051,7 +1053,51 @@ const assistantDepartmentPersona = computed(
     ?? assistantPersonas.value[0]
     ?? null,
 );
-const activeAssistantAgentId = computed(() => assistantDepartmentAgentId.value);
+const currentForegroundConversationSummary = computed(() => {
+  const currentConversationId = String(currentChatConversationId.value || "").trim();
+  if (currentConversationId) {
+    const matched = unarchivedConversations.value.find(
+      (item) => String(item.conversationId || "").trim() === currentConversationId,
+    );
+    if (matched) return matched;
+  }
+  return (
+    unarchivedConversations.value.find((item) => !!item.isMainConversation)
+    || unarchivedConversations.value[0]
+    || null
+  );
+});
+const currentForegroundDepartmentId = computed(
+  () => String(currentForegroundConversationSummary.value?.departmentId || "").trim() || "assistant-department",
+);
+const currentForegroundDepartment = computed(
+  () =>
+    config.departments.find((item) => String(item.id || "").trim() === currentForegroundDepartmentId.value)
+    || config.departments.find((item) => item.id === "assistant-department" || item.isBuiltInAssistant)
+    || null,
+);
+const currentForegroundAgentId = computed(
+  () =>
+    String(currentForegroundConversationSummary.value?.agentId || "").trim()
+    || String(currentForegroundDepartment.value?.agentIds?.[0] || "").trim()
+    || String(assistantDepartmentAgentId.value || "").trim(),
+);
+const currentForegroundApiConfigId = computed(
+  () =>
+    String(currentForegroundDepartment.value?.apiConfigId || "").trim()
+    || String(currentForegroundDepartment.value?.apiConfigIds?.[0] || "").trim()
+    || String(config.assistantDepartmentApiConfigId || "").trim(),
+);
+const currentForegroundApiConfig = computed(
+  () => config.apiConfigs.find((a) => a.id === currentForegroundApiConfigId.value) ?? null,
+);
+const currentForegroundPersona = computed(
+  () =>
+    assistantPersonas.value.find((p) => p.id === currentForegroundAgentId.value)
+    ?? assistantDepartmentPersona.value
+    ?? assistantPersonas.value[0]
+    ?? null,
+);
 // 对话颜色（跳跃分配，最大化对比度）
 const CONVERSATION_COLORS = [
   'primary',   // 0: 紫
@@ -1119,6 +1165,9 @@ const chatUnarchivedConversationItems = computed(() => {
       conversationId: item.conversationId,
       title: item.title,
       messageCount: Number(item.messageCount || 0),
+      agentId: String(item.agentId || "").trim(),
+      departmentId: String(item.departmentId || "").trim(),
+      departmentName: String(item.departmentName || "").trim(),
       workspaceLabel: String(item.workspaceLabel || "").trim() || "默认工作空间",
       isActive: !!item.isActive,
       isMainConversation: !!item.isMainConversation,
@@ -1127,8 +1176,7 @@ const chatUnarchivedConversationItems = computed(() => {
       previewMessages: Array.isArray(item.previewMessages) ? item.previewMessages : [],
       backgroundStatus:
         backgroundConversationBadgeMap.value[String(item.conversationId || "").trim()] || undefined,
-    }))
-    .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    }));
 
   // 分配颜色（按顺序取可用颜色）
   const usedIndices = new Set<number>();
@@ -1156,8 +1204,8 @@ const {
   lockChatWorkspaceFromPicker,
   unlockChatWorkspace,
 } = useChatWorkspace({
-  activeApiConfigId: assistantDepartmentApiConfigId,
-  activeAgentId: activeAssistantAgentId,
+  activeApiConfigId: currentForegroundApiConfigId,
+  activeAgentId: currentForegroundAgentId,
   activeConversationId: computed(() => currentChatConversationId.value),
   setStatus,
   setStatusError,
@@ -1177,6 +1225,9 @@ const userAvatarUrl = computed(
 const userPersonaAvatarUrl = computed(() => userAvatarUrl.value);
 const selectedPersonaAvatarUrl = computed(
   () => resolveAvatarUrl(assistantDepartmentPersona.value?.avatarPath, assistantDepartmentPersona.value?.avatarUpdatedAt),
+);
+const currentForegroundPersonaAvatarUrl = computed(
+  () => resolveAvatarUrl(currentForegroundPersona.value?.avatarPath, currentForegroundPersona.value?.avatarUpdatedAt),
 );
 const selectedPersonaEditorAvatarUrl = computed(
   () => resolveAvatarUrl(selectedPersonaEditor.value?.avatarPath, selectedPersonaEditor.value?.avatarUpdatedAt),
@@ -1228,7 +1279,7 @@ const chatPersonaPresenceChips = computed<ChatPersonaPresenceChip[]>(() => {
       departmentName:
         String(chatPersonaDepartmentNameMap.value[id] || "").trim()
         || (id === "user-persona" ? "用户" : "未归属部门"),
-      isFrontSpeaking: chatting.value && id === activeAssistantAgentId.value,
+      isFrontSpeaking: chatting.value && id === currentForegroundAgentId.value,
       hasBackgroundTask: backgroundTaskCount > 0,
     });
   }
@@ -1265,6 +1316,7 @@ const baseUrlReference = computed(() => {
 const chatInputPlaceholder = computed(() => {
   return t("chat.placeholder");
 });
+const defaultCreateConversationDepartmentId = computed(() => "assistant-department");
 const {
   defaultApiTools,
   createApiConfig,
@@ -1278,12 +1330,33 @@ const {
 const { resolveAvatarUrl, ensureAvatarCached, preloadPersonaAvatars } = useAvatarCache({
   personas,
 });
+const createConversationDepartmentOptions = computed(() =>
+  (config.departments || [])
+    .filter((department) => {
+      const departmentId = String(department.id || "").trim();
+      if (!departmentId) return false;
+      const apiConfigId =
+        String(department.apiConfigId || "").trim()
+        || String((department.apiConfigIds || [])[0] || "").trim();
+      if (!apiConfigId) return false;
+      return config.apiConfigs.some((api) => api.id === apiConfigId && api.enableText);
+    })
+    .map((department) => {
+      const ownerId = String((department.agentIds || [])[0] || "").trim();
+      const owner = personas.value.find((persona) => String(persona.id || "").trim() === ownerId) ?? null;
+      return {
+        id: String(department.id || "").trim(),
+        name: String(department.name || "").trim() || String(department.id || "").trim(),
+        ownerName: String(owner?.name || "").trim() || ownerId || "未设置负责人",
+      };
+    }),
+);
 const configDirty = computed(() => buildConfigSnapshotJson() !== lastSavedConfigJson.value);
 const personaDirty = computed(() => buildPersonasSnapshotJson() !== lastSavedPersonasJson.value);
 const responseStyleIds = computed(() => responseStyleOptions.map((item) => item.id));
 const { visibleMessageBlocks, chatContextUsageRatio, chatUsagePercent } = useChatMessageBlocks({
   allMessages,
-  activeChatApiConfig: assistantDepartmentApiConfig,
+  activeChatApiConfig: currentForegroundApiConfig,
   perfDebug: PERF_DEBUG,
   perfNow,
 });
@@ -1395,7 +1468,7 @@ async function queueAutoScreenshotFromVoice(input: {
   mode: "desktop" | "focused_window";
   startedAt: number;
 }) {
-  const apiConfig = assistantDepartmentApiConfig.value;
+  const apiConfig = currentForegroundApiConfig.value;
   if (!apiConfig) {
     console.warn("[后台语音截图] 跳过：当前无可用对话模型配置");
     return;
@@ -1565,8 +1638,8 @@ const chatRuntime = useChatRuntime({
   setChatError: (text) => {
     chatErrorText.value = text;
   },
-  activeChatApiConfigId: assistantDepartmentApiConfigId,
-  assistantDepartmentAgentId: activeAssistantAgentId,
+  activeChatApiConfigId: currentForegroundApiConfigId,
+  assistantDepartmentAgentId: currentForegroundAgentId,
   currentConversationId: currentChatConversationId,
   chatting,
   forcingArchive,
@@ -1863,7 +1936,7 @@ async function requestConversationSnapshot(conversationId?: string | null): Prom
   return invokeTauri<SwitchConversationSnapshot>("switch_active_conversation_snapshot", {
     input: {
       conversationId: String(conversationId || "").trim() || null,
-      agentId: String(activeAssistantAgentId.value || "").trim() || null,
+      agentId: String(currentForegroundAgentId.value || "").trim() || null,
     },
   });
 }
@@ -1957,14 +2030,16 @@ async function switchUnarchivedConversation(conversationId: string) {
   }
 }
 
-async function createUnarchivedConversation(title?: string) {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  if (!apiConfigId) return;
+async function createUnarchivedConversation(input?: { title?: string; departmentId?: string }) {
+  const departmentId =
+    String(input?.departmentId || "").trim()
+    || defaultCreateConversationDepartmentId.value;
+  if (!departmentId) return;
   try {
     const result = await invokeTauri<{ conversationId: string }>("create_unarchived_conversation", {
       input: {
-        apiConfigId,
-        title: String(title || "").trim() || null,
+        departmentId,
+        title: String(input?.title || "").trim() || null,
       },
     });
     const conversationId = String(result?.conversationId || "").trim();
@@ -1984,10 +2059,11 @@ function closeForceArchiveActionDialog() {
 }
 
 async function openForceArchiveActionDialog() {
-  const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-  const agentId = String(activeAssistantAgentId.value || "").trim();
+  const apiConfigId = String(currentForegroundApiConfigId.value || "").trim();
+  const agentId = String(currentForegroundAgentId.value || "").trim();
+  const departmentId = String(currentForegroundDepartmentId.value || "").trim();
   const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) {
+  if (!conversationId || !apiConfigId || !agentId) {
     setStatus("当前没有可处理的会话。");
     return;
   }
@@ -2001,6 +2077,7 @@ async function openForceArchiveActionDialog() {
         input: {
           apiConfigId,
           agentId,
+          departmentId: departmentId || null,
           conversationId,
         },
       }),
@@ -2008,6 +2085,7 @@ async function openForceArchiveActionDialog() {
         input: {
           apiConfigId,
           agentId,
+          departmentId: departmentId || null,
           conversationId,
         },
       }),
@@ -2406,8 +2484,8 @@ watch(
 
 watch(
   () => ({
-    apiId: assistantDepartmentApiConfigId.value,
-    imageEnabled: !!assistantDepartmentApiConfig.value?.enableImage,
+    apiId: currentForegroundApiConfigId.value,
+    imageEnabled: !!currentForegroundApiConfig.value?.enableImage,
     visionEnabled: hasVisionFallback.value,
   }),
   () => {
@@ -2420,8 +2498,8 @@ watch(
 watch(
   () => ({
     mode: viewMode.value,
-    apiId: assistantDepartmentApiConfigId.value,
-    agentId: activeAssistantAgentId.value,
+    apiId: currentForegroundApiConfigId.value,
+    agentId: currentForegroundAgentId.value,
     conversationId: currentChatConversationId.value,
     conversationIds: unarchivedConversations.value
       .map((item) => String(item.conversationId || "").trim())
@@ -2668,10 +2746,11 @@ const chatFlow = useChatFlow({
   chatting,
   forcingArchive,
   getSession: () => {
-    const apiConfigId = String(assistantDepartmentApiConfigId.value || "").trim();
-    const agentId = String(activeAssistantAgentId.value || "").trim();
+    const apiConfigId = String(currentForegroundApiConfigId.value || "").trim();
+    const agentId = String(currentForegroundAgentId.value || "").trim();
+    const departmentId = String(currentForegroundDepartmentId.value || "").trim();
     if (!apiConfigId || !agentId) return null;
-    return { apiConfigId, agentId };
+    return { apiConfigId, agentId, departmentId };
   },
   getConversationId: () => String(currentChatConversationId.value || "").trim(),
   chatInput,
@@ -2703,6 +2782,7 @@ const chatFlow = useChatFlow({
         session: {
           apiConfigId: session.apiConfigId,
           agentId: session.agentId,
+          departmentId: session.departmentId || null,
           conversationId: session.conversationId || null,
         },
       },
@@ -2722,6 +2802,7 @@ const chatFlow = useChatFlow({
         session: {
           apiConfigId: session.apiConfigId,
           agentId: session.agentId,
+          departmentId: session.departmentId || null,
           conversationId: session.conversationId || null,
         },
         partialAssistantText,
@@ -2833,7 +2914,8 @@ const chatFlow = useChatFlow({
 watch(
   () => ({
     mode: viewMode.value,
-    agentId: String(activeAssistantAgentId.value || "").trim(),
+    departmentId: String(currentForegroundDepartmentId.value || "").trim(),
+    agentId: String(currentForegroundAgentId.value || "").trim(),
   }),
   ({ mode }) => {
     if (mode !== "chat") return;
@@ -2911,8 +2993,8 @@ const {
   handleRecallTurn,
   handleRegenerateTurn,
 } = useChatRewindActions({
-  activeApiConfigId: assistantDepartmentApiConfigId,
-  activeAgentId: activeAssistantAgentId,
+  activeApiConfigId: currentForegroundApiConfigId,
+  activeAgentId: currentForegroundAgentId,
   currentConversationId: currentChatConversationId,
   allMessages,
   chatting,
@@ -2947,8 +3029,8 @@ async function saveChatSettingsNow() {
   await saveChatPreferences();
 }
 const { openCurrentHistory, openPromptPreview, openSystemPromptPreview } = useChatDialogActions({
-  activeChatApiConfigId: assistantDepartmentApiConfigId,
-  assistantDepartmentAgentId: activeAssistantAgentId,
+  activeChatApiConfigId: currentForegroundApiConfigId,
+  assistantDepartmentAgentId: currentForegroundAgentId,
   openPromptPreviewDialog,
   openSystemPromptPreviewDialog,
 });

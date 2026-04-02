@@ -7,7 +7,7 @@
         type="button"
         class="mx-2 block w-[calc(100%-1rem)] rounded-box bg-base-200 text-left transition-colors hover:bg-base-100"
         :class="[
-          item.conversationId === activeConversationId ? 'bg-primary/10 hover:bg-primary/10' : '',
+          item.conversationId === activeConversationId ? 'bg-base-300 hover:bg-base-300' : '',
           item.runtimeState === 'organizing_context' ? 'cursor-not-allowed opacity-60' : '',
         ]"
         :disabled="item.runtimeState === 'organizing_context'"
@@ -30,22 +30,20 @@
           </div>
 
           <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <div class="truncate text-sm font-medium">
-                {{ item.title || t("chat.untitledConversation") }}
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="truncate text-sm font-medium">
+                  {{ conversationDisplayTitle(item) }}
+                </div>
               </div>
-              <span v-if="item.isMainConversation" class="badge badge-primary badge-xs shrink-0">
-                {{ t("chat.mainConversation") }}
-              </span>
-              <span v-if="item.conversationId === activeConversationId" class="badge badge-outline badge-xs shrink-0">
-                {{ t("chat.currentConversation") }}
+              <span class="shrink-0 text-[11px] text-base-content/60">
+                {{ formatConversationTime(item.updatedAt) }}
               </span>
             </div>
 
-            <div class="mt-1 flex items-center gap-2 text-xs">
-              <span class="font-medium">{{ item.workspaceLabel || t("chat.defaultWorkspace") }}</span>
-              <span class="text-base-content/70">{{ formatConversationTime(item.updatedAt) }}</span>
-              <span class="font-medium">{{ t("chat.messageCount", { count: item.messageCount }) }}</span>
+            <div class="mt-1 flex items-center justify-between gap-2 text-xs">
+              <span class="min-w-0 truncate font-medium">{{ item.workspaceLabel || t("chat.defaultWorkspace") }}</span>
+              <span class="shrink-0 text-[11px] text-base-content/60">{{ t("chat.messageCount", { count: item.messageCount }) }}</span>
             </div>
           </div>
 
@@ -76,6 +74,7 @@
 import { computed } from "vue";
 import { useI18n } from "vue-i18n";
 import type { ChatConversationOverviewItem, ConversationPreviewMessage } from "../../../types/app";
+import { formatConversationListTime } from "../utils/conversation-time";
 
 const props = defineProps<{
   items: ChatConversationOverviewItem[];
@@ -90,7 +89,7 @@ const emit = defineEmits<{
   (e: "select", conversationId: string): void;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const conversationPreviewCache = computed(() => new Map(
   props.items.map((item) => [String(item.conversationId || "").trim(), Array.isArray(item.previewMessages) ? item.previewMessages : []]),
@@ -98,6 +97,11 @@ const conversationPreviewCache = computed(() => new Map(
 
 function normalizedPreviewMessages(item: ChatConversationOverviewItem): ConversationPreviewMessage[] {
   return conversationPreviewCache.value.get(String(item.conversationId || "").trim()) || [];
+}
+
+function conversationDisplayTitle(item: ChatConversationOverviewItem): string {
+  if (item.isMainConversation) return t("chat.mainConversation");
+  return item.title || t("chat.untitledConversation");
 }
 
 function runtimeStateText(runtimeState?: ChatConversationOverviewItem["runtimeState"]): string {
@@ -126,15 +130,7 @@ function previewText(preview: ConversationPreviewMessage): string {
 }
 
 function formatConversationTime(value?: string): string {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatConversationListTime(value, locale.value);
 }
 
 function sideListLastSpeakerInitial(item: ChatConversationOverviewItem): string {

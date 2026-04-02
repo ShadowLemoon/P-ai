@@ -127,6 +127,8 @@
         :workspace-locked="chatWorkspaceLocked"
         :active-conversation-id="currentChatConversationId"
         :unarchived-conversation-items="chatUnarchivedConversationItems"
+        :create-conversation-department-options="createConversationDepartmentOptions"
+        :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
         :current-theme="currentTheme"
         @update:chat-input="updateChatInput"
         @remove-clipboard-image="removeClipboardImage"
@@ -343,6 +345,8 @@ const props = defineProps<{
   chatWorkspaceLocked: boolean;
   currentChatConversationId: string;
   chatUnarchivedConversationItems: ChatConversationOverviewItem[];
+  createConversationDepartmentOptions: Array<{ id: string; name: string; ownerName: string }>;
+  defaultCreateConversationDepartmentId: string;
   archives: ArchiveSummary[];
   selectedArchiveId: string;
   archiveMessages: ChatMessage[];
@@ -418,7 +422,7 @@ const props = defineProps<{
   onLockChatWorkspace: () => void;
   onUnlockChatWorkspace: () => void;
   onSwitchConversation: (conversationId: string) => void;
-  onCreateConversation: (title?: string) => void;
+  onCreateConversation: (input?: { title?: string; departmentId?: string }) => void;
   loadArchives: () => void;
   selectArchive: (id: string) => void;
   selectUnarchivedConversation: (id: string) => void;

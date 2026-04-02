@@ -39,9 +39,25 @@
         let api_id = "api-a";
         let agent_id = DEFAULT_AGENT_ID;
 
-        let mut main = build_conversation_record(api_id, agent_id, "main", CONVERSATION_KIND_CHAT, None, None);
+        let mut main = build_conversation_record(
+            api_id,
+            agent_id,
+            ASSISTANT_DEPARTMENT_ID,
+            "main",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
         main.id = "main-conversation".to_string();
-        let mut side = build_conversation_record(api_id, agent_id, "side", CONVERSATION_KIND_CHAT, None, None);
+        let mut side = build_conversation_record(
+            api_id,
+            agent_id,
+            FRONT_DESK_DEPARTMENT_ID,
+            "side",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
         side.id = "side-conversation".to_string();
         data.main_conversation_id = Some(main.id.clone());
         data.conversations = vec![main.clone(), side.clone()];
@@ -79,7 +95,15 @@
         let api_id = "api-a";
         let agent_id = DEFAULT_AGENT_ID;
 
-        let mut main = build_conversation_record(api_id, agent_id, "main", CONVERSATION_KIND_CHAT, None, None);
+        let mut main = build_conversation_record(
+            api_id,
+            agent_id,
+            ASSISTANT_DEPARTMENT_ID,
+            "main",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
         main.id = "main-conversation".to_string();
         data.main_conversation_id = Some(main.id.clone());
         data.conversations = vec![main];

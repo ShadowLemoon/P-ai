@@ -40,7 +40,7 @@ type RoundFailedPayload = {
 type UseChatFlowOptions = {
   chatting: Ref<boolean>;
   forcingArchive: Ref<boolean>;
-  getSession: () => { apiConfigId: string; agentId: string } | null;
+  getSession: () => { apiConfigId: string; agentId: string; departmentId?: string } | null;
   getConversationId?: () => string;
   chatInput: Ref<string>;
   clipboardImages: Ref<Array<{ mime: string; bytesBase64: string; savedPath?: string }>>;
@@ -64,7 +64,7 @@ type UseChatFlowOptions = {
     images: Array<{ mime: string; bytesBase64: string; savedPath?: string }>;
     attachments?: Array<{ fileName: string; relativePath: string; mime: string }>;
     extraTextBlocks?: string[];
-    session: { apiConfigId: string; agentId: string; conversationId?: string };
+    session: { apiConfigId: string; agentId: string; departmentId?: string; conversationId?: string };
     onDelta: Channel<AssistantDeltaEvent>;
   }) => Promise<{
     assistantText: string;
@@ -75,7 +75,7 @@ type UseChatFlowOptions = {
     assistantMessage?: ChatMessage;
   }>;
   invokeStopChatMessage?: (input: {
-    session: { apiConfigId: string; agentId: string; conversationId?: string };
+    session: { apiConfigId: string; agentId: string; departmentId?: string; conversationId?: string };
     partialAssistantText: string;
     partialReasoningStandard: string;
     partialReasoningInline: string;

@@ -158,6 +158,8 @@
           :user-avatar-url="userAvatarUrl"
           :persona-name-map="personaNameMap"
           :persona-avatar-url-map="personaAvatarUrlMap"
+          :create-conversation-department-options="createConversationDepartmentOptions"
+          :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
           @update:chat-input="$emit('update:chatInput', $event)"
           @remove-clipboard-image="$emit('removeClipboardImage', $event)"
           @remove-queued-attachment-notice="$emit('removeQueuedAttachmentNotice', $event)"
@@ -253,6 +255,8 @@ const props = defineProps<{
   activeConversationId: string;
   currentTheme: string;
   unarchivedConversationItems: ChatConversationOverviewItem[];
+  createConversationDepartmentOptions: Array<{ id: string; name: string; ownerName: string }>;
+  defaultCreateConversationDepartmentId: string;
 }>();
 
 const markdownIsDark = computed(() => isDarkAppTheme(props.currentTheme));
@@ -339,7 +343,7 @@ const emit = defineEmits<{
   (e: "lockWorkspace"): void;
   (e: "unlockWorkspace"): void;
   (e: "switchConversation", conversationId: string): void;
-  (e: "createConversation", title?: string): void;
+  (e: "createConversation", input?: { title?: string; departmentId?: string }): void;
   (e: "reachedBottom"): void;
 }>();
 const { t } = useI18n();

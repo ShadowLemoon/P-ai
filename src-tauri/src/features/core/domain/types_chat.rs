@@ -107,6 +107,8 @@ struct Conversation {
     title: String,
     agent_id: String,
     #[serde(default)]
+    department_id: String,
+    #[serde(default)]
     conversation_kind: String,
     #[serde(default)]
     root_conversation_id: Option<String>,

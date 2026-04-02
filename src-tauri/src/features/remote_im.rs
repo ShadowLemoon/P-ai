@@ -386,6 +386,7 @@ fn ensure_remote_im_contact_conversation_id(
     let mut conversation = build_conversation_record(
         "",
         "",
+        "",
         &remote_im_contact_conversation_title(contact),
         CONVERSATION_KIND_REMOTE_IM_CONTACT,
         Some(remote_im_contact_conversation_key(contact)),

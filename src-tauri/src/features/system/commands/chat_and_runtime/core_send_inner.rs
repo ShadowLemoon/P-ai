@@ -1129,6 +1129,7 @@ async fn send_chat_message_inner(
                 id: String::new(),
                 title: String::new(),
                 agent_id: String::new(),
+                department_id: String::new(),
                 conversation_kind: String::new(),
                 root_conversation_id: None,
                 delegate_id: None,

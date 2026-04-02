@@ -141,6 +141,18 @@
             :placeholder="t('chat.newConversationTopicPlaceholder')"
             @keydown="handleCreateConversationDialogKeydown"
           />
+          <select
+            v-model="createConversationDepartmentId"
+            class="select select-bordered w-full"
+          >
+            <option
+              v-for="department in createConversationDepartmentOptions"
+              :key="department.id"
+              :value="department.id"
+            >
+              {{ departmentOptionLabel(department) }}
+            </option>
+          </select>
           <div v-if="recentConversationTopics.length > 0" class="flex flex-col gap-2">
             <div class="text-xs font-medium opacity-70">{{ t("chat.recentConversationTopics") }}</div>
             <div class="flex flex-wrap gap-2">
@@ -179,6 +191,12 @@ import { useChatQueue } from "../composables/use-chat-queue";
 
 type BinaryAttachment = { mime: string; bytesBase64: string };
 type QueuedAttachmentNotice = { id: string; fileName: string; relativePath: string; mime: string };
+type ConversationDepartmentOption = {
+  id: string;
+  name: string;
+  ownerName: string;
+};
+type CreateConversationInput = { title?: string; departmentId?: string };
 
 const props = defineProps<{
   chatInput: string;
@@ -201,6 +219,8 @@ const props = defineProps<{
   userAvatarUrl: string;
   personaNameMap: Record<string, string>;
   personaAvatarUrlMap: Record<string, string>;
+  createConversationDepartmentOptions: ConversationDepartmentOption[];
+  defaultCreateConversationDepartmentId: string;
 }>();
 
 const emit = defineEmits<{
@@ -213,7 +233,7 @@ const emit = defineEmits<{
   (e: "sendChat"): void;
   (e: "stopChat"): void;
   (e: "switchConversation", conversationId: string): void;
-  (e: "createConversation", title?: string): void;
+  (e: "createConversation", input?: CreateConversationInput): void;
 }>();
 
 const { t } = useI18n();
@@ -237,6 +257,7 @@ const chatInputHistoryDraft = ref("");
 const recentConversationTopics = ref<string[]>([]);
 const createConversationDialogOpen = ref(false);
 const createConversationTitle = ref("");
+const createConversationDepartmentId = ref("");
 const conversationListOpen = ref(false);
 const chatInputHistoryApplying = ref(false);
 const resizeInputRaf = ref(0);
@@ -468,6 +489,9 @@ function handleWindowKeydown(event: KeyboardEvent) {
 function handleCreateConversation() {
   closeConversationList();
   createConversationTitle.value = "";
+  createConversationDepartmentId.value =
+    String(props.defaultCreateConversationDepartmentId || "").trim()
+    || String(props.createConversationDepartmentOptions[0]?.id || "").trim();
   createConversationDialogOpen.value = true;
   nextTick(() => createConversationInputRef.value?.focus());
 }
@@ -475,6 +499,7 @@ function handleCreateConversation() {
 function closeCreateConversationDialog() {
   createConversationDialogOpen.value = false;
   createConversationTitle.value = "";
+  createConversationDepartmentId.value = "";
 }
 
 function applyRecentConversationTopic(topic: string) {
@@ -482,14 +507,25 @@ function applyRecentConversationTopic(topic: string) {
   nextTick(() => createConversationInputRef.value?.focus());
 }
 
+function departmentOptionLabel(department: ConversationDepartmentOption): string {
+  const departmentName = String(department.name || "").trim();
+  const ownerName = String(department.ownerName || "").trim();
+  return ownerName ? `${departmentName} / ${ownerName}` : departmentName;
+}
+
 function confirmCreateConversation() {
   const title = String(createConversationTitle.value || "").trim();
+  const departmentId = String(createConversationDepartmentId.value || "").trim();
   if (title) {
     pushRecentConversationTopic(title);
   }
   createConversationDialogOpen.value = false;
   createConversationTitle.value = "";
-  emit("createConversation", title);
+  createConversationDepartmentId.value = "";
+  emit("createConversation", {
+    title,
+    departmentId: departmentId || undefined,
+  });
 }
 
 function handleCreateConversationDialogKeydown(event: KeyboardEvent) {

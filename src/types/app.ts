@@ -377,6 +377,8 @@ export type UnarchivedConversationSummary = {
   lastMessageAt?: string;
   messageCount: number;
   agentId: string;
+  departmentId: string;
+  departmentName: string;
   apiConfigId?: string;
   workspaceLabel?: string;
   isActive?: boolean;
@@ -401,6 +403,9 @@ export type ChatConversationOverviewItem = {
   conversationId: string;
   title: string;
   messageCount: number;
+  agentId?: string;
+  departmentId?: string;
+  departmentName?: string;
   updatedAt?: string;
   workspaceLabel?: string;
   isActive?: boolean;

@@ -35,6 +35,7 @@ fn delegate_runtime_thread_build(
     let mut conversation = build_conversation_record(
         target_api_config_id,
         &delegate.target_agent_id,
+        &delegate.target_department_id,
         &delegate.title,
         CONVERSATION_KIND_DELEGATE,
         Some(delegate.conversation_id.clone()),

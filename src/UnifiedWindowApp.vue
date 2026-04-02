@@ -392,6 +392,15 @@
         </template>
         <div class="modal-action">
           <button
+            v-if="showDeleteConversationFallback"
+            class="btn btn-sm btn-error"
+            :disabled="forceArchivePreviewLoading || forcingArchive"
+            @click="confirmDeleteConversationFromArchiveDialog"
+          >
+            删除会话
+          </button>
+          <button
+            v-if="showForceArchiveActionButtons"
             class="btn btn-sm btn-primary"
             :disabled="forceArchivePreviewLoading || !forceCompactionPreview?.canCompact || forcingArchive"
             @click="confirmForceCompactionAction"
@@ -399,6 +408,7 @@
             压缩
           </button>
           <button
+            v-if="showForceArchiveActionButtons"
             class="btn btn-sm btn-secondary"
             :disabled="forceArchivePreviewLoading || !forceArchivePreview?.canArchive || forcingArchive"
             @click="confirmForceArchiveAction"
@@ -2100,6 +2110,15 @@ function closeForceArchiveActionDialog() {
   forceCompactionPreview.value = null;
 }
 
+const showDeleteConversationFallback = computed(() =>
+  !forceArchivePreviewLoading.value
+  && !forcingArchive.value
+  && !forceCompactionPreview.value?.canCompact
+  && !forceArchivePreview.value?.canArchive
+  && !!String(currentChatConversationId.value || "").trim()
+);
+const showForceArchiveActionButtons = computed(() => !showDeleteConversationFallback.value);
+
 async function openForceArchiveActionDialog() {
   const apiConfigId = String(currentForegroundApiConfigId.value || "").trim();
   const agentId = String(currentForegroundAgentId.value || "").trim();
@@ -2152,6 +2171,13 @@ async function confirmForceArchiveAction() {
   if (!forceArchivePreview.value?.canArchive) return;
   closeForceArchiveActionDialog();
   await forceArchiveNow();
+}
+
+async function confirmDeleteConversationFromArchiveDialog() {
+  const conversationId = String(currentChatConversationId.value || "").trim();
+  if (!conversationId) return;
+  closeForceArchiveActionDialog();
+  await deleteUnarchivedConversationFromArchives(conversationId);
 }
 
 const {

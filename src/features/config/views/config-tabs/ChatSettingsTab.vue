@@ -181,6 +181,7 @@ const emit = defineEmits<{
 
 function onVisionSelectChange(event: Event) {
   props.config.visionApiConfigId = ((event.target as HTMLSelectElement).value || undefined);
+  emit("saveChatSettings");
 }
 
 function onSttSelectChange(event: Event) {
@@ -189,14 +190,17 @@ function onSttSelectChange(event: Event) {
   if (!value) {
     props.config.sttAutoSend = false;
   }
+  emit("saveChatSettings");
 }
 
 function onSttAutoSendChange(event: Event) {
   if (!props.config.sttApiConfigId) {
     props.config.sttAutoSend = false;
+    emit("saveChatSettings");
     return;
   }
   props.config.sttAutoSend = (event.target as HTMLInputElement).checked;
+  emit("saveChatSettings");
 }
 
 const backgroundVoiceScreenshotKeywordsDraft = ref(String(props.backgroundVoiceScreenshotKeywords || ""));

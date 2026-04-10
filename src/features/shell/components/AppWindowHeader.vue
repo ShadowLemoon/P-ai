@@ -47,17 +47,34 @@
       </button>
 
       <div
-        v-if="chatUsagePercent >= 50"
-        class="inline-flex h-8 items-center px-2 text-sm font-semibold"
-        :title="forceArchiveTip"
+        class="inline-flex h-8 items-center px-2"
+        :title="`当前上下文已使用 ${chatUsagePercent}%`"
       >
-        <span
-          :class="[
-            chatUsagePercent >= 70
-              ? 'text-warning'
-              : 'text-base-content',
-          ]"
-        >{{ chatUsagePercent }}%</span>
+        <svg
+          class="h-5 w-5 -rotate-90"
+          viewBox="0 0 36 36"
+        >
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="4"
+            class="opacity-20"
+          />
+          <circle
+            cx="18"
+            cy="18"
+            r="14"
+            fill="none"
+            :stroke="chatUsagePercent >= 70 ? 'var(--fallback-wa,oklch(var(--wa)/1))' : 'currentColor'"
+            stroke-width="4"
+            stroke-linecap="round"
+            :stroke-dasharray="circumference"
+            :stroke-dashoffset="strokeDashoffset"
+          />
+        </svg>
       </div>
     </div>
 
@@ -70,10 +87,10 @@
 
     <div
       v-if="viewMode === 'chat'"
-      class="pointer-events-none absolute left-1/2 top-1/2 z-0 flex max-w-[40%] -translate-x-1/2 -translate-y-1/2 items-center px-2"
-      :title="currentPersonaName"
+      class="pointer-events-none absolute left-1/2 top-1/2 z-0 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center px-2"
+      :title="combinedTitleTooltip"
     >
-      <span class="truncate text-sm font-semibold text-base-content">{{ currentPersonaName }}</span>
+      <span class="truncate text-sm font-semibold text-base-content">{{ combinedTitle }}</span>
     </div>
 
     <div v-if="viewMode !== 'chat'" class="pointer-events-none absolute left-1/2 top-1/2 z-0 flex -translate-x-1/2 -translate-y-1/2 items-center px-2">
@@ -178,11 +195,14 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { History, Minimize2, Minus, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
 import type { ChatConversationOverviewItem } from "../../../types/app";
 import ChatConversationListCard from "../../chat/components/ChatConversationListCard.vue";
+
+const RING_RADIUS = 14;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 type ConversationDepartmentOption = {
   id: string;
@@ -230,6 +250,46 @@ const emit = defineEmits<{
 
 const { t } = useI18n();
 const conversationListOpen = ref(false);
+
+const circumference = RING_CIRCUMFERENCE;
+
+const strokeDashoffset = computed(() => {
+  const percent = Math.min(100, Math.max(0, props.chatUsagePercent));
+  return RING_CIRCUMFERENCE * (1 - percent / 100);
+});
+
+const currentConversationTitle = computed(() => {
+  const activeId = String(props.activeConversationId || "").trim();
+  if (!activeId) return "";
+  const item = props.conversationItems.find((i) => i.conversationId === activeId);
+  if (!item) return "";
+  if (item.isMainConversation) return t("chat.mainConversation");
+  return item.title || "";
+});
+
+const currentConversationDepartmentName = computed(() => {
+  const activeId = String(props.activeConversationId || "").trim();
+  if (!activeId) return "";
+  const item = props.conversationItems.find((i) => i.conversationId === activeId);
+  return item?.departmentName || "";
+});
+
+const combinedTitle = computed(() => {
+  const parts: string[] = [];
+  const title = currentConversationTitle.value;
+  const dept = currentConversationDepartmentName.value;
+  const persona = props.currentPersonaName;
+
+  if (title) parts.push(title);
+  if (dept) parts.push(dept);
+  if (persona) parts.push(persona);
+
+  return parts.join(" · ");
+});
+
+const combinedTitleTooltip = computed(() => {
+  return combinedTitle.value || props.currentPersonaName;
+});
 const conversationListPopoverRef = ref<HTMLElement | null>(null);
 const createConversationInputRef = ref<HTMLInputElement | null>(null);
 const recentConversationTopics = ref<string[]>([]);

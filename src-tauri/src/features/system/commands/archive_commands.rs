@@ -99,6 +99,7 @@ fn get_prompt_preview(
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -456,4 +457,3 @@ fn delete_archive(archive_id: String, state: State<'_, AppState>) -> Result<(), 
     drop(guard);
     Ok(())
 }
-

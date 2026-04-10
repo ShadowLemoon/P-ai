@@ -31,6 +31,7 @@ struct PreparedPrompt {
     latest_user_text: String,
     latest_user_meta_text: String,
     latest_user_extra_text: String,
+    latest_user_extra_blocks: Vec<String>,
     latest_images: Vec<(String, String)>,
     latest_audios: Vec<(String, String)>,
 }
@@ -41,17 +42,81 @@ struct PendingAppDataPersist {
     data: AppData,
 }
 
+fn normalize_prepared_prompt_extra_blocks(blocks: &[String]) -> Vec<String> {
+    blocks
+        .iter()
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn prepared_prompt_latest_user_extra_blocks(prepared: &PreparedPrompt) -> Vec<String> {
+    let normalized = normalize_prepared_prompt_extra_blocks(&prepared.latest_user_extra_blocks);
+    if !normalized.is_empty() {
+        return normalized;
+    }
+    let fallback = prepared.latest_user_extra_text.trim();
+    if fallback.is_empty() {
+        Vec::new()
+    } else {
+        vec![fallback.to_string()]
+    }
+}
+
+fn prepared_prompt_set_latest_user_extra_blocks(
+    prepared: &mut PreparedPrompt,
+    blocks: Vec<String>,
+) {
+    let normalized = normalize_prepared_prompt_extra_blocks(&blocks);
+    prepared.latest_user_extra_text = normalized.join("\n\n");
+    prepared.latest_user_extra_blocks = normalized;
+}
+
+fn prepared_prompt_append_latest_user_extra_blocks(
+    prepared: &mut PreparedPrompt,
+    blocks: &[String],
+) {
+    let mut merged = prepared_prompt_latest_user_extra_blocks(prepared);
+    merged.extend(normalize_prepared_prompt_extra_blocks(blocks));
+    prepared_prompt_set_latest_user_extra_blocks(prepared, merged);
+}
+
+fn prepared_prompt_append_latest_user_extra_block(
+    prepared: &mut PreparedPrompt,
+    block: impl AsRef<str>,
+) {
+    let trimmed = block.as_ref().trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    prepared_prompt_append_latest_user_extra_blocks(prepared, &[trimmed.to_string()]);
+}
+
+fn prepared_prompt_prepend_latest_user_extra_block(
+    prepared: &mut PreparedPrompt,
+    block: impl AsRef<str>,
+) {
+    let trimmed = block.as_ref().trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    let mut merged = vec![trimmed.to_string()];
+    merged.extend(prepared_prompt_latest_user_extra_blocks(prepared));
+    prepared_prompt_set_latest_user_extra_blocks(prepared, merged);
+}
+
 fn prepared_prompt_latest_user_text_blocks(prepared: &PreparedPrompt) -> Vec<String> {
     let mut blocks = Vec::<String>::new();
     for text in [
         prepared.latest_user_text.trim(),
         prepared.latest_user_meta_text.trim(),
-        prepared.latest_user_extra_text.trim(),
     ] {
         if !text.is_empty() {
             blocks.push(text.to_string());
         }
     }
+    blocks.extend(prepared_prompt_latest_user_extra_blocks(prepared));
     if blocks.is_empty() {
         blocks.push(" ".to_string());
     }

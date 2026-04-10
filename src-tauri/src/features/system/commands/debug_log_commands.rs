@@ -231,12 +231,12 @@ fn prepared_prompt_latest_user_text_blocks_for_json(prepared: &PreparedPrompt) -
     for text in [
         prepared.latest_user_text.trim(),
         prepared.latest_user_meta_text.trim(),
-        prepared.latest_user_extra_text.trim(),
     ] {
         if !text.is_empty() {
             blocks.push(text.to_string());
         }
     }
+    blocks.extend(prepared_prompt_latest_user_extra_blocks(prepared));
     blocks
 }
 

@@ -259,7 +259,7 @@
               :title="t('chat.regenerate')"
               :class="!block.isStreaming && !chatting && !frozen && canRegenerate ? '' : 'opacity-0 pointer-events-none'"
               :disabled="block.isStreaming || chatting || frozen || !canRegenerate"
-              @click="emit('regenerateTurn', { turnId: block.id })"
+              @click="emit('regenerateTurn', { turnId: block.sourceMessageId || block.id })"
             >
               <RotateCcw class="h-3.5 w-3.5" />
             </button>
@@ -278,7 +278,7 @@
           ]"
           :title="t('chat.recall')"
           :disabled="chatting || frozen"
-          @click="emit('recallTurn', { turnId: block.id })"
+          @click="emit('recallTurn', { turnId: block.sourceMessageId || block.id })"
         >
           <Undo2 class="h-3 w-3" />
         </button>

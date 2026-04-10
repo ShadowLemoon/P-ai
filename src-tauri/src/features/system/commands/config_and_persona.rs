@@ -1403,8 +1403,11 @@ fn workspace_label_for_unarchived_conversation(
     state: &AppState,
     conversation: &Conversation,
 ) -> String {
-    if let Some(path) = terminal_workspace_path_from_conversation(conversation) {
-        return resolve_workspace_display_name(state, &path);
+    if let Some(path) = terminal_workspace_path_from_conversation(state, conversation) {
+        return resolve_workspace_display_name_for_conversation(state, Some(conversation), &path);
+    }
+    if let Ok(workspace) = terminal_default_workspace_for_conversation_resolved(state, Some(conversation)) {
+        return workspace.name;
     }
     "默认工作空间".to_string()
 }

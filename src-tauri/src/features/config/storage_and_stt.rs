@@ -515,18 +515,11 @@ fn normalize_terminal_path_input_for_current_platform(raw: &str) -> String {
 
 fn normalize_shell_workspaces(config: &mut AppConfig) {
     let mut normalized = Vec::<ShellWorkspaceConfig>::new();
-    let mut seen_names = std::collections::HashSet::<String>::new();
+    let mut seen_paths = std::collections::HashSet::<String>::new();
     for raw in &config.shell_workspaces {
         let name = raw.name.trim().to_string();
         let mut normalized_path = normalize_terminal_path_input_for_current_platform(&raw.path);
         if name.is_empty() || normalized_path.is_empty() {
-            continue;
-        }
-        let name_key = name.to_ascii_lowercase();
-        if !seen_names.insert(name_key) {
-            continue;
-        }
-        if normalized_path.is_empty() {
             continue;
         }
         let candidate = PathBuf::from(&normalized_path);
@@ -545,9 +538,16 @@ fn normalize_shell_workspaces(config: &mut AppConfig) {
                 }
             }
         }
+        let path_key = normalized_path.to_ascii_lowercase();
+        if !seen_paths.insert(path_key) {
+            continue;
+        }
         normalized.push(ShellWorkspaceConfig {
+            id: raw.id.trim().to_string(),
             name,
             path: normalized_path,
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
             built_in: raw.built_in,
         });
     }

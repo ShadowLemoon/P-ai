@@ -159,15 +159,14 @@
           <ChatWorkspaceToolbar
             :chatting="chatting"
             :frozen="frozen"
-            :workspace-locked="workspaceLocked"
-            :current-workspace-name="currentWorkspaceName"
+            :workspace-button-label="t('chat.allowedWorkspaceButton')"
+            :workspace-button-name="currentWorkspaceName"
             :persona-presence-chips="personaPresenceChips"
             :supervision-active="supervisionActive"
             :supervision-label="t('chat.supervision.button')"
             :supervision-active-label="t('chat.supervision.buttonActive')"
             :supervision-title="supervisionButtonTitle"
             @lock-workspace="$emit('lockWorkspace')"
-            @unlock-workspace="$emit('unlockWorkspace')"
             @open-supervision-task="$emit('openSupervisionTask')"
           />
         </div>
@@ -331,7 +330,6 @@ const props = defineProps<{
   latestOwnMessageAlignRequest: number;
   conversationScrollToBottomRequest: number;
   currentWorkspaceName: string;
-  workspaceLocked: boolean;
   activeConversationId: string;
   currentTodos: ChatTodoItem[];
   supervisionActive: boolean;
@@ -481,7 +479,6 @@ const emit = defineEmits<{
   (e: "recallTurn", payload: { turnId: string }): void;
   (e: "regenerateTurn", payload: { turnId: string }): void;
   (e: "lockWorkspace"): void;
-  (e: "unlockWorkspace"): void;
   (e: "openSupervisionTask"): void;
   (e: "closeSupervisionTask"): void;
   (e: "saveSupervisionTask", payload: { durationHours: number; goal: string; why: string; todo: string }): void;
@@ -580,8 +577,13 @@ function isCompactionBlock(block: ChatMessageBlock): boolean {
 }
 
 function canRegenerateBlock(block: ChatMessageBlock, blockIndex: number): boolean {
-  if (block.role !== "assistant") return false;
-  return blockIndex === props.messageBlocks.length - 1;
+  if (block.role !== "assistant" || block.isExtraTextBlock) return false;
+  for (let idx = props.messageBlocks.length - 1; idx >= 0; idx -= 1) {
+    const candidate = props.messageBlocks[idx];
+    if (candidate.role !== "assistant" || candidate.isExtraTextBlock) continue;
+    return idx === blockIndex;
+  }
+  return false;
 }
 
 function handleConversationListSelect(conversationId: string) {

@@ -2,6 +2,14 @@
   <div class="rounded-box border border-base-300 bg-base-100/70 px-2 py-1.5 flex items-center gap-2 text-[11px]">
     <div class="join">
       <button
+        class="btn btn-sm btn-ghost join-item gap-1.5"
+        :disabled="chatting || frozen"
+        @click="emit('lockWorkspace')"
+      >
+        <Folder class="h-3.5 w-3.5" />
+        {{ workspaceButtonName || workspaceButtonLabel }}
+      </button>
+      <button
         type="button"
         class="btn btn-sm join-item gap-1.5"
         :class="supervisionActive ? 'btn-primary' : 'btn-ghost'"
@@ -10,22 +18,6 @@
         @click="emit('openSupervisionTask')"
       >
         {{ supervisionActive ? supervisionActiveLabel : supervisionLabel }}
-      </button>
-      <button
-        class="btn btn-sm btn-ghost join-item"
-        :title="workspaceLocked ? '已锁定，点击还原到默认工作空间' : '未锁定'"
-        :disabled="chatting || frozen || !workspaceLocked"
-        @click="emit('unlockWorkspace')"
-      >
-        <House class="h-3.5 w-3.5" />
-      </button>
-      <button
-        class="btn btn-sm btn-ghost join-item gap-1.5"
-        :disabled="chatting || frozen"
-        @click="emit('lockWorkspace')"
-      >
-        <Folder class="h-3.5 w-3.5" />
-        /{{ currentWorkspaceName }}
       </button>
     </div>
     <div class="ml-auto flex items-center gap-1.5 overflow-hidden">
@@ -65,14 +57,14 @@
 </template>
 
 <script setup lang="ts">
-import { Folder, House } from "lucide-vue-next";
+import { Folder } from "lucide-vue-next";
 import type { ChatPersonaPresenceChip } from "../../../types/app";
 
 defineProps<{
   chatting: boolean;
   frozen: boolean;
-  workspaceLocked: boolean;
-  currentWorkspaceName: string;
+  workspaceButtonLabel: string;
+  workspaceButtonName: string;
   personaPresenceChips: ChatPersonaPresenceChip[];
   supervisionActive: boolean;
   supervisionLabel: string;
@@ -82,7 +74,6 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: "lockWorkspace"): void;
-  (e: "unlockWorkspace"): void;
   (e: "openSupervisionTask"): void;
 }>();
 

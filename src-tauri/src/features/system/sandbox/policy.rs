@@ -72,73 +72,11 @@ fn sandbox_normalize_target_for_access_check(path: &std::path::Path) -> PathBuf 
     sanitized
 }
 
-fn sandbox_workspace_canonical(state: &AppState) -> Result<PathBuf, String> {
-    state
-        .llm_workspace_path
-        .canonicalize()
-        .map_err(|err| format!("Resolve llm workspace failed: {err}"))
-}
-
-fn sandbox_allowed_project_roots_canonical(state: &AppState) -> Result<Vec<PathBuf>, String> {
-    let mut config = read_config(&state.config_path)?;
-    normalize_app_config(&mut config);
-    let _ = ensure_default_shell_workspace_in_config(&mut config, state);
-    let mut roots = Vec::<PathBuf>::new();
-    let mut seen = std::collections::HashSet::<String>::new();
-
-    for ws in &config.shell_workspaces {
-        let trimmed = ws.path.trim();
-        if ws.name.trim().is_empty() || trimmed.is_empty() {
-            continue;
-        }
-        let candidate = PathBuf::from(trimmed);
-        let canonical = match candidate.canonicalize() {
-            Ok(path) if path.is_dir() => path,
-            _ => continue,
-        };
-        let key = sandbox_normalize_path_for_compare(&canonical);
-        if seen.insert(key) {
-            roots.push(canonical);
-        }
-    }
-
-    if roots.is_empty() {
-        roots.push(sandbox_workspace_canonical(state)?);
-    }
-    Ok(roots)
-}
-
-fn sandbox_default_session_root_canonical(state: &AppState) -> Result<PathBuf, String> {
-    let allowed = sandbox_allowed_project_roots_canonical(state)?;
-    allowed
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No sandbox root available".to_string())
-}
-
 fn sandbox_session_root_canonical(
     state: &AppState,
     session_id: &str,
  ) -> Result<PathBuf, String> {
-    let default_root = sandbox_default_session_root_canonical(state)?;
-    let root_text = {
-        let guard = state
-            .terminal_session_roots
-            .lock()
-            .map_err(|_| "Failed to lock terminal session roots".to_string())?;
-        guard.get(session_id).cloned()
-    };
-    let Some(root_text) = root_text else {
-        return Ok(default_root);
-    };
-
-    let root = PathBuf::from(root_text);
-    match root.canonicalize() {
-        Ok(path) if path.is_dir() => {
-            Ok(path)
-        }
-        _ => Ok(default_root),
-    }
+    terminal_session_root_canonical(state, session_id)
 }
 
 fn sandbox_path_allowed(

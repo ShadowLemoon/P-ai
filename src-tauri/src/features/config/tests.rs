@@ -448,20 +448,23 @@
                 name: "A".to_string(),
                 path: "/e/__easy_call_ai_path_norm_test__/repo".to_string(),
                 built_in: false,
+                ..Default::default()
             },
             ShellWorkspaceConfig {
                 name: "a".to_string(),
                 path: "E:/__easy_call_ai_path_norm_test__/repo".to_string(),
                 built_in: false,
+                ..Default::default()
             },
             ShellWorkspaceConfig {
                 name: "B".to_string(),
                 path: r#""E:\__easy_call_ai_path_norm_test__\repo""#.to_string(),
                 built_in: false,
+                ..Default::default()
             },
         ];
         normalize_shell_workspaces(&mut cfg);
-        assert_eq!(cfg.shell_workspaces.len(), 2);
+        assert_eq!(cfg.shell_workspaces.len(), 1);
         assert_eq!(
             cfg.shell_workspaces[0].path,
             r"E:\__easy_call_ai_path_norm_test__\repo".to_string()

@@ -340,13 +340,19 @@ async function resetShellWorkspacePath() {
     const defaultPath = await invokeTauri<string>("get_default_chat_shell_workspace_path");
     if (!Array.isArray(props.config.shellWorkspaces) || props.config.shellWorkspaces.length === 0) {
       props.config.shellWorkspaces = [{
+        id: "system-workspace",
         name: defaultWorkspaceNameFromPath(defaultPath) || "默认工作空间",
         path: defaultPath,
+        level: "system",
+        access: "full_access",
         builtIn: true,
       }];
     } else {
       const target = props.config.shellWorkspaces[0];
+      target.id = String(target.id || "").trim() || "system-workspace";
       target.path = defaultPath;
+      target.level = "system";
+      target.access = "full_access";
       if (!String(target.name || "").trim()) {
         target.name = defaultWorkspaceNameFromPath(defaultPath) || "默认工作空间";
       }

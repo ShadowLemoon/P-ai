@@ -152,15 +152,7 @@ fn move_system_preamble_to_user_prompt(prepared: &mut PreparedPrompt) -> bool {
     }
     let block = prompt_xml_block("system prompt", preamble);
     prepared.preamble.clear();
-    if prepared.latest_user_extra_text.trim().is_empty() {
-        prepared.latest_user_extra_text = block;
-    } else {
-        prepared.latest_user_extra_text = format!(
-            "{}\n\n{}",
-            block,
-            prepared.latest_user_extra_text.trim()
-        );
-    }
+    prepared_prompt_prepend_latest_user_extra_block(prepared, block);
     true
 }
 
@@ -522,6 +514,7 @@ mod inference_gateway_tests {
             latest_user_text: "你好".to_string(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: "原有补充".to_string(),
+            latest_user_extra_blocks: vec!["原有补充".to_string()],
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };

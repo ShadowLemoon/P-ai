@@ -269,31 +269,13 @@ fn apply_chat_latest_user_payload(
 ) {
     prepared.latest_user_text = latest_user_text;
     prepared.latest_user_meta_text = latest_user_meta_text;
-    prepared.latest_user_extra_text = merge_latest_user_extra_text(
-        &prepared.latest_user_extra_text,
-        latest_user_extra_blocks,
-    );
+    prepared_prompt_append_latest_user_extra_blocks(prepared, latest_user_extra_blocks);
     if let Some(images) = latest_images {
         prepared.latest_images = images;
     }
     if let Some(audios) = latest_audios {
         prepared.latest_audios = audios;
     }
-}
-
-fn merge_latest_user_extra_text(existing: &str, appended_blocks: &[String]) -> String {
-    let mut merged = Vec::<String>::new();
-    if !existing.trim().is_empty() {
-        merged.push(existing.trim().to_string());
-    }
-    for block in appended_blocks {
-        let trimmed = block.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        merged.push(trimmed.to_string());
-    }
-    merged.join("\n\n")
 }
 
 #[cfg(test)]
@@ -338,6 +320,7 @@ mod prompt_assembly_tests {
             latest_user_text: String::new(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };

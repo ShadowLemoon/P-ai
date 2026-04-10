@@ -382,16 +382,7 @@ async fn apply_prompt_image_fallbacks_to_prepared(
             }
         }
         if !converted_blocks.is_empty() {
-            let converted_text = converted_blocks.join("\n\n");
-            prepared.latest_user_extra_text = if prepared.latest_user_extra_text.trim().is_empty() {
-                converted_text
-            } else {
-                format!(
-                    "{}\n\n{}",
-                    prepared.latest_user_extra_text.trim(),
-                    converted_text
-                )
-            };
+            prepared_prompt_append_latest_user_extra_blocks(prepared, &converted_blocks);
             changed = true;
         }
     }
@@ -939,6 +930,7 @@ async fn send_chat_message_inner(
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -2600,4 +2592,3 @@ fn auto_disable_api_image_input(
     ));
     Ok(true)
 }
-

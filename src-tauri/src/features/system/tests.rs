@@ -119,6 +119,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -289,6 +290,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: vec![
                 ChatMessage {

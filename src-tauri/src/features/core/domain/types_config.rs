@@ -1,8 +1,30 @@
-#[derive(Debug, Clone, Serialize, Deserialize)]
+const SHELL_WORKSPACE_LEVEL_SYSTEM: &str = "system";
+const SHELL_WORKSPACE_LEVEL_MAIN: &str = "main";
+const SHELL_WORKSPACE_LEVEL_SECONDARY: &str = "secondary";
+
+const SHELL_WORKSPACE_ACCESS_APPROVAL: &str = "approval";
+const SHELL_WORKSPACE_ACCESS_FULL_ACCESS: &str = "full_access";
+const SHELL_WORKSPACE_ACCESS_READ_ONLY: &str = "read_only";
+
+fn default_shell_workspace_level() -> String {
+    SHELL_WORKSPACE_LEVEL_SECONDARY.to_string()
+}
+
+fn default_shell_workspace_access() -> String {
+    SHELL_WORKSPACE_ACCESS_READ_ONLY.to_string()
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ShellWorkspaceConfig {
+    #[serde(default)]
+    id: String,
     name: String,
     path: String,
+    #[serde(default = "default_shell_workspace_level", alias = "role")]
+    level: String,
+    #[serde(default = "default_shell_workspace_access")]
+    access: String,
     #[serde(default)]
     built_in: bool,
 }

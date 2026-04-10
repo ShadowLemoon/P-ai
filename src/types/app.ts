@@ -65,9 +65,16 @@ export type ApiProviderConfigItem = {
   failureRetryCount?: number;
 };
 
+export type ShellWorkspaceLevel = "system" | "main" | "secondary";
+
+export type ShellWorkspaceAccess = "approval" | "full_access" | "read_only";
+
 export type ShellWorkspace = {
+  id: string;
   name: string;
   path: string;
+  level: ShellWorkspaceLevel;
+  access: ShellWorkspaceAccess;
   builtIn?: boolean;
 };
 
@@ -363,6 +370,8 @@ export type ChatSnapshot = {
 
 export type ChatMessageBlock = {
   id: string;
+  sourceMessageId?: string;
+  isExtraTextBlock?: boolean;
   role: ChatRole;
   isStreaming?: boolean;
   streamSegments?: string[];

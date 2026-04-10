@@ -1,5 +1,13 @@
 # 变更日志
 
+## 更新：收拢会话工作目录语义并移除锁定概念
+
+- 修复（chat-workspace-layout-remove-lock-semantics）：将会话工作目录统一收口为“目录列表 + 至少一个 main”的模型，移除旧的锁定/解锁残留语义
+  - 前端会话工作目录弹窗保存后仅更新目录布局，不再隐式执行“解锁”或重置当前执行目录
+  - 聊天窗口相关状态、事件与文案移除 `workspaceLocked / workspaceUnlocked` 旧概念，避免 UI 与真实行为不一致
+  - Tauri 命令侧删除 `lock_chat_shell_workspace / unlock_chat_shell_workspace` 与 `locked` 返回字段，终端默认根目录始终跟随当前会话的 `main` 工作目录
+  - 保留兼容旧数据所需的结构字段，但运行逻辑已不再依赖会话级“锁定路径”
+
 ## 更新：终端工作区提示词对齐会话路径
 
 - 优化（terminal-prompt-align-conversation-workspace）：终端相关提示词改为优先展示当前会话工作路径，并移除“不要在命令中使用绝对路径”的固定提示

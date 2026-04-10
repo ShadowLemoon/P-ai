@@ -7,17 +7,102 @@ fn normalize_terminal_tool_session_id(session_id: &str) -> String {
     }
 }
 
-fn terminal_workspace_path_from_conversation(conversation: &Conversation) -> Option<PathBuf> {
+fn normalize_shell_workspace_level_text(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        SHELL_WORKSPACE_LEVEL_SYSTEM => SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+        SHELL_WORKSPACE_LEVEL_MAIN => SHELL_WORKSPACE_LEVEL_MAIN.to_string(),
+        SHELL_WORKSPACE_LEVEL_SECONDARY => SHELL_WORKSPACE_LEVEL_SECONDARY.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn normalize_shell_workspace_access_text(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        SHELL_WORKSPACE_ACCESS_APPROVAL => SHELL_WORKSPACE_ACCESS_APPROVAL.to_string(),
+        SHELL_WORKSPACE_ACCESS_FULL_ACCESS => SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+        SHELL_WORKSPACE_ACCESS_READ_ONLY => SHELL_WORKSPACE_ACCESS_READ_ONLY.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn shell_workspace_default_access_for_level(level: &str) -> String {
+    match level {
+        SHELL_WORKSPACE_LEVEL_SYSTEM => SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+        SHELL_WORKSPACE_LEVEL_MAIN => SHELL_WORKSPACE_ACCESS_APPROVAL.to_string(),
+        _ => SHELL_WORKSPACE_ACCESS_READ_ONLY.to_string(),
+    }
+}
+
+fn shell_workspace_level_rank(level: &str) -> i32 {
+    match level {
+        SHELL_WORKSPACE_LEVEL_SYSTEM => 0,
+        SHELL_WORKSPACE_LEVEL_MAIN => 1,
+        _ => 2,
+    }
+}
+
+fn shell_workspace_display_name_fallback(path: &Path) -> String {
+    path.file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| path.to_string_lossy().to_string())
+}
+
+fn shell_workspace_resolve_path_candidate(
+    state: &AppState,
+    workspace: &ShellWorkspaceConfig,
+) -> Option<PathBuf> {
+    let normalized = normalize_terminal_path_input_for_current_platform(workspace.path.trim());
+    if normalized.is_empty() {
+        return None;
+    }
+    let candidate = PathBuf::from(&normalized);
+    if candidate.is_absolute() {
+        Some(candidate)
+    } else {
+        Some(state.llm_workspace_path.join(candidate))
+    }
+}
+
+fn configured_system_workspace_root_from_shell_workspaces(
+    shell_workspaces: &[ShellWorkspaceConfig],
+    state: &AppState,
+) -> PathBuf {
+    for workspace in shell_workspaces {
+        if normalize_shell_workspace_level_text(&workspace.level) != SHELL_WORKSPACE_LEVEL_SYSTEM {
+            continue;
+        }
+        if let Some(path) = shell_workspace_resolve_path_candidate(state, workspace) {
+            return path;
+        }
+    }
+    state.llm_workspace_path.clone()
+}
+
+fn terminal_workspace_path_from_conversation(
+    state: &AppState,
+    conversation: &Conversation,
+) -> Option<PathBuf> {
     let raw = conversation
         .shell_workspace_path
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())?;
     let path = PathBuf::from(raw);
-    match path.canonicalize() {
-        Ok(canonical) if canonical.is_dir() => Some(canonical),
-        _ => None,
+    let canonical = match path.canonicalize() {
+        Ok(value) if value.is_dir() => value,
+        _ => return None,
+    };
+    let target_key = normalize_terminal_path_for_compare(&canonical);
+    let workspaces = terminal_allowed_workspaces_for_conversation_canonical(state, Some(conversation)).ok()?;
+    for workspace in workspaces {
+        if normalize_terminal_path_for_compare(&workspace.path) == target_key {
+            return Some(canonical);
+        }
     }
+    None
 }
 
 fn terminal_session_conversation_id(session_id: &str) -> Option<String> {
@@ -44,19 +129,6 @@ fn terminal_session_conversation(state: &AppState, session_id: &str) -> Result<O
         .iter()
         .find(|item| item.id == conversation_id)
         .cloned())
-}
-
-fn terminal_session_has_locked_root(state: &AppState, session_id: &str) -> bool {
-    let default_root = match terminal_default_session_root_canonical(state) {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    let session_root = match terminal_session_root_canonical(state, session_id) {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    normalize_terminal_path_for_compare(&session_root)
-        != normalize_terminal_path_for_compare(&default_root)
 }
 
 fn normalize_terminal_timeout_ms(timeout_ms: Option<u64>) -> u64 {
@@ -117,26 +189,8 @@ fn resolve_terminal_path(base_dir: &Path, raw: &str) -> Result<PathBuf, String> 
     Ok(canonical)
 }
 
-fn configured_workspace_root_from_shell_workspaces(
-    shell_workspaces: &[ShellWorkspaceConfig],
-    state: &AppState,
-) -> PathBuf {
-    for workspace in shell_workspaces {
-        let path = normalize_terminal_path_input_for_current_platform(workspace.path.trim());
-        if workspace.name.trim().is_empty() || path.is_empty() {
-            continue;
-        }
-        let candidate = PathBuf::from(&path);
-        if candidate.is_absolute() {
-            return candidate;
-        }
-        return state.llm_workspace_path.join(candidate);
-    }
-    state.llm_workspace_path.clone()
-}
-
 fn configured_workspace_root_from_config(config: &AppConfig, state: &AppState) -> PathBuf {
-    configured_workspace_root_from_shell_workspaces(&config.shell_workspaces, state)
+    configured_system_workspace_root_from_shell_workspaces(&config.shell_workspaces, state)
 }
 
 fn configured_workspace_root_path(state: &AppState) -> Result<PathBuf, String> {
@@ -163,18 +217,13 @@ fn terminal_workspace_canonical(state: &AppState) -> Result<PathBuf, String> {
     configured_workspace_root_canonical(state)
 }
 
-fn terminal_cwd_in_agent_default_workspace(state: &AppState, cwd: &Path) -> bool {
-    let default_root = match terminal_workspace_canonical(state) {
-        Ok(path) => path,
-        Err(_) => return false,
-    };
-    let normalized_cwd = terminal_normalize_for_access_check(cwd);
-    path_is_within(&default_root, &normalized_cwd)
-}
-
 #[derive(Debug, Clone)]
 struct TerminalWorkspaceResolved {
+    id: String,
     name: String,
+    level: String,
+    access: String,
+    built_in: bool,
     path: PathBuf,
 }
 
@@ -197,113 +246,298 @@ fn legacy_default_shell_workspace_path() -> Option<PathBuf> {
 }
 
 fn ensure_default_shell_workspace_in_config(config: &mut AppConfig, state: &AppState) -> bool {
-    let configured_default_root = configured_workspace_root_from_config(config, state);
-    let default_path = terminal_path_for_user(&configured_default_root);
+    let original_snapshot = serde_json::to_string(&config.shell_workspaces).unwrap_or_default();
+    let default_path = terminal_path_for_user(&state.llm_workspace_path);
     let default_path_buf = PathBuf::from(&default_path);
     let legacy_default_path = legacy_default_shell_workspace_path();
+    let mut prepared = Vec::<(ShellWorkspaceConfig, PathBuf)>::new();
+    for raw in std::mem::take(&mut config.shell_workspaces) {
+        let Some(candidate) = shell_workspace_resolve_path_candidate(state, &raw) else {
+            continue;
+        };
+        let normalized_path = terminal_path_for_user(&candidate);
 
-    let match_default_index = |workspace: &ShellWorkspaceConfig| {
-        let candidate = PathBuf::from(workspace.path.trim());
-        terminal_paths_match(&candidate, &default_path_buf)
-    };
+        let mut workspace = raw.clone();
+        workspace.path = normalized_path;
+        workspace.id = workspace.id.trim().to_string();
+        workspace.name = workspace.name.trim().to_string();
+        prepared.push((workspace, candidate));
+    }
 
-    let target_index = config
-        .shell_workspaces
-        .iter()
-        .position(|workspace| workspace.built_in)
-        .or_else(|| {
-            config
-                .shell_workspaces
-                .iter()
-                .position(match_default_index)
-        });
+    let explicit_system_index = prepared.iter().position(|(workspace, _)| {
+        normalize_shell_workspace_level_text(&workspace.level) == SHELL_WORKSPACE_LEVEL_SYSTEM
+    });
+    let recovery_system_index = explicit_system_index.and_then(|system_idx| {
+        let (system_workspace, system_candidate) = &prepared[system_idx];
+        let system_matches_default = terminal_paths_match(system_candidate, &default_path_buf)
+            || legacy_default_path
+                .as_deref()
+                .map(|path| terminal_paths_match(system_candidate, path))
+                .unwrap_or(false);
+        if !system_workspace.built_in || !system_matches_default {
+            return None;
+        }
+        prepared.iter().enumerate().find_map(|(idx, (workspace, _))| {
+            if idx == system_idx {
+                return None;
+            }
+            if workspace.name.trim().is_empty() {
+                return None;
+            }
+            Some(idx)
+        })
+    });
+    let selected_system_index = recovery_system_index
+        .or(explicit_system_index)
+        .or_else(|| prepared.iter().position(|_| true));
 
-    let Some(target_index) = target_index else {
-        config.shell_workspaces.insert(
-            0,
-            ShellWorkspaceConfig {
-                name: "默认工作空间".to_string(),
-                path: default_path,
-                built_in: true,
-            },
+    let mut system = selected_system_index
+        .and_then(|idx| prepared.into_iter().nth(idx))
+        .map(|(mut workspace, candidate)| {
+            if workspace.built_in
+                && legacy_default_path
+                    .as_deref()
+                    .map(|legacy_path| terminal_paths_match(&candidate, legacy_path))
+                    .unwrap_or(false)
+                && !terminal_paths_match(&candidate, &default_path_buf)
+            {
+                workspace.path = default_path.clone();
+                runtime_log_info(format!(
+                    "[终端工作空间迁移] 系统工作目录路径已更新: '{}' -> '{}'",
+                    candidate.display(),
+                    workspace.path
+                ));
+            }
+            if workspace.name.is_empty() {
+                workspace.name = shell_workspace_display_name_fallback(&candidate);
+            }
+            workspace
+        })
+        .unwrap_or_else(|| ShellWorkspaceConfig {
+        id: "system-workspace".to_string(),
+        name: shell_workspace_display_name_fallback(&state.llm_workspace_path),
+        path: default_path.clone(),
+        level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+        access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+        built_in: true,
+    });
+    if system.id.trim().is_empty() {
+        system.id = "system-workspace".to_string();
+    }
+    system.level = SHELL_WORKSPACE_LEVEL_SYSTEM.to_string();
+    if normalize_shell_workspace_access_text(&system.access).is_empty() {
+        system.access = SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string();
+    }
+    system.built_in = true;
+    if system.name.trim().is_empty() {
+        system.name = shell_workspace_display_name_fallback(
+            &shell_workspace_resolve_path_candidate(state, &system)
+                .unwrap_or_else(|| state.llm_workspace_path.clone()),
         );
-        return true;
-    };
-
-    let moved_position = target_index != 0;
-    let cleared_other_built_ins = config
-        .shell_workspaces
-        .iter()
-        .enumerate()
-        .any(|(index, workspace)| index != target_index && workspace.built_in);
-    let mut target = config.shell_workspaces.remove(target_index);
-    let previous_name = target.name.trim().to_string();
-    let previous_path = target.path.trim().to_string();
-    let previous_built_in = target.built_in;
-    if target.name.trim().is_empty() {
-        target.name = "默认工作空间".to_string();
     }
-    let previous_path_buf = PathBuf::from(&previous_path);
-    if target.built_in
-        && legacy_default_path
-            .as_deref()
-            .map(|legacy_path| terminal_paths_match(&previous_path_buf, legacy_path))
-            .unwrap_or(false)
-        && !terminal_paths_match(&previous_path_buf, &default_path_buf)
-    {
-        target.path = default_path.clone();
-        runtime_log_info(format!(
-            "[终端工作空间迁移] 内置工作空间路径已更新: '{}' -> '{}'",
-            previous_path, target.path
-        ));
-    }
-    target.built_in = true;
-    for workspace in &mut config.shell_workspaces {
-        workspace.built_in = false;
-    }
-    config.shell_workspaces.insert(0, target);
-    let current = &config.shell_workspaces[0];
-    moved_position
-        || cleared_other_built_ins
-        || previous_built_in != current.built_in
-        || previous_name != current.name.trim()
-        || !terminal_paths_match(&previous_path_buf, &PathBuf::from(current.path.trim()))
+    system.path = terminal_path_for_user(
+        &shell_workspace_resolve_path_candidate(state, &system)
+            .unwrap_or_else(|| state.llm_workspace_path.clone()),
+    );
+    config.shell_workspaces = vec![system];
+    let current_snapshot = serde_json::to_string(&config.shell_workspaces).unwrap_or_default();
+    original_snapshot != current_snapshot
 }
 
-fn terminal_allowed_workspaces_canonical(
+fn normalize_conversation_shell_workspaces(
+    state: &AppState,
+    raw_entries: &[ShellWorkspaceConfig],
+) -> Vec<ShellWorkspaceConfig> {
+    let mut prepared = Vec::<(ShellWorkspaceConfig, PathBuf, String)>::new();
+    for raw in raw_entries {
+        let Some(candidate) = shell_workspace_resolve_path_candidate(state, raw) else {
+            continue;
+        };
+        let normalized_path = terminal_path_for_user(&candidate);
+        let path_key = normalize_terminal_path_for_compare(&PathBuf::from(&normalized_path));
+        let mut workspace = raw.clone();
+        workspace.path = normalized_path;
+        workspace.id = workspace.id.trim().to_string();
+        workspace.name = workspace.name.trim().to_string();
+        workspace.level = if normalize_shell_workspace_level_text(&workspace.level) == SHELL_WORKSPACE_LEVEL_MAIN {
+            SHELL_WORKSPACE_LEVEL_MAIN.to_string()
+        } else {
+            SHELL_WORKSPACE_LEVEL_SECONDARY.to_string()
+        };
+        let access = normalize_shell_workspace_access_text(&workspace.access);
+        workspace.access = if access.is_empty() {
+            shell_workspace_default_access_for_level(&workspace.level)
+        } else {
+            access
+        };
+        workspace.built_in = false;
+        prepared.push((workspace, candidate, path_key));
+    }
+
+    let mut rebuilt = Vec::<ShellWorkspaceConfig>::new();
+    let mut seen_paths = std::collections::HashSet::<String>::new();
+    for (mut workspace, candidate, path_key) in prepared {
+        if !seen_paths.insert(path_key) {
+            continue;
+        }
+        if workspace.name.is_empty() {
+            workspace.name = shell_workspace_display_name_fallback(&candidate);
+        }
+        rebuilt.push(workspace);
+    }
+    if !rebuilt.is_empty()
+        && !rebuilt
+            .iter()
+            .any(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_MAIN)
+    {
+        if let Some(first) = rebuilt.first_mut() {
+            first.level = SHELL_WORKSPACE_LEVEL_MAIN.to_string();
+            first.access = SHELL_WORKSPACE_ACCESS_APPROVAL.to_string();
+        }
+    }
+    rebuilt.sort_by(|left, right| {
+        shell_workspace_level_rank(&left.level)
+            .cmp(&shell_workspace_level_rank(&right.level))
+            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+    });
+    rebuilt
+}
+
+fn shell_workspaces_log_summary(entries: &[ShellWorkspaceConfig]) -> String {
+    if entries.is_empty() {
+        return "[]".to_string();
+    }
+    entries
+        .iter()
+        .map(|workspace| {
+            format!(
+                "{{id='{}', name='{}', level='{}', access='{}', path='{}', built_in={}}}",
+                workspace.id.trim(),
+                workspace.name.trim(),
+                workspace.level.trim(),
+                workspace.access.trim(),
+                workspace.path.trim(),
+                workspace.built_in
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn terminal_config_allowed_workspaces_canonical(
     state: &AppState,
 ) -> Result<Vec<TerminalWorkspaceResolved>, String> {
     let mut config = read_config(&state.config_path)?;
     normalize_app_config(&mut config);
     let _ = ensure_default_shell_workspace_in_config(&mut config, state);
     let mut out = Vec::<TerminalWorkspaceResolved>::new();
-    let mut seen_names = std::collections::HashSet::<String>::new();
+    let mut seen_paths = std::collections::HashSet::<String>::new();
     for raw in &config.shell_workspaces {
-        let name = raw.name.trim();
         let path = raw.path.trim();
-        if name.is_empty() || path.is_empty() {
+        if path.is_empty() {
             continue;
         }
         let canonical = match PathBuf::from(path).canonicalize() {
             Ok(v) if v.is_dir() => v,
             _ => continue,
         };
-        let key = name.to_ascii_lowercase();
-        if !seen_names.insert(key) {
+        let key = normalize_terminal_path_for_compare(&canonical);
+        if !seen_paths.insert(key.clone()) {
             continue;
         }
+        let mut name = raw.name.trim().to_string();
+        if name.is_empty() {
+            name = shell_workspace_display_name_fallback(&canonical);
+        }
         out.push(TerminalWorkspaceResolved {
-            name: name.to_string(),
+            id: if raw.id.trim().is_empty() {
+                format!("config-{}", key)
+            } else {
+                raw.id.trim().to_string()
+            },
+            name,
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+            built_in: true,
             path: canonical,
         });
     }
     if out.is_empty() {
+        let fallback_path = terminal_workspace_canonical(state)?;
         out.push(TerminalWorkspaceResolved {
-            name: "默认工作空间".to_string(),
-            path: terminal_workspace_canonical(state)?,
+            id: "system-workspace".to_string(),
+            name: shell_workspace_display_name_fallback(&fallback_path),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+            built_in: true,
+            path: fallback_path,
         });
     }
+    out.sort_by(|left, right| {
+        shell_workspace_level_rank(&left.level)
+            .cmp(&shell_workspace_level_rank(&right.level))
+            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+    });
     Ok(out)
+}
+
+fn terminal_allowed_workspaces_for_conversation_canonical(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+) -> Result<Vec<TerminalWorkspaceResolved>, String> {
+    let config_workspaces = terminal_config_allowed_workspaces_canonical(state)?;
+    let system_workspace = config_workspaces
+        .iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_SYSTEM)
+        .cloned()
+        .or_else(|| config_workspaces.first().cloned())
+        .ok_or_else(|| "No system workspace available".to_string())?;
+
+    let mut out = vec![system_workspace];
+    let mut seen_paths = std::collections::HashSet::<String>::new();
+    seen_paths.insert(normalize_terminal_path_for_compare(&out[0].path));
+
+    if let Some(conversation) = conversation {
+        for raw in normalize_conversation_shell_workspaces(state, &conversation.shell_workspaces) {
+            let canonical = match PathBuf::from(raw.path.trim()).canonicalize() {
+                Ok(value) if value.is_dir() => value,
+                _ => continue,
+            };
+            let key = normalize_terminal_path_for_compare(&canonical);
+            if !seen_paths.insert(key.clone()) {
+                continue;
+            }
+            let mut name = raw.name.trim().to_string();
+            if name.is_empty() {
+                name = shell_workspace_display_name_fallback(&canonical);
+            }
+            out.push(TerminalWorkspaceResolved {
+                id: if raw.id.trim().is_empty() {
+                    format!("conversation-{}", key)
+                } else {
+                    raw.id.trim().to_string()
+                },
+                name,
+                level: raw.level.trim().to_string(),
+                access: raw.access.trim().to_string(),
+                built_in: false,
+                path: canonical,
+            });
+        }
+    }
+
+    out.sort_by(|left, right| {
+        shell_workspace_level_rank(&left.level)
+            .cmp(&shell_workspace_level_rank(&right.level))
+            .then_with(|| left.name.to_ascii_lowercase().cmp(&right.name.to_ascii_lowercase()))
+    });
+    Ok(out)
+}
+
+fn terminal_allowed_workspaces_canonical(
+    state: &AppState,
+) -> Result<Vec<TerminalWorkspaceResolved>, String> {
+    terminal_config_allowed_workspaces_canonical(state)
 }
 
 fn terminal_allowed_project_roots_canonical(state: &AppState) -> Result<Vec<PathBuf>, String> {
@@ -324,7 +558,95 @@ fn terminal_allowed_project_roots_canonical(state: &AppState) -> Result<Vec<Path
     Ok(roots)
 }
 
-fn terminal_prompt_trusted_roots_block(state: &AppState, selected_api: &ApiConfig, conversation: Option<&Conversation>) -> Option<String> {
+fn terminal_allowed_project_roots_for_session_canonical(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Vec<PathBuf>, String> {
+    let conversation = terminal_session_conversation(state, session_id)?;
+    let mut roots = Vec::<PathBuf>::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    for ws in terminal_allowed_workspaces_for_conversation_canonical(state, conversation.as_ref())? {
+        let canonical = ws.path;
+        let key = normalize_terminal_path_for_compare(&canonical);
+        if seen.insert(key) {
+            roots.push(canonical);
+        }
+    }
+    if roots.is_empty() {
+        roots.push(terminal_workspace_canonical(state)?);
+    }
+    Ok(roots)
+}
+
+fn terminal_system_workspace_resolved(state: &AppState) -> Result<TerminalWorkspaceResolved, String> {
+    terminal_config_allowed_workspaces_canonical(state)?
+        .into_iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_SYSTEM)
+        .ok_or_else(|| "No system workspace available".to_string())
+}
+
+fn terminal_default_workspace_resolved(state: &AppState) -> Result<TerminalWorkspaceResolved, String> {
+    let workspaces = terminal_allowed_workspaces_canonical(state)?;
+    if let Some(workspace) = workspaces
+        .iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_MAIN)
+    {
+        return Ok(workspace.clone());
+    }
+    workspaces
+        .into_iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_SYSTEM)
+        .ok_or_else(|| "No default workspace available".to_string())
+}
+
+fn terminal_default_workspace_for_conversation_resolved(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+) -> Result<TerminalWorkspaceResolved, String> {
+    let workspaces = terminal_allowed_workspaces_for_conversation_canonical(state, conversation)?;
+    if let Some(workspace) = workspaces
+        .iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_MAIN)
+    {
+        return Ok(workspace.clone());
+    }
+    workspaces
+        .into_iter()
+        .find(|workspace| workspace.level == SHELL_WORKSPACE_LEVEL_SYSTEM)
+        .ok_or_else(|| "No default workspace available".to_string())
+}
+
+fn terminal_match_workspace_for_target_in_conversation(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+    target: &Path,
+) -> Result<Option<TerminalWorkspaceResolved>, String> {
+    let normalized = terminal_normalize_for_access_check(target);
+    let mut best_match: Option<TerminalWorkspaceResolved> = None;
+    let mut best_len = 0usize;
+    for workspace in terminal_allowed_workspaces_for_conversation_canonical(state, conversation)? {
+        if !path_is_within(&workspace.path, &normalized) {
+            continue;
+        }
+        let current_len = normalize_terminal_path_for_compare(&workspace.path).len();
+        if current_len >= best_len {
+            best_len = current_len;
+            best_match = Some(workspace);
+        }
+    }
+    Ok(best_match)
+}
+
+fn terminal_match_workspace_for_session_target(
+    state: &AppState,
+    session_id: &str,
+    target: &Path,
+) -> Result<Option<TerminalWorkspaceResolved>, String> {
+    let conversation = terminal_session_conversation(state, session_id)?;
+    terminal_match_workspace_for_target_in_conversation(state, conversation.as_ref(), target)
+}
+
+fn terminal_prompt_trusted_roots_block(state: &AppState, selected_api: &ApiConfig, _conversation: Option<&Conversation>) -> Option<String> {
     let terminal_enabled = selected_api.enable_tools
         && selected_api
             .tools
@@ -340,59 +662,88 @@ fn terminal_prompt_trusted_roots_block(state: &AppState, selected_api: &ApiConfi
         return None;
     }
 
-    // Prompt 展示只需要稳定的工作区文本，不应在聊天热路径里重复做
-    // read_config + canonicalize 路径求真。真正的执行边界校验仍由 exec 路径负责。
-    let current_root_text = if let Some(conv) = conversation {
-        if let Some(path_str) = conv.shell_workspace_path.as_deref() {
-            let path = PathBuf::from(path_str);
-            match path.canonicalize() {
-                Ok(canonical) if canonical.is_dir() => terminal_path_for_user(&canonical),
-                _ => configured_workspace_root_path(state)
-                    .map(|p| terminal_path_for_user(&p))
-                    .unwrap_or_else(|_| terminal_path_for_user(&state.llm_workspace_path)),
-            }
-        } else {
-            configured_workspace_root_path(state)
-                .map(|p| terminal_path_for_user(&p))
-                .unwrap_or_else(|_| terminal_path_for_user(&state.llm_workspace_path))
-        }
-    } else {
-        configured_workspace_root_path(state)
-            .map(|p| terminal_path_for_user(&p))
-            .unwrap_or_else(|_| terminal_path_for_user(&state.llm_workspace_path))
-    };
-    let assistant_root_text = configured_workspace_root_path(state)
-        .map(|path| terminal_path_for_user(&path))
-        .unwrap_or_else(|_| terminal_path_for_user(&state.llm_workspace_path));
+    let system_workspace = terminal_system_workspace_resolved(state).ok();
 
     let mut lines = Vec::<String>::new();
-    if current_root_text != assistant_root_text {
-        lines.push(format!("当前会话工作路径: {}", current_root_text));
-        lines.push(format!("助理系统工作目录: {}", assistant_root_text));
-    } else {
-        lines.push(format!("当前工作路径: {}", current_root_text));
+    if let Some(system) = &system_workspace {
+        lines.push(format!(
+            "系统工作目录: {} [{} / {}] {}",
+            system.name,
+            system.level,
+            system.access,
+            terminal_path_for_user(&system.path)
+        ));
     }
-    lines.push("当前 exec 工具默认在当前工作路径执行命令。".to_string());
-    lines.push("如用户无明确指示，请不要脱离当前工作空间执行任务。".to_string());
+    lines.push("exec 默认在 main > system 工作目录执行。".to_string());
+    lines.push("显式绝对路径可用于读取；若绝对路径未命中任何已配置工作目录，则禁止写入。".to_string());
+    lines.push("审批只用于 apply_patch 与明确写文件的终端命令；python/py 只有 full_access 才允许。".to_string());
     Some(prompt_xml_block("shell workspace", lines.join("\n")))
 }
 
+fn terminal_conversation_workspaces_extra_block(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+) -> Option<String> {
+    let Some(conversation) = conversation else {
+        eprintln!("[会话工作目录注入] 跳过: 原因=conversation 为空");
+        return None;
+    };
+    let raw_summary = shell_workspaces_log_summary(&conversation.shell_workspaces);
+    let workspaces = normalize_conversation_shell_workspaces(state, &conversation.shell_workspaces);
+    eprintln!(
+        "[会话工作目录注入] 检查: conversation_id={}, 原始数量={}, 原始条目={}, 归一化数量={}, 归一化条目={}",
+        conversation.id,
+        conversation.shell_workspaces.len(),
+        raw_summary,
+        workspaces.len(),
+        shell_workspaces_log_summary(&workspaces)
+    );
+    if workspaces.is_empty() {
+        eprintln!(
+            "[会话工作目录注入] 跳过: conversation_id={}, 原因=归一化后为空",
+            conversation.id
+        );
+        return None;
+    }
+
+    let mut lines = vec!["用户为当前会话额外提供了以下工作目录：".to_string()];
+    for workspace in workspaces {
+        if workspace.level == SHELL_WORKSPACE_LEVEL_SYSTEM {
+            continue;
+        }
+        lines.push(format!(
+            "- {} [{} / {}] {}",
+            workspace.name,
+            workspace.level,
+            workspace.access,
+            workspace.path
+        ));
+    }
+    if lines.len() == 1 {
+        eprintln!(
+            "[会话工作目录注入] 跳过: conversation_id={}, 原因=归一化后仅剩 system 级目录",
+            conversation.id
+        );
+        return None;
+    }
+    let block = prompt_xml_block("conversation workspace", lines.join("\n"));
+    eprintln!(
+        "[会话工作目录注入] 生成完成: conversation_id={}, 内容={}",
+        conversation.id,
+        block
+    );
+    Some(block)
+}
+
 fn terminal_default_session_root_canonical(state: &AppState) -> Result<PathBuf, String> {
-    let allowed = terminal_allowed_project_roots_canonical(state)?;
-    allowed
-        .into_iter()
-        .next()
-        .ok_or_else(|| "No terminal project root available".to_string())
+    Ok(terminal_default_workspace_resolved(state)?.path)
 }
 
 fn terminal_session_root_canonical(state: &AppState, session_id: &str) -> Result<PathBuf, String> {
-    let default_root = terminal_default_session_root_canonical(state)?;
     if let Some(conversation) = terminal_session_conversation(state, session_id)? {
-        if let Some(path) = terminal_workspace_path_from_conversation(&conversation) {
-            return Ok(path);
-        }
-        return Ok(default_root);
+        return Ok(terminal_default_workspace_for_conversation_resolved(state, Some(&conversation))?.path);
     }
+    let default_root = terminal_default_session_root_canonical(state)?;
     let root_text = {
         let guard = state
             .terminal_session_roots
@@ -445,26 +796,6 @@ fn resolve_terminal_cwd(
     };
     ensure_terminal_workdir_allowed(state, session_id, &resolved)?;
     Ok(resolved)
-}
-
-fn terminal_path_allowed(state: &AppState, session_id: &str, target: &Path) -> Result<bool, String> {
-    let session_root = terminal_session_root_canonical(state, session_id)?;
-    if path_is_within(&session_root, target) {
-        return Ok(true);
-    }
-    Ok(false)
-}
-
-fn terminal_should_parse_command_paths_for_boundary_check() -> bool {
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    {
-        // Linux/macOS rely on OS sandbox backend for hard path boundary.
-        return false;
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        true
-    }
 }
 
 fn terminal_normalize_for_access_check(path: &Path) -> PathBuf {
@@ -546,8 +877,11 @@ mod terminal_workspace_tests {
         let state = build_test_state(llm_workspace_path);
         let mut config = AppConfig::default();
         config.shell_workspaces = vec![ShellWorkspaceConfig {
+            id: "system-workspace".to_string(),
             name: "派蒙的家".to_string(),
             path: custom_workspace_path.to_string_lossy().to_string(),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
             built_in: true,
         }];
 
@@ -560,6 +894,8 @@ mod terminal_workspace_tests {
             terminal_path_for_user(&custom_workspace_path)
         );
         assert!(config.shell_workspaces[0].built_in);
+        assert_eq!(config.shell_workspaces[0].level, SHELL_WORKSPACE_LEVEL_SYSTEM);
+        assert_eq!(config.shell_workspaces[0].access, SHELL_WORKSPACE_ACCESS_FULL_ACCESS);
         assert!(!changed);
 
         let _ = std::fs::remove_dir_all(temp_root);
@@ -578,8 +914,11 @@ mod terminal_workspace_tests {
             .expect("legacy default workspace path");
         let mut config = AppConfig::default();
         config.shell_workspaces = vec![ShellWorkspaceConfig {
+            id: "system-workspace".to_string(),
             name: "派蒙的家".to_string(),
             path: legacy_workspace_path.to_string_lossy().to_string(),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
             built_in: true,
         }];
 
@@ -598,7 +937,52 @@ mod terminal_workspace_tests {
     }
 
     #[test]
-    fn terminal_session_root_prefers_conversation_workspace_path() {
+    fn ensure_default_shell_workspace_prefers_user_workspace_over_auto_injected_default_system() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "easy-call-ai-terminal-workspace-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let llm_workspace_path = temp_root.join("p-ai").join("llm-workspace");
+        let user_workspace_path = temp_root.join("paimonhome");
+        std::fs::create_dir_all(&llm_workspace_path).expect("create llm workspace");
+        std::fs::create_dir_all(&user_workspace_path).expect("create user workspace");
+        let state = build_test_state(llm_workspace_path.clone());
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![
+            ShellWorkspaceConfig {
+                id: "system-workspace".to_string(),
+                name: "llm-workspace".to_string(),
+                path: terminal_path_for_user(&llm_workspace_path),
+                level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+                access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+                built_in: true,
+            },
+            ShellWorkspaceConfig {
+                id: "secondary-workspace-1".to_string(),
+                name: "派蒙的家".to_string(),
+                path: terminal_path_for_user(&user_workspace_path),
+                level: SHELL_WORKSPACE_LEVEL_SECONDARY.to_string(),
+                access: SHELL_WORKSPACE_ACCESS_READ_ONLY.to_string(),
+                built_in: false,
+            },
+        ];
+
+        let changed = ensure_default_shell_workspace_in_config(&mut config, &state);
+
+        assert!(changed);
+        assert_eq!(config.shell_workspaces.len(), 1);
+        assert_eq!(config.shell_workspaces[0].level, SHELL_WORKSPACE_LEVEL_SYSTEM);
+        assert_eq!(
+            config.shell_workspaces[0].path,
+            terminal_path_for_user(&user_workspace_path)
+        );
+        assert_eq!(config.shell_workspaces[0].name, "派蒙的家".to_string());
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn terminal_session_root_prefers_conversation_main_workspace() {
         let temp_root = std::env::temp_dir().join(format!(
             "easy-call-ai-terminal-workspace-test-{}",
             uuid::Uuid::new_v4()
@@ -607,7 +991,17 @@ mod terminal_workspace_tests {
         let custom_workspace_path = temp_root.join("custom-shell-root");
         std::fs::create_dir_all(&llm_workspace_path).expect("create llm workspace");
         std::fs::create_dir_all(&custom_workspace_path).expect("create custom workspace");
-        let state = build_test_state(llm_workspace_path);
+        let state = build_test_state(llm_workspace_path.clone());
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![ShellWorkspaceConfig {
+            id: "system-workspace".to_string(),
+            name: "系统工作目录".to_string(),
+            path: terminal_path_for_user(&llm_workspace_path),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+            built_in: true,
+        }];
+        state_write_config_cached(&state, &config).expect("write config");
         let mut data = AppData::default();
         data.conversations.push(Conversation {
             id: "conv-1".to_string(),
@@ -628,6 +1022,14 @@ mod terminal_workspace_tests {
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: Some(custom_workspace_path.to_string_lossy().to_string()),
+            shell_workspaces: vec![ShellWorkspaceConfig {
+                id: "main-workspace-1".to_string(),
+                name: "项目主目录".to_string(),
+                path: terminal_path_for_user(&custom_workspace_path),
+                level: SHELL_WORKSPACE_LEVEL_MAIN.to_string(),
+                access: SHELL_WORKSPACE_ACCESS_APPROVAL.to_string(),
+                built_in: false,
+            }],
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -644,6 +1046,78 @@ mod terminal_workspace_tests {
         assert_eq!(
             normalize_terminal_path_for_compare(&resolved),
             normalize_terminal_path_for_compare(&custom_workspace_path)
+        );
+
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[test]
+    fn terminal_session_root_should_ignore_stale_workspace_override() {
+        let temp_root = std::env::temp_dir().join(format!(
+            "easy-call-ai-terminal-workspace-test-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let llm_workspace_path = temp_root.join("p-ai").join("llm-workspace");
+        let main_workspace_path = temp_root.join("main-root");
+        let stale_locked_path = temp_root.join("stale-root");
+        std::fs::create_dir_all(&llm_workspace_path).expect("create llm workspace");
+        std::fs::create_dir_all(&main_workspace_path).expect("create main workspace");
+        std::fs::create_dir_all(&stale_locked_path).expect("create stale workspace");
+        let state = build_test_state(llm_workspace_path.clone());
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![ShellWorkspaceConfig {
+            id: "system-workspace".to_string(),
+            name: "系统工作目录".to_string(),
+            path: terminal_path_for_user(&llm_workspace_path),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+            built_in: true,
+        }];
+        state_write_config_cached(&state, &config).expect("write config");
+        let mut data = AppData::default();
+        data.conversations.push(Conversation {
+            id: "conv-1".to_string(),
+            title: "Conversation".to_string(),
+            agent_id: "agent-1".to_string(),
+            department_id: String::new(),
+            last_read_message_id: String::new(),
+            conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
+            root_conversation_id: None,
+            delegate_id: None,
+            created_at: now_iso(),
+            updated_at: now_iso(),
+            last_user_at: None,
+            last_assistant_at: None,
+            last_context_usage_ratio: 0.0,
+            last_effective_prompt_tokens: 0,
+            status: "active".to_string(),
+            summary: String::new(),
+            user_profile_snapshot: String::new(),
+            shell_workspace_path: Some(stale_locked_path.to_string_lossy().to_string()),
+            shell_workspaces: vec![ShellWorkspaceConfig {
+                id: "main-workspace-1".to_string(),
+                name: "项目主目录".to_string(),
+                path: terminal_path_for_user(&main_workspace_path),
+                level: SHELL_WORKSPACE_LEVEL_MAIN.to_string(),
+                access: SHELL_WORKSPACE_ACCESS_APPROVAL.to_string(),
+                built_in: false,
+            }],
+            archived_at: None,
+            messages: Vec::new(),
+            current_todos: Vec::new(),
+            memory_recall_table: Vec::new(),
+        });
+        state_write_app_data_cached(&state, &data).expect("write app data");
+
+        let session_id = normalize_terminal_tool_session_id(&inflight_chat_key(
+            "agent-1",
+            Some("conv-1"),
+        ));
+        let resolved = terminal_session_root_canonical(&state, &session_id).expect("resolve root");
+
+        assert_eq!(
+            normalize_terminal_path_for_compare(&resolved),
+            normalize_terminal_path_for_compare(&main_workspace_path)
         );
 
         let _ = std::fs::remove_dir_all(temp_root);

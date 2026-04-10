@@ -345,19 +345,12 @@ struct ChatShellWorkspaceInput {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct LockChatShellWorkspaceInput {
+struct SaveChatShellWorkspacesInput {
     api_config_id: String,
     agent_id: String,
     conversation_id: Option<String>,
-    workspace_path: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UnlockChatShellWorkspaceInput {
-    api_config_id: String,
-    agent_id: String,
-    conversation_id: Option<String>,
+    #[serde(default)]
+    workspaces: Vec<ShellWorkspaceConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -394,7 +387,7 @@ struct ChatShellWorkspaceOutput {
     session_id: String,
     workspace_name: String,
     root_path: String,
-    locked: bool,
+    workspaces: Vec<ShellWorkspaceConfig>,
 }
 
 fn resolve_chat_tool_session_id(
@@ -454,16 +447,38 @@ fn resolve_chat_workspace_conversation_id(
     Err("当前没有可用的活跃会话，需要提供 conversationId。".to_string())
 }
 
-fn update_conversation_shell_workspace_path(
+fn apply_conversation_chat_workspace_changes(
     state: &AppState,
     conversation_id: &str,
-    shell_workspace_path: Option<String>,
-) -> Result<(), String> {
+    shell_workspace_path: Option<Option<String>>,
+    shell_workspaces: Option<Vec<ShellWorkspaceConfig>>,
+) -> Result<Conversation, String> {
     if delegate_runtime_thread_conversation_get(state, conversation_id)?.is_some() {
-        return delegate_runtime_thread_modify(state, conversation_id, move |thread| {
-            thread.conversation.shell_workspace_path = shell_workspace_path;
+        let next_path = shell_workspace_path.clone();
+        let next_workspaces = shell_workspaces.clone();
+        delegate_runtime_thread_modify(state, conversation_id, move |thread| {
+            let original_path = thread.conversation.shell_workspace_path.clone();
+            let original_workspaces = thread.conversation.shell_workspaces.clone();
+            if let Some(value) = next_path.clone() {
+                thread.conversation.shell_workspace_path = value;
+            }
+            if let Some(value) = next_workspaces.clone() {
+                thread.conversation.shell_workspaces = value;
+            }
+            if thread.conversation.shell_workspace_path.as_deref().map(str::trim).filter(|value| !value.is_empty()).is_some()
+                && terminal_workspace_path_from_conversation(state, &thread.conversation).is_none()
+            {
+                thread.conversation.shell_workspace_path = None;
+            }
+            if thread.conversation.shell_workspace_path == original_path
+                && thread.conversation.shell_workspaces == original_workspaces
+            {
+                return Ok(());
+            }
             Ok(())
-        });
+        })?;
+        return delegate_runtime_thread_conversation_get_any(state, conversation_id)?
+            .ok_or_else(|| format!("指定会话不存在：{conversation_id}"));
     }
 
     let mut data = state_read_app_data_cached(state)?;
@@ -474,12 +489,27 @@ fn update_conversation_shell_workspace_path(
     else {
         return Err(format!("指定会话不存在：{conversation_id}"));
     };
-    conversation.shell_workspace_path = shell_workspace_path;
-    let app_config = state_read_config_cached(state)?;
-    let overview_payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
+    let original_path = conversation.shell_workspace_path.clone();
+    let original_workspaces = conversation.shell_workspaces.clone();
+    if let Some(value) = shell_workspace_path {
+        conversation.shell_workspace_path = value;
+    }
+    if let Some(value) = shell_workspaces {
+        conversation.shell_workspaces = value;
+    }
+    if conversation.shell_workspace_path.as_deref().map(str::trim).filter(|value| !value.is_empty()).is_some()
+        && terminal_workspace_path_from_conversation(state, conversation).is_none()
+    {
+        conversation.shell_workspace_path = None;
+    }
+    if conversation.shell_workspace_path == original_path
+        && conversation.shell_workspaces == original_workspaces
+    {
+        return Ok(conversation.clone());
+    }
+    let updated = conversation.clone();
     state_write_app_data_cached(state, &data)?;
-    emit_unarchived_conversation_overview_updated_payload(state, &overview_payload);
-    Ok(())
+    Ok(updated)
 }
 
 fn workspace_name_from_path(path: &Path) -> String {
@@ -491,9 +521,13 @@ fn workspace_name_from_path(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().to_string())
 }
 
-fn resolve_workspace_display_name(state: &AppState, root: &Path) -> String {
+fn resolve_workspace_display_name_for_conversation(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+    root: &Path,
+) -> String {
     let root_key = normalize_terminal_path_for_compare(root);
-    if let Ok(workspaces) = terminal_allowed_workspaces_canonical(state) {
+    if let Ok(workspaces) = terminal_allowed_workspaces_for_conversation_canonical(state, conversation) {
         for ws in workspaces {
             if normalize_terminal_path_for_compare(&ws.path) == root_key {
                 return ws.name;
@@ -501,6 +535,38 @@ fn resolve_workspace_display_name(state: &AppState, root: &Path) -> String {
         }
     }
     workspace_name_from_path(root)
+}
+
+fn build_chat_shell_workspace_list(
+    state: &AppState,
+    conversation: Option<&Conversation>,
+) -> Vec<ShellWorkspaceConfig> {
+    terminal_allowed_workspaces_for_conversation_canonical(state, conversation)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|workspace| ShellWorkspaceConfig {
+            id: workspace.id,
+            name: workspace.name,
+            path: workspace.path.to_string_lossy().to_string(),
+            level: workspace.level,
+            access: workspace.access,
+            built_in: workspace.built_in,
+        })
+        .collect()
+}
+
+fn build_chat_shell_workspace_output(
+    state: &AppState,
+    session_id: String,
+    conversation: Option<&Conversation>,
+    root: PathBuf,
+) -> ChatShellWorkspaceOutput {
+    ChatShellWorkspaceOutput {
+        session_id,
+        workspace_name: resolve_workspace_display_name_for_conversation(state, conversation, &root),
+        root_path: root.to_string_lossy().to_string(),
+        workspaces: build_chat_shell_workspace_list(state, conversation),
+    }
 }
 
 fn open_shell_path_in_file_manager(path: &Path) -> Result<(), String> {
@@ -887,21 +953,19 @@ fn get_chat_shell_workspace(
             &input.agent_id,
             input.conversation_id.as_deref(),
         )?;
+    let conversation = terminal_session_conversation(&state, &session_id)?;
     let root = terminal_session_root_canonical(&state, &session_id)?;
-    let default_root = terminal_default_session_root_canonical(&state)?;
-    let locked = normalize_terminal_path_for_compare(&root)
-        != normalize_terminal_path_for_compare(&default_root);
-    Ok(ChatShellWorkspaceOutput {
+    Ok(build_chat_shell_workspace_output(
+        &state,
         session_id,
-        workspace_name: resolve_workspace_display_name(&state, &root),
-        root_path: root.to_string_lossy().to_string(),
-        locked,
-    })
+        conversation.as_ref(),
+        root,
+    ))
 }
 
 #[tauri::command]
-fn lock_chat_shell_workspace(
-    input: LockChatShellWorkspaceInput,
+fn update_chat_shell_workspace_layout(
+    input: SaveChatShellWorkspacesInput,
     state: State<'_, AppState>,
 ) -> Result<ChatShellWorkspaceOutput, String> {
     let session_id =
@@ -911,59 +975,18 @@ fn lock_chat_shell_workspace(
             &input.agent_id,
             input.conversation_id.as_deref(),
         )?;
-    let target_text = input.workspace_path.trim();
-    if target_text.is_empty() {
-        return Err("workspacePath is required.".to_string());
-    }
-    let target = PathBuf::from(target_text)
-        .canonicalize()
-        .map_err(|err| format!("Resolve workspace path failed: {err}"))?;
-    if !target.is_dir() {
-        return Err("workspacePath must be a directory.".to_string());
-    }
     let conversation_id = resolve_chat_workspace_conversation_id(
         &state,
         &input.agent_id,
         input.conversation_id.as_deref(),
     )?;
-    update_conversation_shell_workspace_path(
+    let normalized_workspaces = normalize_conversation_shell_workspaces(&state, &input.workspaces);
+    let updated = apply_conversation_chat_workspace_changes(
         &state,
         &conversation_id,
-        Some(target.to_string_lossy().to_string()),
+        Some(None),
+        Some(normalized_workspaces),
     )?;
-    {
-        let mut roots = state
-            .terminal_session_roots
-            .lock()
-            .map_err(|_| "Failed to lock terminal session roots".to_string())?;
-        roots.remove(&session_id);
-    }
-    Ok(ChatShellWorkspaceOutput {
-        session_id,
-        workspace_name: resolve_workspace_display_name(&state, &target),
-        root_path: target.to_string_lossy().to_string(),
-        locked: true,
-    })
-}
-
-#[tauri::command]
-fn unlock_chat_shell_workspace(
-    input: UnlockChatShellWorkspaceInput,
-    state: State<'_, AppState>,
-) -> Result<ChatShellWorkspaceOutput, String> {
-    let session_id =
-        resolve_chat_tool_session_id(
-            &state,
-            &input.api_config_id,
-            &input.agent_id,
-            input.conversation_id.as_deref(),
-        )?;
-    let conversation_id = resolve_chat_workspace_conversation_id(
-        &state,
-        &input.agent_id,
-        input.conversation_id.as_deref(),
-    )?;
-    update_conversation_shell_workspace_path(&state, &conversation_id, None)?;
     {
         let mut roots = state
             .terminal_session_roots
@@ -972,12 +995,12 @@ fn unlock_chat_shell_workspace(
         roots.remove(&session_id);
     }
     let root = terminal_session_root_canonical(&state, &session_id)?;
-    Ok(ChatShellWorkspaceOutput {
+    Ok(build_chat_shell_workspace_output(
+        &state,
         session_id,
-        workspace_name: resolve_workspace_display_name(&state, &root),
-        root_path: root.to_string_lossy().to_string(),
-        locked: false,
-    })
+        Some(&updated),
+        root,
+    ))
 }
 
 #[tauri::command]

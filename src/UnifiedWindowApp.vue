@@ -80,7 +80,6 @@
       :user-alias="userAlias"
       :selected-persona-name="currentForegroundPersona?.name || t('archives.roleAssistant')"
       :current-chat-workspace-name="chatWorkspaceName"
-      :chat-workspace-locked="chatWorkspaceLocked"
       :user-avatar-url="userAvatarUrl"
       :selected-persona-avatar-url="currentForegroundPersonaAvatarUrl"
       :chat-persona-name-map="chatPersonaNameMap"
@@ -205,8 +204,7 @@
       :on-reached-chat-bottom="trimForegroundMessagesToRecentLimit"
       :on-recall-turn="handleRecallTurn"
       :on-regenerate-turn="handleRegenerateTurn"
-      :on-lock-chat-workspace="lockChatWorkspaceFromPicker"
-      :on-unlock-chat-workspace="unlockChatWorkspace"
+      :on-lock-chat-workspace="openChatWorkspacePicker"
       :on-switch-conversation="switchUnarchivedConversation"
       :on-rename-conversation="renameCurrentConversation"
       :on-create-conversation="createUnarchivedConversation"
@@ -458,6 +456,17 @@
         <button @click.prevent="closeForceArchiveActionDialog">close</button>
       </form>
     </dialog>
+    <ChatWorkspacePickerDialog
+      :open="chatWorkspacePickerOpen"
+      :saving="chatWorkspacePickerSaving"
+      :workspaces="chatWorkspaceDraftChoices"
+      @close="closeChatWorkspacePicker"
+      @add-workspace="addChatWorkspace"
+      @set-main="setChatWorkspaceAsMain"
+      @set-access="setChatWorkspaceAccess"
+      @remove-workspace="removeChatWorkspace"
+      @save="saveChatWorkspacePicker"
+    />
   </div>
 </template>
 <script setup lang="ts">
@@ -491,6 +500,7 @@ import { useChatRuntime } from "./features/chat/composables/use-chat-runtime";
 import { useChatMessageBlocks } from "./features/chat/composables/use-chat-turns";
 import { useChatMedia } from "./features/chat/composables/use-chat-media";
 import { usePromptPreview } from "./features/chat/composables/use-prompt-preview";
+import ChatWorkspacePickerDialog from "./features/chat/components/dialogs/ChatWorkspacePickerDialog.vue";
 import { useMemoryViewer } from "./features/memory/composables/use-memory-viewer";
 import { useAppWatchers } from "./features/shell/composables/use-app-watchers";
 import { useRecordHotkey } from "./features/chat/composables/use-record-hotkey";
@@ -508,6 +518,7 @@ import AppWindowContent from "./features/shell/components/AppWindowContent.vue";
 import AppWindowHeader from "./features/shell/components/AppWindowHeader.vue";
 import RuntimeLogsDialog from "./features/shell/components/RuntimeLogsDialog.vue";
 import type { TaskEntry } from "./features/config/views/config-tabs/task-editor";
+import type { ChatWorkspaceChoice } from "./features/chat/composables/use-chat-workspace";
 import type {
   PersonaProfile,
   AppConfig,
@@ -1492,10 +1503,12 @@ const chatUnarchivedConversationItems = computed(() => {
 });
 const {
   chatWorkspaceName,
-  chatWorkspaceLocked,
+  chatWorkspacePickerOpen,
+  chatWorkspaceChoices,
   refreshChatWorkspaceState,
-  lockChatWorkspaceFromPicker,
-  unlockChatWorkspace,
+  openChatWorkspacePicker: openChatWorkspacePickerBase,
+  closeChatWorkspacePicker: closeChatWorkspacePickerBase,
+  saveChatWorkspaces,
 } = useChatWorkspace({
   activeApiConfigId: currentForegroundApiConfigId,
   activeAgentId: currentForegroundAgentId,
@@ -1503,6 +1516,119 @@ const {
   setStatus,
   setStatusError,
 });
+
+const chatWorkspaceDraftChoices = ref<ChatWorkspaceChoice[]>([]);
+const chatWorkspacePickerSaving = ref(false);
+
+function cloneChatWorkspaceChoices(items: ChatWorkspaceChoice[]): ChatWorkspaceChoice[] {
+  return (items || []).map((item) => ({
+    id: String(item.id || "").trim(),
+    name: String(item.name || "").trim(),
+    path: String(item.path || "").trim(),
+    level: item.level,
+    access: item.access,
+  }));
+}
+
+function syncChatWorkspaceDraftFromCurrentState() {
+  chatWorkspaceDraftChoices.value = cloneChatWorkspaceChoices(chatWorkspaceChoices.value);
+}
+
+function openChatWorkspacePicker() {
+  syncChatWorkspaceDraftFromCurrentState();
+  openChatWorkspacePickerBase();
+}
+
+function closeChatWorkspacePicker() {
+  if (chatWorkspacePickerSaving.value) return;
+  closeChatWorkspacePickerBase();
+  syncChatWorkspaceDraftFromCurrentState();
+}
+
+async function addChatWorkspace() {
+  try {
+    const picked = await open({
+      directory: true,
+      multiple: false,
+    });
+    if (!picked || Array.isArray(picked)) return;
+    const nextPath = String(picked || "").trim();
+    if (!nextPath) return;
+    const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
+    const existed = draft.some((item) => String(item.path || "").trim().toLowerCase() === nextPath.toLowerCase());
+    if (existed) {
+      setStatus(tr("config.tools.workspaceAlreadyExists"));
+      return;
+    }
+    const hasMain = draft.some((item) => item.level === "main");
+    draft.push({
+      id: `conversation-workspace-${Math.random().toString(36).slice(2, 8)}`,
+      name: nextPath.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() || nextPath,
+      path: nextPath,
+      level: hasMain ? "secondary" : "main",
+      access: hasMain ? "read_only" : "approval",
+    });
+    chatWorkspaceDraftChoices.value = draft;
+  } catch (error) {
+    setStatusError("status.requestFailed", error);
+  }
+}
+
+async function setChatWorkspaceAsMain(workspaceId: string) {
+  const draft: ChatWorkspaceChoice[] = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value).map((item): ChatWorkspaceChoice => {
+    if (item.level === "system") return item;
+    if (item.id === workspaceId) {
+      return { ...item, level: "main", access: item.access || "approval" };
+    }
+    if (item.level === "main") {
+      return { ...item, level: "secondary" };
+    }
+    return item;
+  });
+  chatWorkspaceDraftChoices.value = draft;
+}
+
+function setChatWorkspaceAccess(workspaceId: string, access: ChatWorkspaceChoice["access"]) {
+  const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
+  const target = draft.find((item) => item.id === workspaceId);
+  if (!target) return;
+  if (target.level === "system") return;
+  target.access = access;
+  chatWorkspaceDraftChoices.value = draft;
+}
+
+function removeChatWorkspace(workspaceId: string) {
+  const current = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
+  const removing = current.find((item) => item.id === workspaceId);
+  const draft = current.filter((item) => item.id !== workspaceId || item.level === "system");
+  if (removing?.level === "main") {
+    const promoteTarget = draft.find((item) => item.level === "secondary");
+    if (promoteTarget) {
+      draft.forEach((item) => {
+        if (item.level === "system") return;
+        if (item.id === promoteTarget.id) {
+          item.level = "main";
+        } else if (item.level === "main") {
+          item.level = "secondary";
+        }
+      });
+    }
+  }
+  chatWorkspaceDraftChoices.value = draft;
+}
+
+async function saveChatWorkspacePicker() {
+  if (chatWorkspacePickerSaving.value) return;
+  chatWorkspacePickerSaving.value = true;
+  try {
+    const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
+    await saveChatWorkspaces(draft);
+    closeChatWorkspacePickerBase();
+    syncChatWorkspaceDraftFromCurrentState();
+  } finally {
+    chatWorkspacePickerSaving.value = false;
+  }
+}
 const selectedPersonaEditor = computed(
   () => personas.value.find((p) => p.id === personaEditorId.value) ?? null,
 );
@@ -2986,7 +3112,6 @@ watch(
   () => ({
     mode: viewMode.value,
     workspaceName: chatWorkspaceName.value,
-    workspaceLocked: chatWorkspaceLocked.value,
   }),
   ({ mode }) => {
     if (mode !== "chat") return;

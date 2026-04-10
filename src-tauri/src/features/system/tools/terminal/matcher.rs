@@ -1,3 +1,9 @@
+#[derive(Debug, Clone)]
+struct TerminalCommandPathCandidate {
+    path: PathBuf,
+    is_absolute: bool,
+}
+
 fn terminal_tokenize(command: &str) -> Vec<String> {
     let mut tokens = Vec::<String>::new();
     let mut current = String::new();
@@ -134,6 +140,7 @@ fn terminal_is_virtual_sink_path(token: &str, shell_kind: &str) -> bool {
     matches!(trimmed.as_str(), "nul" | "con" | "prn" | "aux")
 }
 
+#[cfg(test)]
 fn terminal_command_contains_absolute_path_token(command: &str, shell_kind: &str) -> bool {
     let tokens = terminal_tokenize(command);
     for token in tokens {
@@ -186,6 +193,18 @@ fn terminal_resolve_candidate_path(cwd: &Path, raw: &str) -> Option<PathBuf> {
     Some(joined)
 }
 
+fn terminal_raw_token_is_absolute_path(raw: &str) -> bool {
+    let token = terminal_unquote_token(raw);
+    if token.is_empty() {
+        return false;
+    }
+    let normalized = normalize_terminal_path_input_for_current_platform(&token);
+    if normalized.is_empty() {
+        return false;
+    }
+    PathBuf::from(&normalized).is_absolute() || terminal_has_windows_drive_prefix(&normalized)
+}
+
 fn terminal_dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut out = Vec::<PathBuf>::new();
     let mut seen = std::collections::HashSet::<String>::new();
@@ -198,11 +217,11 @@ fn terminal_dedup_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     out
 }
 
-fn terminal_collect_command_path_candidates(
+fn terminal_collect_command_path_candidate_details(
     cwd: &Path,
     command: &str,
     shell_kind: &str,
-) -> Vec<PathBuf> {
+) -> Vec<TerminalCommandPathCandidate> {
     let tokens = terminal_tokenize(command);
     if tokens.is_empty() {
         return Vec::new();
@@ -257,30 +276,36 @@ fn terminal_collect_command_path_candidates(
         idx += 1;
     }
 
-    let mut out = Vec::<PathBuf>::new();
+    let mut out = Vec::<TerminalCommandPathCandidate>::new();
     for raw in raw_paths {
         if let Some(path) = terminal_resolve_candidate_path(cwd, &raw) {
-            out.push(path);
+            out.push(TerminalCommandPathCandidate {
+                path,
+                is_absolute: terminal_raw_token_is_absolute_path(&raw),
+            });
         }
     }
-    terminal_dedup_paths(out)
+    let mut deduped = Vec::<TerminalCommandPathCandidate>::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    for item in out {
+        let key = normalize_terminal_path_for_compare(&item.path);
+        if seen.insert(key) {
+            deduped.push(item);
+        }
+    }
+    deduped
 }
 
-fn terminal_collect_ungranted_command_paths(
-    state: &AppState,
-    session_id: &str,
+#[cfg(test)]
+fn terminal_collect_command_path_candidates(
     cwd: &Path,
     command: &str,
     shell_kind: &str,
-) -> Result<Vec<PathBuf>, String> {
-    let mut blocked = Vec::<PathBuf>::new();
-    for path in terminal_collect_command_path_candidates(cwd, command, shell_kind) {
-        let normalized = terminal_normalize_for_access_check(&path);
-        if !terminal_path_allowed(state, session_id, &normalized)? {
-            blocked.push(normalized);
-        }
-    }
-    Ok(terminal_dedup_paths(blocked))
+) -> Vec<PathBuf> {
+    terminal_collect_command_path_candidate_details(cwd, command, shell_kind)
+        .into_iter()
+        .map(|item| item.path)
+        .collect()
 }
 
 #[cfg(test)]

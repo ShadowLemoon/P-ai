@@ -637,8 +637,11 @@ async function onSaveToolsConfig() {
   savingToolsConfig.value = true;
   const previousShellWorkspaces = Array.isArray(props.config.shellWorkspaces)
     ? props.config.shellWorkspaces.map((item) => ({
+      id: String(item.id || "") || "system-workspace",
       name: String(item.name || ""),
       path: String(item.path || ""),
+      level: "system" as const,
+      access: "full_access" as const,
       builtIn: !!item.builtIn,
     }))
     : [];

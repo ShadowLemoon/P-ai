@@ -603,15 +603,13 @@ fn apply_patch_resolve_path(base: &Path, raw: &str) -> Result<PathBuf, String> {
     if normalized.is_empty() {
         return Err("补丁路径为空。".to_string());
     }
-    if !PathBuf::from(&normalized).is_absolute() && !apply_patch_has_windows_drive_prefix(&normalized)
-    {
-        return Err(format!("apply_patch 只支持绝对路径：`{raw}`"));
-    }
-    let safe = terminal_normalize_for_access_check(Path::new(&normalized));
-    if !path_is_within(base, &safe) {
-        return Err(format!("补丁路径越界：`{raw}`"));
-    }
-    Ok(safe)
+    let candidate = PathBuf::from(&normalized);
+    let joined = if candidate.is_absolute() || apply_patch_has_windows_drive_prefix(&normalized) {
+        candidate
+    } else {
+        base.join(candidate)
+    };
+    Ok(terminal_normalize_for_access_check(&joined))
 }
 
 fn apply_patch_resolve_ops(base: &Path, ops: Vec<ApplyPatchOp>) -> Result<Vec<ApplyPatchResolvedOp>, String> {
@@ -661,8 +659,8 @@ fn apply_patch_collect_existing_paths(ops: &[ApplyPatchResolvedOp]) -> Vec<PathB
 
 fn apply_patch_assess_safety(
     state: &AppState,
-    session_id: &str,
-    cwd: &Path,
+    _session_id: &str,
+    _cwd: &Path,
     ops: &[ApplyPatchResolvedOp],
 ) -> ApplyPatchSafetyCheck {
     if ops.is_empty() {
@@ -670,22 +668,45 @@ fn apply_patch_assess_safety(
             reason: "empty patch".to_string(),
         };
     }
-    if !terminal_cwd_in_agent_default_workspace(state, cwd) {
-        let existing = apply_patch_collect_existing_paths(ops)
-            .into_iter()
-            .filter(|path| path.exists())
-            .collect::<Vec<_>>();
-        if !existing.is_empty() {
-            return ApplyPatchSafetyCheck::AskUser {
-                existing_paths: existing,
-            };
+    let mut target_paths = Vec::<PathBuf>::new();
+    for op in ops {
+        match op {
+            ApplyPatchResolvedOp::Add { path, .. } => target_paths.push(path.clone()),
+            ApplyPatchResolvedOp::Delete { path } => target_paths.push(path.clone()),
+            ApplyPatchResolvedOp::Update { from, to, .. } => {
+                target_paths.push(from.clone());
+                if let Some(dest) = to {
+                    target_paths.push(dest.clone());
+                }
+            }
         }
     }
-    if !terminal_session_has_locked_root(state, session_id)
-        && !terminal_cwd_in_agent_default_workspace(state, cwd)
-    {
+    let mut accesses = Vec::<String>::new();
+    for path in terminal_dedup_paths(target_paths) {
+        let Some(workspace) = terminal_match_workspace_for_session_target(state, _session_id, &path)
+            .unwrap_or(None)
+        else {
+            return ApplyPatchSafetyCheck::Reject {
+                reason: format!(
+                    "补丁路径未命中已配置工作目录：{}",
+                    terminal_path_for_user(&path)
+                ),
+            };
+        };
+        accesses.push(workspace.access);
+    }
+    let effective_access = terminal_strictest_workspace_access(&accesses);
+    if effective_access == SHELL_WORKSPACE_ACCESS_READ_ONLY {
+        return ApplyPatchSafetyCheck::Reject {
+            reason: "当前目录权限为只读，禁止执行补丁。".to_string(),
+        };
+    }
+    if effective_access == SHELL_WORKSPACE_ACCESS_APPROVAL {
         return ApplyPatchSafetyCheck::AskUser {
-            existing_paths: Vec::new(),
+            existing_paths: apply_patch_collect_existing_paths(ops)
+                .into_iter()
+                .filter(|path| path.exists())
+                .collect::<Vec<_>>(),
         };
     }
     ApplyPatchSafetyCheck::AutoApprove
@@ -1026,20 +1047,23 @@ mod apply_patch_tool_tests {
     }
 
     #[test]
-    fn resolve_path_should_reject_relative_path() {
-        let base = std::env::temp_dir().join("eca-apply-patch-tests");
+    fn resolve_path_should_allow_relative_path_from_cwd() {
+        let base = std::env::temp_dir().join(format!("eca-apply-patch-tests-{}", Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&base);
         let result = apply_patch_resolve_path(&base, "relative.txt");
-        assert!(result.is_err());
+        assert_eq!(
+            result.expect("resolve"),
+            terminal_normalize_for_access_check(&base.join("relative.txt"))
+        );
     }
 
     #[test]
-    fn resolve_path_should_reject_absolute_path_outside_workspace() {
+    fn resolve_path_should_allow_absolute_path_outside_workspace() {
         let base = std::env::temp_dir().join(format!("eca-apply-patch-base-{}", Uuid::new_v4()));
         let outside = std::env::temp_dir().join(format!("eca-apply-patch-outside-{}.txt", Uuid::new_v4()));
         let _ = std::fs::create_dir_all(&base);
         let result = apply_patch_resolve_path(&base, &outside.to_string_lossy());
-        assert!(result.is_err());
+        assert_eq!(result.expect("resolve"), terminal_normalize_for_access_check(&outside));
     }
 
     #[test]

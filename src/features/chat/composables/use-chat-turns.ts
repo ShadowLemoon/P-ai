@@ -18,7 +18,7 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
   let lastMessageBlockSignature = "";
   let lastMessageBlocks: ChatMessageBlock[] = [];
   const messageSignatureCache = new WeakMap<ChatMessage, string>();
-  const messageBlockCache = new WeakMap<ChatMessage, { signature: string; block: ChatMessageBlock | null }>();
+  const messageBlockCache = new WeakMap<ChatMessage, { signature: string; blocks: ChatMessageBlock[] }>();
 
   function messageSignature(message: ChatMessage): string {
     const cached = messageSignatureCache.get(message);
@@ -27,6 +27,7 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
       String(message.id || "").trim(),
       String(message.createdAt || "").trim(),
       JSON.stringify(message.parts || []),
+      JSON.stringify(message.extraTextBlocks || []),
       JSON.stringify(message.providerMeta || {}),
       JSON.stringify(message.toolCall || []),
     ].join("|");
@@ -45,11 +46,11 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
     return null;
   }
 
-  function buildMessageBlock(message: ChatMessage): ChatMessageBlock | null {
+  function buildMessageBlocks(message: ChatMessage): ChatMessageBlock[] {
     const signature = messageSignature(message);
     const cached = messageBlockCache.get(message);
     if (cached && cached.signature === signature) {
-      return cached.block;
+      return cached.blocks;
     }
 
     const meta = (message.providerMeta || {}) as Record<string, unknown>;
@@ -61,8 +62,10 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
       : [];
     const streamTail = String(meta._streamTail ?? "");
     const streamAnimatedDelta = String(meta._streamAnimatedDelta ?? "");
-    const block = {
+    const baseBlock = {
       id: message.id,
+      sourceMessageId: message.id,
+      isExtraTextBlock: false,
       role: message.role,
       isStreaming: !!meta._streaming,
       streamSegments,
@@ -84,20 +87,53 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
       toolCalls: projection.toolCalls,
     } satisfies ChatMessageBlock;
 
-    const normalized =
-      block.text
-      || !!block.isStreaming
-      || block.images.length > 0
-      || block.audios.length > 0
-      || block.attachmentFiles.length > 0
-      || !!block.taskTrigger
-      || !!block.reasoningStandard
-      || !!block.reasoningInline
-        ? block
-        : null;
+    const blocks: ChatMessageBlock[] = [];
+    if (
+      baseBlock.text
+      || !!baseBlock.isStreaming
+      || baseBlock.images.length > 0
+      || baseBlock.audios.length > 0
+      || baseBlock.attachmentFiles.length > 0
+      || !!baseBlock.taskTrigger
+      || !!baseBlock.reasoningStandard
+      || !!baseBlock.reasoningInline
+    ) {
+      blocks.push(baseBlock);
+    }
 
-    messageBlockCache.set(message, { signature, block: normalized });
-    return normalized;
+    if (Array.isArray(message.extraTextBlocks)) {
+      message.extraTextBlocks.forEach((raw, index) => {
+        const text = String(raw || "").trim();
+        if (!text) return;
+        blocks.push({
+          id: `${message.id}::extra:${index}`,
+          sourceMessageId: message.id,
+          isExtraTextBlock: true,
+          role: message.role,
+          isStreaming: false,
+          streamSegments: [],
+          streamTail: "",
+          streamAnimatedDelta: "",
+          speakerAgentId: projection.speakerAgentId,
+          createdAt: String(message.createdAt || "").trim() || undefined,
+          providerMeta: message.providerMeta,
+          text,
+          images: [],
+          audios: [],
+          attachmentFiles: [],
+          taskTrigger: undefined,
+          remoteImOrigin: projection.remoteImOrigin,
+          reasoningStandard: "",
+          reasoningInline: "",
+          toolCallCount: 0,
+          lastToolName: "",
+          toolCalls: [],
+        });
+      });
+    }
+
+    messageBlockCache.set(message, { signature, blocks });
+    return blocks;
   }
 
   const allMessageBlocks = computed<ChatMessageBlock[]>(() => {
@@ -107,8 +143,7 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
       return lastMessageBlocks;
     }
     const blocks = messages
-      .map((message) => buildMessageBlock(message))
-      .filter((block): block is ChatMessageBlock => !!block);
+      .flatMap((message) => buildMessageBlocks(message));
     lastMessageBlockSignature = signature;
     lastMessageBlocks = blocks;
     return blocks;

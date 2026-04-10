@@ -131,7 +131,6 @@
         :latest-own-message-align-request="latestOwnMessageAlignRequest"
         :conversation-scroll-to-bottom-request="conversationScrollToBottomRequest"
         :current-workspace-name="currentChatWorkspaceName"
-        :workspace-locked="chatWorkspaceLocked"
         :active-conversation-id="currentChatConversationId"
         :current-todos="currentChatTodos"
         :supervision-active="chatSupervisionActive"
@@ -159,7 +158,6 @@
         @regenerate-turn="onRegenerateTurn"
         @force-archive="openForceArchiveActionDialog"
         @lock-workspace="onLockChatWorkspace"
-        @unlock-workspace="onUnlockChatWorkspace"
         @open-supervision-task="openSupervisionTaskDialog"
         @close-supervision-task="closeSupervisionTaskDialog"
         @save-supervision-task="saveSupervisionTask"
@@ -369,7 +367,6 @@ const props = defineProps<{
   latestOwnMessageAlignRequest: number;
   conversationScrollToBottomRequest: number;
   currentChatWorkspaceName: string;
-  chatWorkspaceLocked: boolean;
   currentChatConversationId: string;
   currentChatTodos: ChatTodoItem[];
   chatSupervisionActive: boolean;
@@ -467,7 +464,6 @@ const props = defineProps<{
   onRecallTurn: (payload: { turnId: string }) => void;
   onRegenerateTurn: (payload: { turnId: string }) => void;
   onLockChatWorkspace: () => void;
-  onUnlockChatWorkspace: () => void;
   openSupervisionTaskDialog: () => void;
   closeSupervisionTaskDialog: () => void;
   saveSupervisionTask: (payload: { durationHours: number; goal: string; why: string; todo: string }) => void;

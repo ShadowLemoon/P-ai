@@ -394,6 +394,7 @@
             latest_user_text: "继续".to_string(),
             latest_user_meta_text: "2026-02-11 17:30:45".to_string(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };
@@ -485,6 +486,7 @@
             latest_user_text: String::new(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };
@@ -1317,6 +1319,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -1721,6 +1724,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: vec![ChatMessage {
                 id: Uuid::new_v4().to_string(),
@@ -1984,6 +1988,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: Vec::new(),
@@ -2048,6 +2053,7 @@
             summary: String::new(),
             user_profile_snapshot: String::new(),
             shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
             archived_at: None,
             messages: Vec::new(),
             current_todos: vec![ConversationTodoItem {

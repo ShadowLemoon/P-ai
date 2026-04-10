@@ -149,6 +149,36 @@ fn terminal_approval_timeout_blocked_result(
     })
 }
 
+fn terminal_workspace_access_rank(access: &str) -> i32 {
+    match access {
+        SHELL_WORKSPACE_ACCESS_READ_ONLY => 3,
+        SHELL_WORKSPACE_ACCESS_APPROVAL => 2,
+        _ => 1,
+    }
+}
+
+fn terminal_strictest_workspace_access(accesses: &[String]) -> String {
+    accesses
+        .iter()
+        .max_by_key(|access| terminal_workspace_access_rank(access.as_str()))
+        .cloned()
+        .unwrap_or_else(|| SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string())
+}
+
+fn terminal_is_python_like_command(command: &str) -> bool {
+    let tokens = terminal_tokenize(command);
+    let Some(first) = tokens.first() else {
+        return false;
+    };
+    let token = terminal_unquote_token(first);
+    let exe = token
+        .rsplit(['\\', '/'])
+        .next()
+        .unwrap_or(token.as_str())
+        .to_ascii_lowercase();
+    matches!(exe.as_str(), "python" | "python.exe" | "py" | "py.exe")
+}
+
 async fn builtin_shell_exec(
     state: &AppState,
     session_id: &str,
@@ -198,19 +228,7 @@ async fn builtin_shell_exec(
     if let Some(reason) = terminal_command_block_reason(cmd) {
         return Err(format!("shell_exec blocked: {reason}"));
     }
-    if terminal_command_contains_absolute_path_token(cmd, &runtime_shell.kind) {
-        return Ok(serde_json::json!({
-            "ok": false,
-            "approved": false,
-            "blockedReason": "absolute_path_forbidden",
-            "message": "Absolute paths are forbidden in shell commands. Use relative paths and workspace switching.",
-            "sessionId": normalize_terminal_tool_session_id(session_id),
-            "command": cmd,
-        }));
-    }
-
-    let session_root_locked = terminal_session_has_locked_root(state, &normalized_session);
-    let allowed_project_roots = terminal_allowed_project_roots_canonical(state)?
+    let allowed_project_roots = terminal_allowed_project_roots_for_session_canonical(state, &normalized_session)?
         .iter()
         .map(|v| terminal_path_for_user(v))
         .collect::<Vec<_>>();
@@ -237,121 +255,135 @@ async fn builtin_shell_exec(
         }
         Err(err) => return Err(err),
     };
-    let cwd_in_default_workspace = terminal_cwd_in_agent_default_workspace(state, &cwd);
     let timeout_ms = normalize_terminal_timeout_ms(timeout_ms);
-    if terminal_should_parse_command_paths_for_boundary_check() {
-        let ungranted_paths =
-            terminal_collect_ungranted_command_paths(
-                state,
-                &normalized_session,
-                &cwd,
-                cmd,
-                &runtime_shell.kind,
-            )?;
-        if !ungranted_paths.is_empty() {
+    let command_paths =
+        terminal_collect_command_path_candidate_details(&cwd, cmd, &runtime_shell.kind);
+    let mut unmatched_paths = Vec::<TerminalCommandPathCandidate>::new();
+    let mut matched_accesses = Vec::<String>::new();
+    for candidate in &command_paths {
+        if let Some(workspace) = terminal_match_workspace_for_session_target(state, &normalized_session, &candidate.path)? {
+            matched_accesses.push(workspace.access);
+        } else {
+            unmatched_paths.push(candidate.clone());
+        }
+    }
+    let (write_target_paths, _) = terminal_collect_write_target_paths(&cwd, cmd);
+    let mut matched_write_accesses = Vec::<String>::new();
+    let mut unmatched_write_targets = Vec::<PathBuf>::new();
+    for path in &write_target_paths {
+        if let Some(workspace) = terminal_match_workspace_for_session_target(state, &normalized_session, path)? {
+            matched_write_accesses.push(workspace.access);
+        } else {
+            unmatched_write_targets.push(path.clone());
+        }
+    }
+    let cwd_access = terminal_match_workspace_for_session_target(state, &normalized_session, &cwd)?
+        .map(|workspace| workspace.access)
+        .unwrap_or_else(|| SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string());
+    let effective_access = if matched_accesses.is_empty() {
+        cwd_access.clone()
+    } else {
+        terminal_strictest_workspace_access(&matched_accesses)
+    };
+    let effective_write_access = if matched_write_accesses.is_empty() {
+        cwd_access.clone()
+    } else {
+        terminal_strictest_workspace_access(&matched_write_accesses)
+    };
+    let relative_unmatched_paths = unmatched_paths
+        .iter()
+        .filter(|item| !item.is_absolute)
+        .map(|item| terminal_path_for_user(&item.path))
+        .collect::<Vec<_>>();
+    if !relative_unmatched_paths.is_empty() {
+        return Ok(serde_json::json!({
+            "ok": false,
+            "approved": false,
+            "blockedReason": "relative_path_outside_workspace",
+            "message": "相对路径不能脱离当前工作目录，请改用当前目录内相对路径或显式绝对路径。",
+            "sessionId": normalized_session,
+            "rootPath": session_root_text,
+            "workspacePath": workspace_path_text,
+            "allowedProjectRoots": allowed_project_roots,
+            "cwd": terminal_path_for_user(&cwd),
+            "command": cmd,
+            "ungrantedPaths": relative_unmatched_paths,
+        }));
+    }
+
+    let write_risk = classify_terminal_write_risk(&cwd, cmd);
+    let is_write_command = !matches!(write_risk, TerminalWriteRisk::None);
+    if terminal_is_python_like_command(cmd) {
+        if effective_access != SHELL_WORKSPACE_ACCESS_FULL_ACCESS {
             return Ok(serde_json::json!({
                 "ok": false,
                 "approved": false,
-                "blockedReason": "path_not_granted_in_command",
-                "message": "Command references paths outside current shell root. Call shell_switch_workspace first.",
+                "blockedReason": "python_requires_full_access",
+                "message": "python/py 命令默认不走审批；当前目录不是完全访问，请改用 apply_patch 或明确的文件修改命令。",
                 "sessionId": normalized_session,
                 "rootPath": session_root_text,
                 "workspacePath": workspace_path_text,
                 "allowedProjectRoots": allowed_project_roots,
                 "cwd": terminal_path_for_user(&cwd),
                 "command": cmd,
-                "ungrantedPaths": ungranted_paths
-                    .iter()
-                    .take(24)
-                    .map(|path| terminal_path_for_user(path))
-                    .collect::<Vec<_>>(),
+            }));
+        }
+    } else if is_write_command {
+        let unmatched_write_paths = if matches!(write_risk, TerminalWriteRisk::Unknown)
+            && unmatched_write_targets.is_empty()
+        {
+            unmatched_paths
+                .iter()
+                .map(|item| terminal_path_for_user(&item.path))
+                .collect::<Vec<_>>()
+        } else {
+            unmatched_write_targets
+                .iter()
+                .map(|item| terminal_path_for_user(item))
+                .collect::<Vec<_>>()
+        };
+        if !unmatched_write_paths.is_empty() {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "approved": false,
+                "blockedReason": "write_path_not_granted",
+                "message": "写入类命令只能作用于已配置工作目录；未纳管绝对路径仅允许读取。",
+                "sessionId": normalized_session,
+                "rootPath": session_root_text,
+                "workspacePath": workspace_path_text,
+                "allowedProjectRoots": allowed_project_roots,
+                "cwd": terminal_path_for_user(&cwd),
+                "command": cmd,
+                "ungrantedPaths": unmatched_write_paths,
+            }));
+        }
+
+        if effective_write_access == SHELL_WORKSPACE_ACCESS_READ_ONLY {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "approved": false,
+                "blockedReason": "read_only_workspace",
+                "message": "当前目录权限为只读，禁止执行写入类终端命令。",
+                "sessionId": normalized_session,
+                "rootPath": session_root_text,
+                "workspacePath": workspace_path_text,
+                "allowedProjectRoots": allowed_project_roots,
+                "cwd": terminal_path_for_user(&cwd),
+                "command": cmd,
             }));
         }
     }
 
-    match classify_terminal_write_risk(&cwd, cmd) {
+    match write_risk {
         TerminalWriteRisk::None => {}
         TerminalWriteRisk::NewOnly { count } => {
             runtime_log_debug(format!(
                 "[TOOL-DEBUG] shell_exec write-risk=NewOnly new_path_count={} session={}",
                 count, normalized_session
             ));
-        }
-        TerminalWriteRisk::Existing { paths } => {
-            if session_root_locked || cwd_in_default_workspace {
-                runtime_log_debug(format!(
-                    "[TOOL-DEBUG] shell_exec approval skipped: trusted workspace session={} existing_path_count={} locked={} in_default_workspace={}",
-                    normalized_session,
-                    paths.len(),
-                    session_root_locked,
-                    cwd_in_default_workspace
-                ));
-            } else {
-            let mut lines = vec![
-                "该命令将修改/删除已有文件，是否批准本次执行？".to_string(),
-                format!("会话: {normalized_session}"),
-                format!("工作目录: {}", cwd.to_string_lossy()),
-                format!("命令: {cmd}"),
-                "命中已有路径：".to_string(),
-            ];
-            for path in paths.iter().take(8) {
-                lines.push(format!("- {}", path.to_string_lossy()));
-            }
-            if paths.len() > 8 {
-                lines.push(format!("... 其余 {} 项已省略", paths.len() - 8));
-            }
-            let approved = match terminal_request_user_approval(
-                state,
-                "终端执行审批",
-                &lines.join("\n"),
-                &normalized_session,
-                "existing_write_risk",
-                Some(&cwd),
-                Some(cmd),
-                None,
-                None,
-                &paths,
-            )
-            .await
-            {
-                Ok(v) => v,
-                Err(err) if terminal_is_approval_timeout_error(&err) => {
-                    return Ok(terminal_approval_timeout_blocked_result(
-                        &normalized_session,
-                        &session_root_text,
-                        &workspace_path_text,
-                        &cwd,
-                        cmd,
-                    ));
-                }
-                Err(err) => return Err(err),
-            };
-            if !approved {
-                return Ok(serde_json::json!({
-                    "ok": false,
-                    "approved": false,
-                    "blockedReason": "user_denied_existing_file_change",
-                    "message": "User denied command that may modify existing files.",
-                    "sessionId": normalized_session,
-                    "rootPath": session_root_text,
-                    "workspacePath": workspace_path_text,
-                    "cwd": terminal_path_for_user(&cwd),
-                    "command": cmd,
-                }));
-            }
-            }
-        }
-        TerminalWriteRisk::Unknown => {
-            if session_root_locked || cwd_in_default_workspace {
-                runtime_log_debug(format!(
-                    "[TOOL-DEBUG] shell_exec approval skipped: trusted workspace session={} write-risk=Unknown locked={} in_default_workspace={}",
-                    normalized_session,
-                    session_root_locked,
-                    cwd_in_default_workspace
-                ));
-            } else {
+            if effective_write_access == SHELL_WORKSPACE_ACCESS_APPROVAL {
                 let message = format!(
-                    "无法判定该命令是否会修改已有文件，是否批准本次执行？\n会话: {normalized_session}\n工作目录: {}\n命令: {cmd}",
+                    "该命令将创建或改写文件，是否批准本次执行？\n会话: {normalized_session}\n工作目录: {}\n命令: {cmd}",
                     cwd.to_string_lossy()
                 );
                 let approved = match terminal_request_user_approval(
@@ -359,7 +391,7 @@ async fn builtin_shell_exec(
                     "终端执行审批",
                     &message,
                     &normalized_session,
-                    "unknown_write_risk",
+                    "new_write_risk",
                     Some(&cwd),
                     Some(cmd),
                     None,
@@ -384,15 +416,86 @@ async fn builtin_shell_exec(
                     return Ok(serde_json::json!({
                         "ok": false,
                         "approved": false,
-                    "blockedReason": "user_denied_unknown_write_risk",
-                    "message": "User denied command with unknown write risk.",
+                        "blockedReason": "user_denied_new_file_change",
+                        "message": "用户拒绝了本次写入类终端命令。",
+                        "sessionId": normalized_session,
+                        "rootPath": session_root_text,
+                        "workspacePath": workspace_path_text,
+                        "cwd": terminal_path_for_user(&cwd),
+                        "command": cmd,
+                    }));
+                }
+            }
+        }
+        TerminalWriteRisk::Existing { paths } => {
+            if effective_write_access == SHELL_WORKSPACE_ACCESS_APPROVAL {
+                let mut lines = vec![
+                    "该命令将修改/删除已有文件，是否批准本次执行？".to_string(),
+                    format!("会话: {normalized_session}"),
+                    format!("工作目录: {}", cwd.to_string_lossy()),
+                    format!("命令: {cmd}"),
+                    "命中已有路径：".to_string(),
+                ];
+                for path in paths.iter().take(8) {
+                    lines.push(format!("- {}", path.to_string_lossy()));
+                }
+                if paths.len() > 8 {
+                    lines.push(format!("... 其余 {} 项已省略", paths.len() - 8));
+                }
+                let approved = match terminal_request_user_approval(
+                    state,
+                    "终端执行审批",
+                    &lines.join("\n"),
+                    &normalized_session,
+                    "existing_write_risk",
+                    Some(&cwd),
+                    Some(cmd),
+                    None,
+                    None,
+                    &paths,
+                )
+                .await
+                {
+                    Ok(v) => v,
+                    Err(err) if terminal_is_approval_timeout_error(&err) => {
+                        return Ok(terminal_approval_timeout_blocked_result(
+                            &normalized_session,
+                            &session_root_text,
+                            &workspace_path_text,
+                            &cwd,
+                            cmd,
+                        ));
+                    }
+                    Err(err) => return Err(err),
+                };
+                if !approved {
+                    return Ok(serde_json::json!({
+                        "ok": false,
+                        "approved": false,
+                        "blockedReason": "user_denied_existing_file_change",
+                        "message": "用户拒绝了本次写入类终端命令。",
+                        "sessionId": normalized_session,
+                        "rootPath": session_root_text,
+                        "workspacePath": workspace_path_text,
+                        "cwd": terminal_path_for_user(&cwd),
+                        "command": cmd,
+                    }));
+                }
+            }
+        }
+        TerminalWriteRisk::Unknown => {
+            if effective_write_access == SHELL_WORKSPACE_ACCESS_APPROVAL {
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "approved": false,
+                    "blockedReason": "approval_requires_explicit_write_command",
+                    "message": "当前目录需要审批，但该命令无法明确识别具体写入目标，请改用 apply_patch 或更明确的文件修改命令。",
                     "sessionId": normalized_session,
                     "rootPath": session_root_text,
                     "workspacePath": workspace_path_text,
                     "cwd": terminal_path_for_user(&cwd),
                     "command": cmd,
                 }));
-                }
             }
         }
     }
@@ -510,6 +613,91 @@ mod terminal_exec_tests {
             .find(|item| item.kind == kind)
     }
 
+    fn configure_test_workspaces(
+        state: &AppState,
+        _main_access: &str,
+        _secondary_access: &str,
+    ) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+        let system_root = state.llm_workspace_path.clone();
+        let main_root = system_root.join("main-workspace");
+        let secondary_root = system_root.join("secondary-workspace");
+        fs::create_dir_all(&system_root).map_err(|err| format!("create system root failed: {err}"))?;
+        fs::create_dir_all(&main_root).map_err(|err| format!("create main root failed: {err}"))?;
+        fs::create_dir_all(&secondary_root).map_err(|err| format!("create secondary root failed: {err}"))?;
+        let mut config = AppConfig::default();
+        config.shell_workspaces = vec![ShellWorkspaceConfig {
+            id: "system-workspace".to_string(),
+            name: "系统工作目录".to_string(),
+            path: terminal_path_for_user(&system_root),
+            level: SHELL_WORKSPACE_LEVEL_SYSTEM.to_string(),
+            access: SHELL_WORKSPACE_ACCESS_FULL_ACCESS.to_string(),
+            built_in: true,
+        }];
+        state_write_config_cached(state, &config).map_err(|err| format!("write config failed: {err}"))?;
+        Ok((system_root, main_root, secondary_root))
+    }
+
+    fn configure_test_conversation_workspaces(
+        state: &AppState,
+        conversation_id: &str,
+        agent_id: &str,
+        locked_root: Option<&Path>,
+        main_root: &Path,
+        main_access: &str,
+        secondary_root: &Path,
+        secondary_access: &str,
+    ) -> Result<String, String> {
+        let mut data = AppData::default();
+        data.conversations.push(Conversation {
+            id: conversation_id.to_string(),
+            title: "Terminal Test Conversation".to_string(),
+            agent_id: agent_id.to_string(),
+            department_id: String::new(),
+            last_read_message_id: String::new(),
+            conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
+            root_conversation_id: None,
+            delegate_id: None,
+            created_at: now_iso(),
+            updated_at: now_iso(),
+            last_user_at: None,
+            last_assistant_at: None,
+            last_context_usage_ratio: 0.0,
+            last_effective_prompt_tokens: 0,
+            status: "active".to_string(),
+            summary: String::new(),
+            user_profile_snapshot: String::new(),
+            shell_workspace_path: locked_root.map(terminal_path_for_user),
+            shell_workspaces: vec![
+                ShellWorkspaceConfig {
+                    id: "main-workspace-1".to_string(),
+                    name: "主要工作目录".to_string(),
+                    path: terminal_path_for_user(main_root),
+                    level: SHELL_WORKSPACE_LEVEL_MAIN.to_string(),
+                    access: main_access.to_string(),
+                    built_in: false,
+                },
+                ShellWorkspaceConfig {
+                    id: "secondary-workspace-1".to_string(),
+                    name: "次要工作目录".to_string(),
+                    path: terminal_path_for_user(secondary_root),
+                    level: SHELL_WORKSPACE_LEVEL_SECONDARY.to_string(),
+                    access: secondary_access.to_string(),
+                    built_in: false,
+                },
+            ],
+            archived_at: None,
+            messages: Vec::new(),
+            current_todos: Vec::new(),
+            memory_recall_table: Vec::new(),
+        });
+        state_write_app_data_cached(state, &data)
+            .map_err(|err| format!("write app data failed: {err}"))?;
+        Ok(normalize_terminal_tool_session_id(&inflight_chat_key(
+            agent_id,
+            Some(conversation_id),
+        )))
+    }
+
     async fn verify_default_workspace_skip_for_shell(kind: &str) -> Result<(), String> {
         let Some(shell) = shell_candidate_by_kind(kind) else {
             eprintln!("[TEST] skip shell kind={kind}: not available on this machine");
@@ -596,5 +784,226 @@ mod terminal_exec_tests {
             Some("approval_timeout_local_required")
         );
         assert_eq!(result.get("approved").and_then(Value::as_bool), Some(false));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn unmatched_absolute_read_should_be_allowed() {
+        let powershell_kind = if shell_candidate_by_kind("powershell7").is_some() {
+            "powershell7"
+        } else {
+            "powershell5"
+        };
+        let Some(shell) = shell_candidate_by_kind(powershell_kind) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("eca-terminal-read-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let state = build_test_state(shell, root.clone());
+        configure_test_workspaces(
+            &state,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure workspaces");
+
+        let result = builtin_shell_exec(
+            &state,
+            "read-outside-session",
+            "run",
+            "Get-Content C:\\Windows\\win.ini | Select-Object -First 1",
+            Some(8_000),
+        )
+        .await
+        .expect("run read command");
+
+        assert_eq!(result.get("blockedReason").and_then(Value::as_str), None);
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(true));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn unmatched_absolute_write_should_be_blocked() {
+        let powershell_kind = if shell_candidate_by_kind("powershell7").is_some() {
+            "powershell7"
+        } else {
+            "powershell5"
+        };
+        let Some(shell) = shell_candidate_by_kind(powershell_kind) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("eca-terminal-write-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let state = build_test_state(shell, root.clone());
+        configure_test_workspaces(
+            &state,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure workspaces");
+        let outside_path = std::env::temp_dir().join(format!("eca-unmanaged-write-{}.txt", Uuid::new_v4()));
+        let command = format!(
+            "Set-Content -Path '{}' -Value 'hi'",
+            outside_path.to_string_lossy()
+        );
+
+        let result = builtin_shell_exec(&state, "write-outside-session", "run", &command, Some(8_000))
+            .await
+            .expect("run write command");
+
+        assert_eq!(
+            result.get("blockedReason").and_then(Value::as_str),
+            Some("write_path_not_granted")
+        );
+        assert!(!outside_path.exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn approval_workspace_should_reject_python_command() {
+        let powershell_kind = if shell_candidate_by_kind("powershell7").is_some() {
+            "powershell7"
+        } else {
+            "powershell5"
+        };
+        let Some(shell) = shell_candidate_by_kind(powershell_kind) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("eca-terminal-python-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let state = build_test_state(shell, root.clone());
+        let (_, main_root, secondary_root) = configure_test_workspaces(
+            &state,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure workspaces");
+        let session_id = configure_test_conversation_workspaces(
+            &state,
+            "conv-python-approval",
+            "agent-python-approval",
+            Some(&main_root),
+            &main_root,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            &secondary_root,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure conversation workspaces");
+
+        let result = builtin_shell_exec(
+            &state,
+            &session_id,
+            "run",
+            "python -c \"print('hello')\"",
+            Some(8_000),
+        )
+        .await
+        .expect("run python command");
+
+        assert_eq!(
+            result.get("blockedReason").and_then(Value::as_str),
+            Some("python_requires_full_access")
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn read_only_workspace_should_block_write_command() {
+        let powershell_kind = if shell_candidate_by_kind("powershell7").is_some() {
+            "powershell7"
+        } else {
+            "powershell5"
+        };
+        let Some(shell) = shell_candidate_by_kind(powershell_kind) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("eca-terminal-readonly-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let state = build_test_state(shell, root.clone());
+        let (_, main_root, secondary_root) = configure_test_workspaces(
+            &state,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure workspaces");
+        let session_id = configure_test_conversation_workspaces(
+            &state,
+            "conv-read-only",
+            "agent-read-only",
+            Some(&secondary_root),
+            &main_root,
+            SHELL_WORKSPACE_ACCESS_APPROVAL,
+            &secondary_root,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure conversation workspaces");
+
+        let result = builtin_shell_exec(
+            &state,
+            &session_id,
+            "run",
+            "Set-Content -Path .\\note.txt -Value 'hi'",
+            Some(8_000),
+        )
+        .await
+        .expect("run readonly command");
+
+        assert_eq!(
+            result.get("blockedReason").and_then(Value::as_str),
+            Some("read_only_workspace")
+        );
+        assert!(!secondary_root.join("note.txt").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn unmatched_absolute_read_should_not_block_granted_write_target() {
+        let powershell_kind = if shell_candidate_by_kind("powershell7").is_some() {
+            "powershell7"
+        } else {
+            "powershell5"
+        };
+        let Some(shell) = shell_candidate_by_kind(powershell_kind) else {
+            return;
+        };
+        let root = std::env::temp_dir().join(format!("eca-terminal-mixed-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("create root");
+        let state = build_test_state(shell, root.clone());
+        let (_system_root, main_root, _secondary_root) = configure_test_workspaces(
+            &state,
+            SHELL_WORKSPACE_ACCESS_FULL_ACCESS,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure workspaces");
+        let session_id = configure_test_conversation_workspaces(
+            &state,
+            "conv-mixed-read-write",
+            "agent-mixed-read-write",
+            Some(&main_root),
+            &main_root,
+            SHELL_WORKSPACE_ACCESS_FULL_ACCESS,
+            &_secondary_root,
+            SHELL_WORKSPACE_ACCESS_READ_ONLY,
+        )
+        .expect("configure conversation workspaces");
+
+        let result = builtin_shell_exec(
+            &state,
+            &session_id,
+            "run",
+            "Get-Content C:\\Windows\\win.ini | Select-Object -First 1 | Set-Content -Path '.\\note.txt'",
+            Some(8_000),
+        )
+        .await
+        .expect("run mixed read/write command");
+
+        assert_eq!(result.get("blockedReason").and_then(Value::as_str), None);
+        assert_eq!(result.get("ok").and_then(Value::as_bool), Some(true));
+        assert!(main_root.join("note.txt").exists(), "expected note.txt to be created");
+        let _ = fs::remove_dir_all(&root);
     }
 }

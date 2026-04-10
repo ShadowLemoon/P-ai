@@ -1484,6 +1484,7 @@ mod tool_loop_tests {
             latest_user_text: "继续".to_string(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };

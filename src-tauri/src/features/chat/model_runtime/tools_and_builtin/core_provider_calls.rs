@@ -587,6 +587,7 @@ mod openai_responses_genai_request_tests {
             latest_user_text: "写一个快速排序".to_string(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };
@@ -610,6 +611,7 @@ mod openai_responses_genai_request_tests {
             latest_user_text: "分析这段代码".to_string(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };
@@ -633,6 +635,7 @@ mod openai_responses_genai_request_tests {
             latest_user_text: "总结这段日志".to_string(),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
+            latest_user_extra_blocks: Vec::new(),
             latest_images: Vec::new(),
             latest_audios: Vec::new(),
         };

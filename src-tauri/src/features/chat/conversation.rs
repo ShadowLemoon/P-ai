@@ -237,6 +237,7 @@ fn build_conversation_record(
         summary: String::new(),
         user_profile_snapshot: String::new(),
         shell_workspace_path: None,
+        shell_workspaces: Vec::new(),
         archived_at: None,
         messages: Vec::new(),
         current_todos: Vec::new(),
@@ -1152,11 +1153,30 @@ fn prompt_recall_memory_block_for_message(
 }
 
 fn prompt_user_extra_blocks_for_message(
+    state: Option<&AppState>,
+    conversation: Option<&Conversation>,
     message: &ChatMessage,
+    agents: &[AgentProfile],
+    prompt_user_name: &str,
+    ui_language: &str,
+    include_remote_identity: bool,
     recall_memories: Option<&[MemoryEntry]>,
     seen_memory_ids: &mut HashSet<String>,
+    include_conversation_workspace: bool,
 ) -> Vec<String> {
     let mut blocks = Vec::<String>::new();
+    if let Some(meta_block) = build_prompt_user_meta_text(
+        message,
+        agents,
+        prompt_user_name,
+        ui_language,
+        include_remote_identity,
+    ) {
+        let trimmed = meta_block.trim();
+        if !trimmed.is_empty() {
+            blocks.push(trimmed.to_string());
+        }
+    }
     if let Some(context_block) = build_prompt_message_context_block(message) {
         blocks.push(context_block);
     }
@@ -1196,6 +1216,15 @@ fn prompt_user_extra_blocks_for_message(
                     "用户上传了附件，文件位于你工作区的 downloads 目录（路径：{}）。\n你可以先用 shell 工具定位或查看基础文件信息；具体解析方式应按文件类型选择合适 skill 或在线检索正确方法。\n仅当用户明确要求处理该附件时再处理；若用户未明确要求，请先询问用户想如何处理。",
                     relative_path
                 ));
+            }
+        }
+    }
+    if include_conversation_workspace {
+        if let (Some(state), Some(conversation)) = (state, conversation) {
+            if let Some(workspace_block) =
+                terminal_conversation_workspaces_extra_block(state, Some(conversation))
+            {
+                blocks.push(workspace_block);
             }
         }
     }
@@ -1544,7 +1573,7 @@ fn build_system_tools_rule_block(
         "5. apply_patch\n\
          何时必须用：当需要新增文件、删除文件、修改文件或重命名文件时，默认使用 apply_patch。\n\
          核心规则：apply_patch 只接受严格补丁语法；新增文件时每一行正文都必须以前缀 `+` 开头；修改文件时只能在 `*** Update File:` 下写带 `+`、`-`、空格前缀的变更行；不要把普通正文直接塞进补丁。\n\
-         路径规则：若当前工具环境要求绝对路径，就传绝对路径；若工具报路径或工作区错误，先修正路径与工作区，再继续用 apply_patch，不要改用 exec 写文件。\n\
+         路径规则：相对路径会按当前工作目录解析，显式绝对路径会按目标工作目录权限判断；若工具报路径或工作区错误，先修正路径与工作区，再继续用 apply_patch，不要改用 exec 写文件。\n\
          正确示例一：新增代码文件\n\
          ```\n\
          *** Begin Patch\n\
@@ -1817,6 +1846,7 @@ fn build_prompt_with_mode(
         summary: conversation.summary.clone(),
         user_profile_snapshot: conversation.user_profile_snapshot.clone(),
         shell_workspace_path: conversation.shell_workspace_path.clone(),
+        shell_workspaces: conversation.shell_workspaces.clone(),
         archived_at: conversation.archived_at.clone(),
         messages: enriched_messages,
         current_todos: conversation.current_todos.clone(),
@@ -1888,10 +1918,20 @@ fn build_prompt_with_mode(
         }
         let is_user = role == "user";
         let history_extra_blocks = if is_user {
+            let include_remote_identity = remote_im_contact_key_from_message(message)
+                .map(|key| seen_remote_contacts.insert(key))
+                .unwrap_or(false);
             prompt_user_extra_blocks_for_message(
+                state,
+                Some(conversation),
                 message,
+                agents,
+                prompt_user_name,
+                ui_language,
+                include_remote_identity,
                 recall_memories.as_deref(),
                 &mut seen_prompt_memory_ids,
+                false,
             )
         } else {
             Vec::new()
@@ -1914,20 +1954,7 @@ fn build_prompt_with_mode(
             role: role.clone(),
             text,
             extra_text_blocks: history_extra_blocks,
-            user_time_text: if role == "user" {
-                let include_remote_identity = remote_im_contact_key_from_message(message)
-                    .map(|key| seen_remote_contacts.insert(key))
-                    .unwrap_or(false);
-                build_prompt_user_meta_text(
-                    message,
-                    agents,
-                    prompt_user_name,
-                    ui_language,
-                    include_remote_identity,
-                )
-            } else {
-                None
-            },
+            user_time_text: None,
             images,
             audios,
             tool_calls: None,
@@ -2078,7 +2105,7 @@ fn build_prompt_with_mode(
 
     let mut latest_user_text = String::new();
     let mut latest_user_meta_text = String::new();
-    let mut latest_user_extra_text = String::new();
+    let mut latest_user_extra_blocks = Vec::<String>::new();
     let mut latest_images = Vec::<(String, String)>::new();
     let mut latest_audios = Vec::<(String, String)>::new();
 
@@ -2086,37 +2113,35 @@ fn build_prompt_with_mode(
         let latest_user_text_rendered = render_prompt_user_text_only(&msg);
         let (resolved_images, resolved_audios) =
             resolve_media_from_parts(&msg.parts, data_path, "[提示词] 最新消息");
-        let latest_extra_blocks = prompt_user_extra_blocks_for_message(
-            &msg,
-            recall_memories.as_deref(),
-            &mut seen_prompt_memory_ids,
-        );
         let include_remote_identity = remote_im_contact_key_from_message(&msg)
             .map(|key| seen_remote_contacts.insert(key))
             .unwrap_or(false);
-        latest_user_meta_text = build_prompt_user_meta_text(
+        let latest_extra_blocks = prompt_user_extra_blocks_for_message(
+            state,
+            Some(conversation),
             &msg,
             agents,
             prompt_user_name,
             ui_language,
             include_remote_identity,
-        )
-        .unwrap_or_default();
+            recall_memories.as_deref(),
+            &mut seen_prompt_memory_ids,
+            true,
+        );
+        latest_user_meta_text = String::new();
         latest_user_text = latest_user_text_rendered;
         latest_images = resolved_images;
         latest_audios = resolved_audios;
         for extra in latest_extra_blocks {
-            if extra.trim().is_empty() {
+            let trimmed = extra.trim();
+            if trimmed.is_empty() {
                 continue;
             }
-            if !latest_user_extra_text.is_empty() {
-                latest_user_extra_text.push('\n');
-            }
-            latest_user_extra_text.push_str(&extra);
+            latest_user_extra_blocks.push(trimmed.to_string());
         }
         if latest_user_text.trim().is_empty()
             && latest_user_meta_text.trim().is_empty()
-            && latest_user_extra_text.trim().is_empty()
+            && latest_user_extra_blocks.is_empty()
             && latest_images.is_empty()
             && latest_audios.is_empty()
         {
@@ -2129,7 +2154,8 @@ fn build_prompt_with_mode(
         history_messages,
         latest_user_text,
         latest_user_meta_text,
-        latest_user_extra_text,
+        latest_user_extra_text: latest_user_extra_blocks.join("\n\n"),
+        latest_user_extra_blocks,
         latest_images,
         latest_audios,
     }

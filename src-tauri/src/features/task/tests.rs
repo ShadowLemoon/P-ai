@@ -18,9 +18,9 @@
             why: String::new(),
             todo: "检查调度".to_string(),
             trigger: TaskTriggerInputLocal {
-                run_at_local: None,
-                every_minutes: None,
-                end_at_local: None,
+                run_at_local: Some("2026-04-10T10:00:00+08:00".to_string()),
+                every_minutes: Some(30.0),
+                end_at_local: Some("2026-04-10T12:00:00+08:00".to_string()),
             },
         };
 

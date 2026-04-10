@@ -82,13 +82,13 @@ fn terminal_has_write_intent(command: &str) -> bool {
         || lower.contains(" perl -pi")
 }
 
-fn classify_terminal_write_risk(cwd: &Path, command: &str) -> TerminalWriteRisk {
+fn terminal_collect_write_target_paths(cwd: &Path, command: &str) -> (Vec<PathBuf>, bool) {
     if !terminal_has_write_intent(command) {
-        return TerminalWriteRisk::None;
+        return (Vec::new(), false);
     }
     let tokens = terminal_tokenize(command);
     if tokens.is_empty() {
-        return TerminalWriteRisk::Unknown;
+        return (Vec::new(), true);
     }
 
     let mut raw_targets = Vec::<String>::new();
@@ -187,21 +187,32 @@ fn classify_terminal_write_risk(cwd: &Path, command: &str) -> TerminalWriteRisk 
         idx += 1;
     }
 
-    let mut existing = Vec::<PathBuf>::new();
-    let mut new_paths = Vec::<PathBuf>::new();
+    let mut resolved = Vec::<PathBuf>::new();
     for raw in raw_targets {
         let Some(path) = terminal_resolve_candidate_path(cwd, &raw) else {
             unknown = true;
             continue;
         };
+        resolved.push(path);
+    }
+    (terminal_dedup_paths(resolved), unknown)
+}
+
+fn classify_terminal_write_risk(cwd: &Path, command: &str) -> TerminalWriteRisk {
+    if !terminal_has_write_intent(command) {
+        return TerminalWriteRisk::None;
+    }
+    let (target_paths, unknown) = terminal_collect_write_target_paths(cwd, command);
+
+    let mut existing = Vec::<PathBuf>::new();
+    let mut new_paths = Vec::<PathBuf>::new();
+    for path in target_paths {
         if path.exists() {
             existing.push(path);
         } else {
             new_paths.push(path);
         }
     }
-    existing = terminal_dedup_paths(existing);
-    new_paths = terminal_dedup_paths(new_paths);
 
     if !existing.is_empty() {
         return TerminalWriteRisk::Existing { paths: existing };

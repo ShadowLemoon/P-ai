@@ -216,8 +216,11 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
     options.config.shellWorkspaces = Array.isArray(cfg.shellWorkspaces)
       ? cfg.shellWorkspaces
           .map((v) => ({
+            id: String((v as { id?: unknown })?.id || "").trim() || "system-workspace",
             name: String((v as { name?: unknown })?.name || "").trim(),
             path: String((v as { path?: unknown })?.path || "").trim(),
+            level: "system" as const,
+            access: "full_access" as const,
             builtIn: !!(v as { builtIn?: unknown })?.builtIn,
           }))
           .filter((v) => v.name && v.path)
@@ -398,8 +401,11 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
       options.config.shellWorkspaces = Array.isArray(saved.shellWorkspaces)
         ? saved.shellWorkspaces
             .map((v) => ({
+              id: String((v as { id?: unknown })?.id || "").trim() || "system-workspace",
               name: String((v as { name?: unknown })?.name || "").trim(),
               path: String((v as { path?: unknown })?.path || "").trim(),
+              level: "system" as const,
+              access: "full_access" as const,
               builtIn: !!(v as { builtIn?: unknown })?.builtIn,
             }))
             .filter((v) => v.name && v.path)

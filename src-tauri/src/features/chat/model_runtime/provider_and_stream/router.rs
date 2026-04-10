@@ -59,15 +59,7 @@ fn append_unavailable_tool_notices_to_prepared(
         "unavailable tool notices",
         merged.iter().map(|item| item.to_string()).collect::<Vec<_>>().join("\n"),
     );
-    if prepared.latest_user_extra_text.trim().is_empty() {
-        prepared.latest_user_extra_text = block;
-    } else {
-        prepared.latest_user_extra_text = format!(
-            "{}\n\n{}",
-            prepared.latest_user_extra_text.trim(),
-            block
-        );
-    }
+    prepared_prompt_append_latest_user_extra_block(prepared, block);
 }
 
 fn apply_cached_system_message_user_fallback_to_prepared(

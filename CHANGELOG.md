@@ -1,5 +1,13 @@
 # 变更日志
 
+## 更新：Codex 默认开启图片与工具能力
+
+- 修复（codex-capability-defaults）：修正 Codex 协议下模型能力默认值与保存归一化逻辑，避免 Codex 被错误标记为不支持图片或被手动关闭工具调用
+  - 前端新建 Codex provider / model 时，默认开启 `enableImage` 与 `enableTools`
+  - 前端本地绑定归一化时，若 `requestFormat === codex`，强制 provider 与 model 的图片能力、工具能力保持开启
+  - 后端保存配置归一化时，若 `request_format.is_codex()`，强制 provider、model 与 api config 的 `enable_image / enable_tools` 为开启状态
+  - 这样可以保证 Codex 视图、保存结果与实际能力语义一致，不再出现默认无多模态或可关闭工具调用的偏差
+
 ## 更新：输入面板指令系统
 
 - 功能（composer-instruction-presets）：在聊天输入面板新增可复用的用户指令系统，支持从设置页维护短指令预设，并在发送时作为文本附件加入本轮消息

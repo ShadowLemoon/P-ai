@@ -395,6 +395,8 @@ fn normalize_api_tools(config: &mut AppConfig) {
             model.context_window_tokens = model.context_window_tokens.clamp(16_000, 2_000_000);
             model.max_output_tokens = model.max_output_tokens.clamp(256, 32_768);
             if provider.request_format.is_codex() {
+                model.enable_image = true;
+                model.enable_tools = true;
                 model.temperature = default_api_temperature();
                 model.custom_temperature_enabled = false;
                 model.context_window_tokens = default_codex_context_window_tokens();
@@ -403,6 +405,8 @@ fn normalize_api_tools(config: &mut AppConfig) {
             }
         }
         if provider.request_format.is_codex() {
+            provider.enable_image = true;
+            provider.enable_tools = true;
             provider.base_url = DEFAULT_CODEX_BASE_URL.to_string();
             provider.api_keys.clear();
         }
@@ -432,6 +436,8 @@ fn normalize_api_tools(config: &mut AppConfig) {
         api.context_window_tokens = api.context_window_tokens.clamp(16_000, 2_000_000);
         api.max_output_tokens = api.max_output_tokens.clamp(256, 32_768);
         if api.request_format.is_codex() {
+            api.enable_image = true;
+            api.enable_tools = true;
             api.base_url = DEFAULT_CODEX_BASE_URL.to_string();
             api.api_key.clear();
             api.temperature = default_api_temperature();

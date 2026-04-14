@@ -38,7 +38,7 @@ export function useConfigCore(options: UseConfigCoreOptions) {
     return {
       id: `api-model-${seed}`,
       model,
-      enableImage: false,
+      enableImage: true,
       enableTools: true,
       reasoningEffort: DEFAULT_REASONING_EFFORT,
       temperature: 1,
@@ -55,7 +55,7 @@ export function useConfigCore(options: UseConfigCoreOptions) {
       name: `API Provider ${options.config.apiProviders.length + 1}`,
       requestFormat: "openai",
       enableText: true,
-      enableImage: false,
+      enableImage: true,
       enableAudio: false,
       enableTools: true,
       tools: defaultApiTools(),
@@ -144,6 +144,10 @@ export function useConfigCore(options: UseConfigCoreOptions) {
       const models = Array.isArray(provider.models) ? provider.models : [];
       provider.enableImage = models.some((model) => !!model.enableImage);
       provider.enableTools = models.some((model) => model.enableTools !== false);
+      if (provider.requestFormat === "codex") {
+        provider.enableImage = true;
+        provider.enableTools = true;
+      }
       for (const model of provider.models || []) {
         const endpointId = `${provider.id}::${model.id}`;
         const draft = endpointDraftById.get(endpointId);
@@ -162,6 +166,10 @@ export function useConfigCore(options: UseConfigCoreOptions) {
         model.model = String(draft.model || "").trim();
         model.enableImage = !!draft.enableImage;
         model.enableTools = !!draft.enableTools;
+        if (provider.requestFormat === "codex") {
+          model.enableImage = true;
+          model.enableTools = true;
+        }
         model.reasoningEffort = String(draft.reasoningEffort || model.reasoningEffort || DEFAULT_REASONING_EFFORT).trim() || DEFAULT_REASONING_EFFORT;
         model.temperature = Number(draft.temperature ?? 1);
         model.customTemperatureEnabled = !!draft.customTemperatureEnabled;

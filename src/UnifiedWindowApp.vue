@@ -161,7 +161,6 @@
       :update-selected-pdf-read-mode="updateSelectedPdfReadMode"
       :update-background-voice-screenshot-keywords="updateBackgroundVoiceScreenshotKeywords"
       :update-background-voice-screenshot-mode="updateBackgroundVoiceScreenshotMode"
-      :save-chat-settings="saveChatSettingsNow"
       :set-theme="setTheme"
       :refresh-models="refreshModels"
       :on-tools-changed="handleToolsChanged"
@@ -775,11 +774,6 @@ const {
   closePromptPreview,
 } = usePromptPreview({
   t: tr,
-  beforePreview: async () => {
-    await savePersonas();
-    await saveChatPreferences();
-    await saveConversationApiSettings();
-  },
 });
 
 const {
@@ -2118,7 +2112,9 @@ const {
   loadPersonas,
   loadChatSettings,
   savePersonas,
+  patchChatSettings,
   saveChatPreferences,
+  patchConversationApiSettings,
   saveConversationApiSettings,
   restoreLastSavedConfigSnapshot,
 } = configPersistence;
@@ -3659,10 +3655,6 @@ function handleToolsChanged() {
   }
 }
 
-async function saveChatSettingsNow() {
-  await saveConversationApiSettings();
-  await saveChatPreferences();
-}
 const { openCurrentHistory, openConversationSummary, openPromptPreview, openSystemPromptPreview } = useChatDialogActions({
   activeChatApiConfigId: currentForegroundApiConfigId,
   assistantDepartmentAgentId: currentForegroundAgentId,
@@ -3709,17 +3701,10 @@ useAppWatchers({
   assistantPersonas,
   assistantDepartmentAgentId,
   personaEditorId,
-  userAlias,
-  selectedResponseStyleId,
-  selectedPdfReadMode,
-  backgroundVoiceScreenshotKeywords,
-  backgroundVoiceScreenshotMode,
-  instructionPresets,
   selectedApiConfig,
   toolApiConfig,
   activeChatApiConfigId: assistantDepartmentApiConfigId,
   suppressChatReloadWatch,
-  suppressAutosave,
   modelRefreshError,
   toolStatuses,
   defaultApiTools,
@@ -3727,8 +3712,6 @@ useAppWatchers({
   normalizeApiBindingsLocal,
   syncUserAliasFromPersona,
   syncTrayIcon,
-  saveChatPreferences,
-  saveConversationApiSettings,
   refreshToolsStatus,
   refreshImageCacheStats,
   refreshConversationHistory,

@@ -20,7 +20,6 @@ type SystemPromptPreviewResult = {
 
 type UsePromptPreviewOptions = {
   t: TrFn;
-  beforePreview: () => Promise<void>;
 };
 
 export function usePromptPreview(options: UsePromptPreviewOptions) {
@@ -60,7 +59,6 @@ export function usePromptPreview(options: UsePromptPreviewOptions) {
     promptPreviewLatestImages.value = 0;
     promptPreviewLatestAudios.value = 0;
     try {
-      await options.beforePreview();
       const preview = await invokeTauri<PromptPreviewResult>("get_prompt_preview", {
         input: { apiConfigId: promptPreviewApiConfigId.value, agentId: promptPreviewAgentId.value },
         previewMode: mode,
@@ -83,7 +81,6 @@ export function usePromptPreview(options: UsePromptPreviewOptions) {
     resetPromptPreviewState("system");
     promptPreviewLoading.value = true;
     try {
-      await options.beforePreview();
       const preview = await invokeTauri<SystemPromptPreviewResult>("get_system_prompt_preview", {
         input: { apiConfigId, agentId },
       });

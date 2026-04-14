@@ -4,7 +4,10 @@ import type {
   AppBootstrapSnapshot,
   AppConfig,
   ChatSettings,
+  ChatSettingsPatch,
   CodexAuthMode,
+  ConversationApiSettings,
+  ConversationApiSettingsPatch,
   PdfReadMode,
   PersonaProfile,
   PromptCommandPreset,
@@ -109,6 +112,8 @@ function mapRemoteImChannel(item: unknown): RemoteImChannelConfig {
 export function useConfigPersistence(options: UseConfigPersistenceOptions) {
   let lastConversationApiSettingsJson = "";
   let conversationApiSettingsSaving = false;
+  let lastChatSettingsJson = "";
+  let chatSettingsSaving = false;
   const MIN_RECORD_SECONDS = 1;
   const MAX_MIN_RECORD_SECONDS = 30;
   const DEFAULT_MAX_RECORD_SECONDS = 60;
@@ -512,6 +517,15 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
     try {
       const settings = await invokeTauri<ChatSettings>("load_chat_settings");
       applyLoadedChatSettings(settings);
+      lastChatSettingsJson = JSON.stringify({
+        assistantDepartmentAgentId: options.assistantDepartmentAgentId.value,
+        userAlias: options.userAlias.value,
+        responseStyleId: options.selectedResponseStyleId.value,
+        pdfReadMode: options.selectedPdfReadMode.value,
+        backgroundVoiceScreenshotKeywords: options.backgroundVoiceScreenshotKeywords.value,
+        backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
+        instructionPresets: options.instructionPresets.value,
+      });
       await options.syncTrayIcon(options.assistantDepartmentAgentId.value);
     } catch (e) {
       options.setStatusError("status.loadChatSettingsFailed", e);
@@ -529,6 +543,21 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
       applyLoadedConfig(snapshot.config);
       applyLoadedPersonas(snapshot.agents);
       applyLoadedChatSettings(snapshot.chatSettings);
+      lastChatSettingsJson = JSON.stringify({
+        assistantDepartmentAgentId: options.assistantDepartmentAgentId.value,
+        userAlias: options.userAlias.value,
+        responseStyleId: options.selectedResponseStyleId.value,
+        pdfReadMode: options.selectedPdfReadMode.value,
+        backgroundVoiceScreenshotKeywords: options.backgroundVoiceScreenshotKeywords.value,
+        backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
+        instructionPresets: options.instructionPresets.value,
+      });
+      lastConversationApiSettingsJson = JSON.stringify({
+        assistantDepartmentApiConfigId: options.config.assistantDepartmentApiConfigId,
+        visionApiConfigId: options.config.visionApiConfigId || null,
+        sttApiConfigId: options.config.sttApiConfigId || null,
+        sttAutoSend: !!options.config.sttAutoSend,
+      });
       await options.preloadPersonaAvatars();
       await options.syncTrayIcon(options.assistantDepartmentAgentId.value);
       options.setStatus(options.t("status.configLoaded"));
@@ -573,56 +602,143 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
   }
 
   async function saveChatPreferences() {
-    options.saving.value = true;
-    options.setStatus(options.t("status.savingChatSettings"));
-    try {
-      const targetAgentId = options.assistantPersonas.value.some((p) => p.id === options.assistantDepartmentAgentId.value)
-        ? options.assistantDepartmentAgentId.value
-        : options.assistantPersonas.value[0]?.id || "default-agent";
-      const normalizedScreenshotKeywords = String(options.backgroundVoiceScreenshotKeywords.value || "").replace(/，/g, ",");
-      options.backgroundVoiceScreenshotKeywords.value = normalizedScreenshotKeywords;
-      await invokeTauri("save_chat_settings", {
-        input: {
-          assistantDepartmentAgentId: targetAgentId,
-          userAlias: options.userAlias.value,
-          responseStyleId: options.selectedResponseStyleId.value,
-          pdfReadMode: options.selectedPdfReadMode.value,
-          backgroundVoiceScreenshotKeywords: normalizedScreenshotKeywords,
-          backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
-          instructionPresets: options.instructionPresets.value,
-        },
-      });
-      options.assistantDepartmentAgentId.value = targetAgentId;
-      options.setStatus(options.t("status.chatSettingsSaved"));
-    } catch (e) {
-      options.setStatusError("status.saveChatSettingsFailed", e);
-    } finally {
-      options.saving.value = false;
-    }
+    await patchChatSettings({
+      assistantDepartmentAgentId: options.assistantDepartmentAgentId.value,
+      userAlias: options.userAlias.value,
+      responseStyleId: options.selectedResponseStyleId.value,
+      pdfReadMode: options.selectedPdfReadMode.value,
+      backgroundVoiceScreenshotKeywords: options.backgroundVoiceScreenshotKeywords.value,
+      backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
+      instructionPresets: options.instructionPresets.value,
+    });
   }
 
   async function saveConversationApiSettings() {
-    if (options.suppressAutosave.value) return;
-    const payload = {
+    await patchConversationApiSettings({
       assistantDepartmentApiConfigId: options.config.assistantDepartmentApiConfigId,
       visionApiConfigId: options.config.visionApiConfigId || null,
       sttApiConfigId: options.config.sttApiConfigId || null,
       sttAutoSend: !!options.config.sttAutoSend,
-    };
-    const payloadJson = JSON.stringify(payload);
-    if (conversationApiSettingsSaving || payloadJson === lastConversationApiSettingsJson) {
-      return;
+    });
+  }
+
+  async function patchChatSettings(patch: ChatSettingsPatch) {
+    if (options.suppressAutosave.value) return;
+    const normalizedPatch: ChatSettingsPatch = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "assistantDepartmentAgentId")) {
+      const targetAgentId = options.assistantPersonas.value.some((p) => p.id === patch.assistantDepartmentAgentId)
+        ? patch.assistantDepartmentAgentId
+        : options.assistantPersonas.value[0]?.id || "default-agent";
+      normalizedPatch.assistantDepartmentAgentId = targetAgentId;
     }
+    if (Object.prototype.hasOwnProperty.call(patch, "userAlias")) {
+      normalizedPatch.userAlias = String(patch.userAlias || "");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "responseStyleId")) {
+      normalizedPatch.responseStyleId = String(patch.responseStyleId || "");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "pdfReadMode")) {
+      normalizedPatch.pdfReadMode = patch.pdfReadMode;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "backgroundVoiceScreenshotKeywords")) {
+      const normalizedScreenshotKeywords = String(patch.backgroundVoiceScreenshotKeywords || "").replace(/，/g, ",");
+      options.backgroundVoiceScreenshotKeywords.value = normalizedScreenshotKeywords;
+      normalizedPatch.backgroundVoiceScreenshotKeywords = normalizedScreenshotKeywords;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "backgroundVoiceScreenshotMode")) {
+      normalizedPatch.backgroundVoiceScreenshotMode = patch.backgroundVoiceScreenshotMode;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "instructionPresets")) {
+      normalizedPatch.instructionPresets = Array.isArray(patch.instructionPresets)
+        ? patch.instructionPresets.map((item) => ({ ...item }))
+        : [];
+    }
+    if (Object.keys(normalizedPatch).length === 0) return;
+    const nextChatSettingsJson = JSON.stringify({
+      assistantDepartmentAgentId: Object.prototype.hasOwnProperty.call(normalizedPatch, "assistantDepartmentAgentId")
+        ? normalizedPatch.assistantDepartmentAgentId
+        : options.assistantDepartmentAgentId.value,
+      userAlias: Object.prototype.hasOwnProperty.call(normalizedPatch, "userAlias")
+        ? normalizedPatch.userAlias
+        : options.userAlias.value,
+      responseStyleId: Object.prototype.hasOwnProperty.call(normalizedPatch, "responseStyleId")
+        ? normalizedPatch.responseStyleId
+        : options.selectedResponseStyleId.value,
+      pdfReadMode: Object.prototype.hasOwnProperty.call(normalizedPatch, "pdfReadMode")
+        ? normalizedPatch.pdfReadMode
+        : options.selectedPdfReadMode.value,
+      backgroundVoiceScreenshotKeywords: Object.prototype.hasOwnProperty.call(normalizedPatch, "backgroundVoiceScreenshotKeywords")
+        ? normalizedPatch.backgroundVoiceScreenshotKeywords
+        : options.backgroundVoiceScreenshotKeywords.value,
+      backgroundVoiceScreenshotMode: Object.prototype.hasOwnProperty.call(normalizedPatch, "backgroundVoiceScreenshotMode")
+        ? normalizedPatch.backgroundVoiceScreenshotMode
+        : options.backgroundVoiceScreenshotMode.value,
+      instructionPresets: Object.prototype.hasOwnProperty.call(normalizedPatch, "instructionPresets")
+        ? normalizedPatch.instructionPresets
+        : options.instructionPresets.value,
+    });
+    if (chatSettingsSaving || nextChatSettingsJson === lastChatSettingsJson) return;
+    chatSettingsSaving = true;
+    options.saving.value = true;
+    options.setStatus(options.t("status.savingChatSettings"));
+    try {
+      const saved = await invokeTauri<ChatSettings>("patch_chat_settings", { input: normalizedPatch });
+      applyLoadedChatSettings(saved);
+      lastChatSettingsJson = JSON.stringify({
+        assistantDepartmentAgentId: options.assistantDepartmentAgentId.value,
+        userAlias: options.userAlias.value,
+        responseStyleId: options.selectedResponseStyleId.value,
+        pdfReadMode: options.selectedPdfReadMode.value,
+        backgroundVoiceScreenshotKeywords: options.backgroundVoiceScreenshotKeywords.value,
+        backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
+        instructionPresets: options.instructionPresets.value,
+      });
+      options.setStatus(options.t("status.chatSettingsSaved"));
+      await options.syncTrayIcon(options.assistantDepartmentAgentId.value);
+    } catch (e) {
+      options.setStatusError("status.saveChatSettingsFailed", e);
+    } finally {
+      options.saving.value = false;
+      chatSettingsSaving = false;
+    }
+  }
+
+  async function patchConversationApiSettings(patch: ConversationApiSettingsPatch) {
+    if (options.suppressAutosave.value) return;
+    const normalizedPatch: ConversationApiSettingsPatch = {};
+    if (Object.prototype.hasOwnProperty.call(patch, "assistantDepartmentApiConfigId")) {
+      normalizedPatch.assistantDepartmentApiConfigId = String(patch.assistantDepartmentApiConfigId || "");
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "visionApiConfigId")) {
+      normalizedPatch.visionApiConfigId = patch.visionApiConfigId ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "sttApiConfigId")) {
+      normalizedPatch.sttApiConfigId = patch.sttApiConfigId ?? null;
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "sttAutoSend")) {
+      normalizedPatch.sttAutoSend = !!patch.sttAutoSend;
+    }
+    if (Object.keys(normalizedPatch).length === 0) return;
+    const nextPayloadJson = JSON.stringify({
+      assistantDepartmentApiConfigId: Object.prototype.hasOwnProperty.call(normalizedPatch, "assistantDepartmentApiConfigId")
+        ? normalizedPatch.assistantDepartmentApiConfigId
+        : options.config.assistantDepartmentApiConfigId,
+      visionApiConfigId: Object.prototype.hasOwnProperty.call(normalizedPatch, "visionApiConfigId")
+        ? normalizedPatch.visionApiConfigId
+        : options.config.visionApiConfigId || null,
+      sttApiConfigId: Object.prototype.hasOwnProperty.call(normalizedPatch, "sttApiConfigId")
+        ? normalizedPatch.sttApiConfigId
+        : options.config.sttApiConfigId || null,
+      sttAutoSend: Object.prototype.hasOwnProperty.call(normalizedPatch, "sttAutoSend")
+        ? normalizedPatch.sttAutoSend
+        : !!options.config.sttAutoSend,
+    });
+    if (conversationApiSettingsSaving || nextPayloadJson === lastConversationApiSettingsJson) return;
     conversationApiSettingsSaving = true;
     try {
-      console.info("[CONFIG] save_conversation_api_settings invoked");
-      const saved = await invokeTauri<{
-        assistantDepartmentApiConfigId: string;
-        visionApiConfigId?: string;
-        sttApiConfigId?: string;
-        sttAutoSend?: boolean;
-      }>("save_conversation_api_settings", {
-        input: payload,
+      console.info("[CONFIG] patch_conversation_api_settings invoked");
+      const saved = await invokeTauri<ConversationApiSettings>("patch_conversation_api_settings", {
+        input: normalizedPatch,
       });
       options.config.assistantDepartmentApiConfigId = saved.assistantDepartmentApiConfigId;
       options.config.visionApiConfigId = saved.visionApiConfigId ?? undefined;
@@ -636,9 +752,9 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
         sttApiConfigId: options.config.sttApiConfigId || null,
         sttAutoSend: !!options.config.sttAutoSend,
       });
-      console.info("[CONFIG] save_conversation_api_settings success");
+      console.info("[CONFIG] patch_conversation_api_settings success");
     } catch (e) {
-      console.error("[CONFIG] save_conversation_api_settings failed:", e);
+      console.error("[CONFIG] patch_conversation_api_settings failed:", e);
       options.setStatusError("status.saveConversationLlmFailed", e);
     } finally {
       conversationApiSettingsSaving = false;
@@ -668,7 +784,9 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
     loadPersonas,
     loadChatSettings,
     savePersonas,
+    patchChatSettings,
     saveChatPreferences,
+    patchConversationApiSettings,
     saveConversationApiSettings,
     restoreLastSavedConfigSnapshot,
   };

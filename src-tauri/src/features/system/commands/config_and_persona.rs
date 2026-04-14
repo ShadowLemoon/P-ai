@@ -733,9 +733,123 @@ fn load_chat_settings(state: State<'_, AppState>) -> Result<ChatSettings, String
     })
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ChatSettingsPatch {
+    #[serde(default)]
+    assistant_department_agent_id: Option<String>,
+    #[serde(default)]
+    user_alias: Option<String>,
+    #[serde(default)]
+    response_style_id: Option<String>,
+    #[serde(default)]
+    pdf_read_mode: Option<String>,
+    #[serde(default)]
+    background_voice_screenshot_keywords: Option<String>,
+    #[serde(default)]
+    background_voice_screenshot_mode: Option<String>,
+    #[serde(default)]
+    instruction_presets: Option<Vec<PromptCommandPreset>>,
+}
+
+fn build_chat_settings_payload(state: &AppState, data: &AppData, config: &AppConfig) -> Result<ChatSettings, String> {
+    let mut runtime_config = config.clone();
+    let mut runtime_data = data.clone();
+    merge_private_organization_into_runtime_data(&state.data_path, &mut runtime_config, &mut runtime_data)?;
+    Ok(ChatSettings {
+        assistant_department_agent_id: data.assistant_department_agent_id.clone(),
+        user_alias: user_persona_name(&runtime_data),
+        response_style_id: data.response_style_id.clone(),
+        pdf_read_mode: data.pdf_read_mode.clone(),
+        background_voice_screenshot_keywords: data.background_voice_screenshot_keywords.clone(),
+        background_voice_screenshot_mode: data.background_voice_screenshot_mode.clone(),
+        instruction_presets: data.instruction_presets.clone(),
+    })
+}
+
+fn apply_chat_settings_patch(state: &AppState, data: &mut AppData, config: &AppConfig, input: ChatSettingsPatch) -> Result<ChatSettings, String> {
+    if let Some(agent_id) = input.assistant_department_agent_id {
+        let fallback = data.assistant_department_agent_id.clone();
+        let target_agent_id = assistant_department_agent_id(config).unwrap_or_else(|| {
+            let trimmed = agent_id.trim();
+            if trimmed.is_empty() {
+                fallback.clone()
+            } else {
+                trimmed.to_string()
+            }
+        });
+        let mut runtime_config = config.clone();
+        let mut runtime_data = data.clone();
+        merge_private_organization_into_runtime_data(&state.data_path, &mut runtime_config, &mut runtime_data)?;
+        if !runtime_data
+            .agents
+            .iter()
+            .any(|a| a.id == target_agent_id && !a.is_built_in_user)
+        {
+            return Err("Selected agent not found.".to_string());
+        }
+        data.assistant_department_agent_id = target_agent_id;
+    }
+    if let Some(response_style_id) = input.response_style_id {
+        data.response_style_id = normalize_response_style_id(&response_style_id);
+    }
+    if let Some(pdf_read_mode) = input.pdf_read_mode {
+        data.pdf_read_mode = normalize_pdf_read_mode(&pdf_read_mode);
+    }
+    if let Some(background_voice_screenshot_keywords) = input.background_voice_screenshot_keywords {
+        data.background_voice_screenshot_keywords = background_voice_screenshot_keywords.trim().to_string();
+    }
+    if let Some(background_voice_screenshot_mode) = input.background_voice_screenshot_mode {
+        data.background_voice_screenshot_mode = normalize_background_voice_screenshot_mode(&background_voice_screenshot_mode);
+    }
+    if let Some(instruction_presets) = input.instruction_presets {
+        data.instruction_presets = instruction_presets
+            .into_iter()
+            .map(|item| PromptCommandPreset {
+                id: item.id.trim().to_string(),
+                name: item.name.trim().to_string(),
+                prompt: item.prompt.trim().to_string(),
+            })
+            .filter(|item| !item.id.is_empty() && !item.name.is_empty() && !item.prompt.is_empty())
+            .collect::<Vec<_>>();
+    }
+    if let Some(user_alias) = input.user_alias {
+        let trimmed = user_alias.trim();
+        if !trimmed.is_empty() {
+            if let Some(user_persona) = data.agents.iter_mut().find(|a| a.id == USER_PERSONA_ID) {
+                user_persona.name = trimmed.to_string();
+                user_persona.updated_at = now_iso();
+            }
+        }
+    }
+    state_write_app_data_cached(state, data)?;
+    build_chat_settings_payload(state, data, config)
+}
+
 #[tauri::command]
 fn save_chat_settings(
     input: ChatSettings,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ChatSettings, String> {
+    patch_chat_settings(
+        ChatSettingsPatch {
+            assistant_department_agent_id: Some(input.assistant_department_agent_id),
+            user_alias: Some(input.user_alias),
+            response_style_id: Some(input.response_style_id),
+            pdf_read_mode: Some(input.pdf_read_mode),
+            background_voice_screenshot_keywords: Some(input.background_voice_screenshot_keywords),
+            background_voice_screenshot_mode: Some(input.background_voice_screenshot_mode),
+            instruction_presets: Some(input.instruction_presets),
+        },
+        app,
+        state,
+    )
+}
+
+#[tauri::command]
+fn patch_chat_settings(
+    input: ChatSettingsPatch,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ChatSettings, String> {
@@ -746,49 +860,8 @@ fn save_chat_settings(
 
     let mut data = state_read_app_data_cached(&state)?;
     let config = read_config(&state.config_path)?;
-    let mut runtime_config = config.clone();
-    let mut runtime_data = data.clone();
-    merge_private_organization_into_runtime_data(&state.data_path, &mut runtime_config, &mut runtime_data)?;
-    let target_agent_id = assistant_department_agent_id(&config).unwrap_or_else(|| input.assistant_department_agent_id.clone());
-    if !runtime_data
-        .agents
-        .iter()
-        .any(|a| a.id == target_agent_id && !a.is_built_in_user)
-    {
-        return Err("Selected agent not found.".to_string());
-    }
-    data.assistant_department_agent_id = target_agent_id.clone();
-    data.user_alias = user_persona_name(&data);
-    data.response_style_id = normalize_response_style_id(&input.response_style_id);
-    data.pdf_read_mode = normalize_pdf_read_mode(&input.pdf_read_mode);
-    data.background_voice_screenshot_keywords = input
-        .background_voice_screenshot_keywords
-        .trim()
-        .to_string();
-    data.background_voice_screenshot_mode =
-        normalize_background_voice_screenshot_mode(&input.background_voice_screenshot_mode);
-    data.instruction_presets = input
-        .instruction_presets
-        .into_iter()
-        .map(|item| PromptCommandPreset {
-            id: item.id.trim().to_string(),
-            name: item.name.trim().to_string(),
-            prompt: item.prompt.trim().to_string(),
-        })
-        .filter(|item| !item.id.is_empty() && !item.name.is_empty() && !item.prompt.is_empty())
-        .collect::<Vec<_>>();
-    state_write_app_data_cached(&state, &data)?;
+    let payload = apply_chat_settings_patch(&state, &mut data, &config, input)?;
     drop(guard);
-
-    let payload = ChatSettings {
-        assistant_department_agent_id: target_agent_id,
-        user_alias: data.user_alias,
-        response_style_id: data.response_style_id,
-        pdf_read_mode: data.pdf_read_mode,
-        background_voice_screenshot_keywords: data.background_voice_screenshot_keywords,
-        background_voice_screenshot_mode: data.background_voice_screenshot_mode,
-        instruction_presets: data.instruction_presets,
-    };
 
     let _ = app.emit("easy-call:chat-settings-updated", &payload);
 
@@ -1077,9 +1150,64 @@ fn sync_tray_icon(
     sync_tray_icon_from_avatar_path(&app, avatar_path.as_deref())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ConversationApiSettingsPatch {
+    #[serde(default)]
+    assistant_department_api_config_id: Option<String>,
+    #[serde(default)]
+    vision_api_config_id: Option<Option<String>>,
+    #[serde(default)]
+    stt_api_config_id: Option<Option<String>>,
+    #[serde(default)]
+    stt_auto_send: Option<bool>,
+}
+
+fn build_conversation_api_settings_payload(config: &AppConfig) -> ConversationApiSettings {
+    ConversationApiSettings {
+        assistant_department_api_config_id: config.assistant_department_api_config_id.clone(),
+        vision_api_config_id: config.vision_api_config_id.clone(),
+        stt_api_config_id: config.stt_api_config_id.clone(),
+        stt_auto_send: config.stt_auto_send,
+    }
+}
+
+fn apply_conversation_api_settings_patch(config: &mut AppConfig, input: ConversationApiSettingsPatch) {
+    if let Some(assistant_department_api_config_id) = input.assistant_department_api_config_id {
+        config.assistant_department_api_config_id = assistant_department_api_config_id;
+    }
+    if let Some(vision_api_config_id) = input.vision_api_config_id {
+        config.vision_api_config_id = vision_api_config_id;
+    }
+    if let Some(stt_api_config_id) = input.stt_api_config_id {
+        config.stt_api_config_id = stt_api_config_id;
+    }
+    if let Some(stt_auto_send) = input.stt_auto_send {
+        config.stt_auto_send = stt_auto_send;
+    }
+}
+
 #[tauri::command]
 fn save_conversation_api_settings(
     input: ConversationApiSettings,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<ConversationApiSettings, String> {
+    patch_conversation_api_settings(
+        ConversationApiSettingsPatch {
+            assistant_department_api_config_id: Some(input.assistant_department_api_config_id),
+            vision_api_config_id: Some(input.vision_api_config_id),
+            stt_api_config_id: Some(input.stt_api_config_id),
+            stt_auto_send: Some(input.stt_auto_send),
+        },
+        app,
+        state,
+    )
+}
+
+#[tauri::command]
+fn patch_conversation_api_settings(
+    input: ConversationApiSettingsPatch,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<ConversationApiSettings, String> {
@@ -1089,10 +1217,7 @@ fn save_conversation_api_settings(
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
     let mut config = state_read_config_cached(&state)?;
-    config.assistant_department_api_config_id = input.assistant_department_api_config_id.clone();
-    config.vision_api_config_id = input.vision_api_config_id.clone();
-    config.stt_api_config_id = input.stt_api_config_id.clone();
-    config.stt_auto_send = input.stt_auto_send;
+    apply_conversation_api_settings_patch(&mut config, input);
     normalize_app_config(&mut config);
     let assistant_api_config_id = config.assistant_department_api_config_id.clone();
     if let Some(dept) = assistant_department_mut(&mut config) {
@@ -1112,12 +1237,7 @@ fn save_conversation_api_settings(
     state_write_config_cached(&state, &config)?;
     drop(guard);
 
-    let payload = ConversationApiSettings {
-        assistant_department_api_config_id: config.assistant_department_api_config_id,
-        vision_api_config_id: config.vision_api_config_id,
-        stt_api_config_id: config.stt_api_config_id,
-        stt_auto_send: config.stt_auto_send,
-    };
+    let payload = build_conversation_api_settings_payload(&config);
 
     let _ = app.emit("easy-call:conversation-api-updated", &payload);
 

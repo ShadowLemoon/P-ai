@@ -1,5 +1,14 @@
 # 变更日志
 
+## 更新：移除 watch 链上的配置回写
+
+- 修复（config-watch-no-writeback）：收紧配置页 watch 职责，禁止在 watch 中回写 config，避免切换图转文 / 打开预览时叠加保存导致会话锁连锁竞争
+  - 删除会话 API 设置在 `use-app-watchers` 中的自动保存 watch，`assistantDepartmentApiConfigId / visionApiConfigId / sttApiConfigId / sttAutoSend` 不再因为 watch 变化而重复写配置
+  - 删除 `use-app-watchers` 中根据部门变化直接回写 `assistantDepartmentApiConfigId` 的逻辑，保留只同步派发给界面所需的助理人格 ID
+  - 删除 `use-app-watchers` 中根据 `enableTools` 自动补工具列表的 config 回写，避免只因视图切换就修改配置对象
+  - 删除 `ApiTab` 与 `CodexProviderPanel` 中在 watch 里自动应用 Codex 默认值的逻辑，把默认值收口到显式操作路径，避免选择 provider 时隐式改配置
+  - 删除请求体预览 / 系统提示词预览前的预保存链，预览改为直接读取当前内存态，不再因为“看一眼”先执行 `savePersonas / saveChatPreferences / saveConversationApiSettings`
+
 ## 更新：流式打断保留已完成工具历史
 
 - 修复（stream-stop-preserve-completed-tool-history）：聊天流式阶段被 stop 打断时，已完成工具不再随 draft 一起消失，而会写入最终 assistant 消息

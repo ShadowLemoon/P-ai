@@ -1,5 +1,5 @@
 import { watch, type ComputedRef, type Ref } from "vue";
-import type { ApiConfigItem, AppConfig, PdfReadMode, PersonaProfile, PromptCommandPreset, ToolLoadStatus } from "../../../types/app";
+import type { ApiConfigItem, AppConfig, PersonaProfile, ToolLoadStatus } from "../../../types/app";
 
 type TrFn = (key: string, params?: Record<string, unknown>) => string;
 
@@ -12,17 +12,10 @@ type UseAppWatchersOptions = {
   assistantPersonas: ComputedRef<PersonaProfile[]>;
   assistantDepartmentAgentId: Ref<string>;
   personaEditorId: Ref<string>;
-  userAlias: Ref<string>;
-  selectedResponseStyleId: Ref<string>;
-  selectedPdfReadMode: Ref<PdfReadMode>;
-  backgroundVoiceScreenshotKeywords: Ref<string>;
-  backgroundVoiceScreenshotMode: Ref<"desktop" | "focused_window">;
-  instructionPresets: Ref<PromptCommandPreset[]>;
   selectedApiConfig: ComputedRef<ApiConfigItem | null>;
   toolApiConfig: ComputedRef<ApiConfigItem | null>;
   activeChatApiConfigId: ComputedRef<string>;
   suppressChatReloadWatch: Ref<boolean>;
-  suppressAutosave: Ref<boolean>;
   modelRefreshError: Ref<string>;
   toolStatuses: Ref<ToolLoadStatus[]>;
   defaultApiTools: () => ApiConfigItem["tools"];
@@ -30,8 +23,6 @@ type UseAppWatchersOptions = {
   normalizeApiBindingsLocal: () => void;
   syncUserAliasFromPersona: () => void;
   syncTrayIcon: (id?: string) => Promise<void>;
-  saveChatPreferences: () => Promise<void>;
-  saveConversationApiSettings: () => Promise<void>;
   refreshToolsStatus: () => Promise<void>;
   refreshImageCacheStats: () => Promise<void>;
   refreshConversationHistory: () => Promise<void>;
@@ -80,9 +71,6 @@ export function useAppWatchers(options: UseAppWatchersOptions) {
       if (agentId && options.assistantDepartmentAgentId.value !== agentId) {
         options.assistantDepartmentAgentId.value = agentId;
       }
-      if (options.config.assistantDepartmentApiConfigId !== apiConfigId) {
-        options.config.assistantDepartmentApiConfigId = apiConfigId;
-      }
     },
     { deep: true },
   );
@@ -99,16 +87,6 @@ export function useAppWatchers(options: UseAppWatchersOptions) {
     () => options.config.selectedApiConfigId,
     () => {
       options.modelRefreshError.value = "";
-    },
-  );
-
-  watch(
-    () => options.selectedApiConfig.value?.enableTools,
-    (enabled) => {
-      if (!enabled || !options.selectedApiConfig.value) return;
-      if (options.selectedApiConfig.value.tools.length === 0) {
-        options.selectedApiConfig.value.tools = options.defaultApiTools();
-      }
     },
   );
 
@@ -175,31 +153,5 @@ export function useAppWatchers(options: UseAppWatchersOptions) {
       }
     },
   );
-  watch(
-    () => ({
-      userAlias: options.userAlias.value,
-      responseStyleId: options.selectedResponseStyleId.value,
-      pdfReadMode: options.selectedPdfReadMode.value,
-      backgroundVoiceScreenshotKeywords: options.backgroundVoiceScreenshotKeywords.value,
-      backgroundVoiceScreenshotMode: options.backgroundVoiceScreenshotMode.value,
-      instructionPresets: JSON.stringify(options.instructionPresets.value),
-    }),
-    () => {
-      if (options.suppressAutosave.value) return;
-      void options.saveChatPreferences();
-    },
-  );
 
-  watch(
-    () => ({
-      assistantDepartmentApiConfigId: options.config.assistantDepartmentApiConfigId,
-      visionApiConfigId: options.config.visionApiConfigId,
-      sttApiConfigId: options.config.sttApiConfigId,
-      sttAutoSend: options.config.sttAutoSend,
-    }),
-    () => {
-      if (options.suppressAutosave.value) return;
-      void options.saveConversationApiSettings();
-    },
-  );
 }

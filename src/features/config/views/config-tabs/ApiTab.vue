@@ -1073,7 +1073,6 @@ watch(
       stopCodexAuthPolling();
       return;
     }
-    applyProtocolDefaults(provider);
     if (provider.requestFormat === "codex") {
       void refreshCodexAuthStatus(provider);
       return;

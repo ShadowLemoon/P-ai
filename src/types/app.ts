@@ -533,6 +533,30 @@ export type ChatSettings = {
   instructionPresets: PromptCommandPreset[];
 };
 
+export type ChatSettingsPatch = {
+  assistantDepartmentAgentId?: string;
+  userAlias?: string;
+  responseStyleId?: string;
+  pdfReadMode?: PdfReadMode;
+  backgroundVoiceScreenshotKeywords?: string;
+  backgroundVoiceScreenshotMode?: "desktop" | "focused_window";
+  instructionPresets?: PromptCommandPreset[];
+};
+
+export type ConversationApiSettings = {
+  assistantDepartmentApiConfigId: string;
+  visionApiConfigId?: string;
+  sttApiConfigId?: string;
+  sttAutoSend?: boolean;
+};
+
+export type ConversationApiSettingsPatch = {
+  assistantDepartmentApiConfigId?: string;
+  visionApiConfigId?: string | null;
+  sttApiConfigId?: string | null;
+  sttAutoSend?: boolean;
+};
+
 export type AppBootstrapSnapshot = {
   config: AppConfig;
   agents: PersonaProfile[];

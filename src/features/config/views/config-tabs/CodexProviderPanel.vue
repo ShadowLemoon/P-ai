@@ -344,7 +344,6 @@ function removeModelCard(modelId: string) {
 watch(
   () => props.provider.id,
   () => {
-    applyCodexDefaults();
     syncCachedModels();
     void refreshCodexAuthStatus();
   },

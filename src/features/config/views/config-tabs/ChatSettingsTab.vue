@@ -44,7 +44,7 @@
             :key="style.id"
             class="btn btn-sm join-item flex-1"
             :class="responseStyleId === style.id ? 'btn-primary' : 'bg-base-200'"
-            @click="$emit('update:responseStyleId', style.id)"
+            @click="onResponseStyleChange(style.id)"
           >
             {{ t(`responseStyle.${style.id}`) }}
           </button>
@@ -60,14 +60,14 @@
           <button
             class="btn btn-sm join-item flex-1"
             :class="pdfReadMode === 'text' ? 'btn-primary' : 'bg-base-200'"
-            @click="$emit('update:pdfReadMode', 'text')"
+            @click="onPdfReadModeChange('text')"
           >
             {{ t("config.chatSettings.pdfReadModeText") }}
           </button>
           <button
             class="btn btn-sm join-item flex-1"
             :class="pdfReadMode === 'image' ? 'btn-primary' : 'bg-base-200'"
-            @click="$emit('update:pdfReadMode', 'image')"
+            @click="onPdfReadModeChange('image')"
           >
             {{ t("config.chatSettings.pdfReadModeImage") }}
           </button>
@@ -189,7 +189,7 @@
 import { computed, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { Plus, Trash2 } from "lucide-vue-next";
-import type { AppConfig, ApiConfigItem, ImageTextCacheStats, PromptCommandPreset, ResponseStyleOption } from "../../../../types/app";
+import type { AppConfig, ApiConfigItem, ChatSettingsPatch, ConversationApiSettingsPatch, ImageTextCacheStats, PromptCommandPreset, ResponseStyleOption } from "../../../../types/app";
 
 const props = defineProps<{
   config: AppConfig;
@@ -212,7 +212,8 @@ const emit = defineEmits<{
   (e: "update:backgroundVoiceScreenshotKeywords", value: string): void;
   (e: "update:backgroundVoiceScreenshotMode", value: "desktop" | "focused_window"): void;
   (e: "update:instructionPresets", value: PromptCommandPreset[]): void;
-  (e: "saveChatSettings"): void;
+  (e: "patchConversationApiSettings", value: ConversationApiSettingsPatch): void;
+  (e: "patchChatSettings", value: ChatSettingsPatch): void;
   (e: "openCurrentHistory"): void;
   (e: "openPromptPreview"): void;
   (e: "openSystemPromptPreview"): void;
@@ -222,7 +223,23 @@ const emit = defineEmits<{
 
 function onVisionSelectChange(event: Event) {
   props.config.visionApiConfigId = ((event.target as HTMLSelectElement).value || undefined);
-  emit("saveChatSettings");
+  emit("patchConversationApiSettings", {
+    visionApiConfigId: props.config.visionApiConfigId ?? null,
+  });
+}
+
+function onResponseStyleChange(value: string) {
+  emit("update:responseStyleId", value);
+  emit("patchChatSettings", {
+    responseStyleId: value,
+  });
+}
+
+function onPdfReadModeChange(value: "text" | "image") {
+  emit("update:pdfReadMode", value);
+  emit("patchChatSettings", {
+    pdfReadMode: value,
+  });
 }
 
 function onSttSelectChange(event: Event) {
@@ -231,17 +248,25 @@ function onSttSelectChange(event: Event) {
   if (!value) {
     props.config.sttAutoSend = false;
   }
-  emit("saveChatSettings");
+  emit("patchConversationApiSettings", {
+    sttApiConfigId: props.config.sttApiConfigId ?? null,
+    sttAutoSend: !!props.config.sttAutoSend,
+  });
 }
 
 function onSttAutoSendChange(event: Event) {
   if (!props.config.sttApiConfigId) {
     props.config.sttAutoSend = false;
-    emit("saveChatSettings");
+    emit("patchConversationApiSettings", {
+      sttApiConfigId: null,
+      sttAutoSend: false,
+    });
     return;
   }
   props.config.sttAutoSend = (event.target as HTMLInputElement).checked;
-  emit("saveChatSettings");
+  emit("patchConversationApiSettings", {
+    sttAutoSend: !!props.config.sttAutoSend,
+  });
 }
 
 const backgroundVoiceScreenshotKeywordsDraft = ref(String(props.backgroundVoiceScreenshotKeywords || ""));
@@ -259,10 +284,16 @@ const backgroundVoiceScreenshotDirty = computed(
 
 function saveBackgroundVoiceScreenshotSettings() {
   emit("update:backgroundVoiceScreenshotKeywords", backgroundVoiceScreenshotKeywordsDraft.value);
+  emit("patchChatSettings", {
+    backgroundVoiceScreenshotKeywords: backgroundVoiceScreenshotKeywordsDraft.value,
+  });
 }
 
 function onBackgroundVoiceScreenshotModeChange(value: "desktop" | "focused_window") {
   emit("update:backgroundVoiceScreenshotMode", value);
+  emit("patchChatSettings", {
+    backgroundVoiceScreenshotMode: value,
+  });
 }
 
 function randomInstructionPresetId(): string {
@@ -317,5 +348,8 @@ function saveInstructionPresets() {
     .filter((item) => !!item.name && !!item.prompt);
   instructionPresetsDraft.value = normalized;
   emit("update:instructionPresets", normalized);
+  emit("patchChatSettings", {
+    instructionPresets: normalized,
+  });
 }
 </script>

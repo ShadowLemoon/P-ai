@@ -156,7 +156,8 @@
           @update:background-voice-screenshot-keywords="$emit('update:backgroundVoiceScreenshotKeywords', $event)"
           @update:background-voice-screenshot-mode="$emit('update:backgroundVoiceScreenshotMode', $event)"
           @update:instruction-presets="$emit('update:instructionPresets', $event)"
-          @save-chat-settings="$emit('saveChatSettings')"
+          @patch-conversation-api-settings="$emit('patchConversationApiSettings', $event)"
+          @patch-chat-settings="$emit('patchChatSettings', $event)"
           @open-current-history="$emit('openCurrentHistory')"
           @open-prompt-preview="$emit('openPromptPreview')"
           @open-system-prompt-preview="$emit('openSystemPromptPreview')"
@@ -325,7 +326,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import type { ApiConfigItem, AppConfig, ImageTextCacheStats, PersonaProfile, PromptCommandPreset, ResponseStyleOption, ToolLoadStatus } from "../../../types/app";
+import type { ApiConfigItem, AppConfig, ChatSettingsPatch, ConversationApiSettingsPatch, ImageTextCacheStats, PersonaProfile, PromptCommandPreset, ResponseStyleOption, ToolLoadStatus } from "../../../types/app";
 import Cropper from "cropperjs";
 import SettingsContentContainer from "../components/SettingsContentContainer.vue";
 import WelcomeTab from "./config-tabs/WelcomeTab.vue";
@@ -411,7 +412,8 @@ const emit = defineEmits<{
   (e: "update:backgroundVoiceScreenshotKeywords", value: string): void;
   (e: "update:backgroundVoiceScreenshotMode", value: "desktop" | "focused_window"): void;
   (e: "update:instructionPresets", value: PromptCommandPreset[]): void;
-  (e: "saveChatSettings"): void;
+  (e: "patchConversationApiSettings", value: ConversationApiSettingsPatch): void;
+  (e: "patchChatSettings", value: ChatSettingsPatch): void;
   (e: "setTheme", value: string): void;
   (e: "refreshModels"): void;
   (e: "toolSwitchChanged"): void;

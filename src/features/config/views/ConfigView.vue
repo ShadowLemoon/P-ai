@@ -1,7 +1,7 @@
 <template>
-  <div class="h-full min-h-0 flex gap-3">
+  <div class="h-full min-h-0 flex">
     <div class="w-36 shrink-0">
-      <ul class="menu bg-base-200 rounded-box gap-1 [&>li>a]:min-w-30 [&>li>a]:w-full">
+      <ul class="menu w-full bg-base-200 rounded-box gap-1 [&>li>a]:min-w-30 [&>li>a]:w-full">
         <li>
           <a :class="{ 'active': props.configTab === 'welcome', 'menu-active': props.configTab === 'welcome', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('welcome')">{{ t("config.tabs.welcome") }}</a>
         </li>

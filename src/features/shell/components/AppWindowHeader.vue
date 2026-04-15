@@ -43,7 +43,7 @@
         :title="forceArchiveTip"
         @click.stop="$emit('force-archive')"
       >
-        <Minimize2 class="h-3.5 w-3.5 shrink-0" />
+        <FoldVertical class="h-3.5 w-3.5 shrink-0" />
       </button>
 
       <div
@@ -241,7 +241,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { History, Minimize2, Minus, Search, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
+import { FoldVertical, History, Minus, Search, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
 import type { ChatConversationOverviewItem } from "../../../types/app";
 import ChatConversationListCard from "../../chat/components/ChatConversationListCard.vue";
 import type { ConfigSearchResult, ConfigSearchTab } from "../../config/search/config-search";

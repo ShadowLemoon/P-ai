@@ -116,6 +116,21 @@
           >
             <Mic class="h-3.5 w-3.5" />
           </button>
+          <select
+            class="select select-ghost select-sm h-8 min-h-8 w-44 max-w-[11rem]"
+            :value="selectedChatModelId"
+            :disabled="chatting || frozen || normalizedChatModelOptions.length === 0"
+            title="首要模型"
+            @change="handleChatModelChange"
+          >
+            <option
+              v-for="item in normalizedChatModelOptions"
+              :key="item.id"
+              :value="item.id"
+            >
+              {{ item.name }}
+            </option>
+          </select>
         </div>
         <div class="flex items-center gap-2">
           <button
@@ -137,7 +152,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FileText, Image as ImageIcon, Layers2, Mic, Paperclip, Send, Square, X } from "lucide-vue-next";
-import type { ChatConversationOverviewItem, PromptCommandPreset } from "../../../types/app";
+import type { ApiConfigItem, ChatConversationOverviewItem, PromptCommandPreset } from "../../../types/app";
 import ChatQueuePreview from "./ChatQueuePreview.vue";
 import { useChatQueue } from "../composables/use-chat-queue";
 
@@ -162,6 +177,8 @@ const props = defineProps<{
   recording: boolean;
   recordingMs: number;
   recordHotkey: string;
+  selectedChatModelId: string;
+  chatModelOptions: ApiConfigItem[];
   chatting: boolean;
   frozen: boolean;
   showSideConversationList: boolean;
@@ -183,6 +200,7 @@ const emit = defineEmits<{
   (e: "startRecording"): void;
   (e: "stopRecording"): void;
   (e: "pickAttachments"): void;
+  (e: "update:selectedChatModelId", value: string): void;
   (e: "sendChat"): void;
   (e: "stopChat"): void;
 }>();
@@ -215,6 +233,14 @@ const normalizedInstructionPresets = computed(() =>
       prompt: String(item?.prompt || item?.name || "").trim(),
     }))
     .filter((item) => !!item.id && !!item.prompt),
+);
+const normalizedChatModelOptions = computed(() =>
+  (Array.isArray(props.chatModelOptions) ? props.chatModelOptions : [])
+    .map((item) => ({
+      id: String(item?.id || "").trim(),
+      name: String(item?.name || "").trim(),
+    }))
+    .filter((item) => !!item.id && !!item.name),
 );
 
 function loadChatInputHistory() {
@@ -311,6 +337,12 @@ function clearSelectedInstructionPrompts() {
   if (selectedInstructionPrompts.value.length === 0) return;
   selectedInstructionPrompts.value = [];
   emitSelectedInstructionPrompts();
+}
+
+function handleChatModelChange(event: Event) {
+  const value = String((event.target as HTMLSelectElement)?.value || "").trim();
+  if (!value || value === props.selectedChatModelId) return;
+  emit("update:selectedChatModelId", value);
 }
 
 function resizeChatInput() {

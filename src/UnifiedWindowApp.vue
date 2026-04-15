@@ -244,257 +244,57 @@
       :last-saved-config-json="lastSavedConfigJson"
     />
 
-    <dialog class="modal" :class="{ 'modal-open': updateDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">
-          {{ updateDialogTitle }}
-        </h3>
-        <pre
-          class="mt-2 whitespace-pre-wrap text-sm"
-          :class="updateDialogKind === 'error' ? 'text-error' : 'text-base-content'"
-        >{{ updateDialogBody }}</pre>
-        <progress
-          v-if="typeof updateProgressPercent === 'number'"
-          class="progress progress-primary mt-4 w-full"
-          :value="Math.max(0, Math.min(100, updateProgressPercent))"
-          max="100"
-        />
-        <div class="modal-action">
-          <button
-            v-if="updateDialogPrimaryAction"
-            class="btn btn-sm btn-primary"
-            @click="confirmUpdateDialogPrimary"
-          >
-            {{ updateDialogPrimaryAction === 'force' ? '强制更新' : '立即更新' }}
-          </button>
-          <button
-            v-if="updateDialogReleaseUrl"
-            class="btn btn-sm"
-            @click="openUpdateRelease"
-          >
-            打开 Releases
-          </button>
-          <button class="btn btn-sm" @click="closeUpdateDialog">
-            {{ updateDialogPrimaryAction ? '取消' : '知道了' }}
-          </button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="closeUpdateDialog">close</button>
-      </form>
-    </dialog>
-    <RuntimeLogsDialog
-      :open="runtimeLogsDialogOpen"
-      :logs="runtimeLogs"
-      :loading="runtimeLogsLoading"
-      :error-text="runtimeLogsError"
-      @close="closeRuntimeLogsDialog"
-      @refresh="refreshRuntimeLogs"
-      @clear="clearRuntimeLogs"
+    <ShellDialogsHost
+      :update-dialog-open="updateDialogOpen"
+      :update-dialog-title="updateDialogTitle"
+      :update-dialog-body="updateDialogBody"
+      :update-dialog-kind="updateDialogKind"
+      :update-dialog-release-url="updateDialogReleaseUrl"
+      :update-dialog-primary-action="updateDialogPrimaryAction"
+      :update-progress-percent="updateProgressPercent"
+      :runtime-logs-dialog-open="runtimeLogsDialogOpen"
+      :runtime-logs="runtimeLogs"
+      :runtime-logs-loading="runtimeLogsLoading"
+      :runtime-logs-error="runtimeLogsError"
+      :rewind-confirm-dialog-open="rewindConfirmDialogOpen"
+      :rewind-confirm-can-undo-patch="rewindConfirmCanUndoPatch"
+      :config-save-error-dialog-open="configSaveErrorDialogOpen"
+      :config-save-error-dialog-title="configSaveErrorDialogTitle"
+      :config-save-error-dialog-body="configSaveErrorDialogBody"
+      :config-save-error-dialog-kind="configSaveErrorDialogKind"
+      :terminal-approval-dialog-open="terminalApprovalDialogOpen"
+      :terminal-approval-current="terminalApprovalCurrent"
+      :terminal-approval-resolving="terminalApprovalResolving"
+      :terminal-approval-queue-length="terminalApprovalQueue.length"
+      :archive-import-preview-dialog-open="archiveImportPreviewDialogOpen"
+      :archive-import-preview="archiveImportPreview"
+      :archive-import-running="archiveImportRunning"
+      :skill-placeholder-dialog-open="skillPlaceholderDialogOpen"
+      :force-archive-action-dialog-open="forceArchiveActionDialogOpen"
+      :force-archive-preview-loading="forceArchivePreviewLoading"
+      :force-archive-preview="forceArchivePreview"
+      :force-compaction-preview="forceCompactionPreview"
+      :forcing-archive="forcingArchive"
+      @close-update-dialog="closeUpdateDialog"
+      @confirm-update-dialog-primary="confirmUpdateDialogPrimary"
+      @open-update-release="openUpdateRelease"
+      @close-runtime-logs-dialog="closeRuntimeLogsDialog"
+      @refresh-runtime-logs="refreshRuntimeLogs"
+      @clear-runtime-logs="clearRuntimeLogs"
+      @confirm-rewind-with-patch="confirmRewindWithPatch"
+      @confirm-rewind-message-only="confirmRewindMessageOnly"
+      @cancel-rewind-confirm="cancelRewindConfirm"
+      @close-config-save-error-dialog="closeConfigSaveErrorDialog"
+      @approve-terminal-approval="approveTerminalApproval"
+      @deny-terminal-approval="denyTerminalApproval"
+      @close-archive-import-preview-dialog="closeArchiveImportPreviewDialog"
+      @confirm-archive-import="confirmArchiveImport"
+      @close-skill-placeholder-dialog="closeSkillPlaceholderDialog"
+      @confirm-delete-conversation-from-archive-dialog="confirmDeleteConversationFromArchiveDialog"
+      @confirm-force-compaction-action="confirmForceCompactionAction"
+      @confirm-force-archive-action="confirmForceArchiveAction"
+      @close-force-archive-action-dialog="closeForceArchiveActionDialog"
     />
-    <dialog class="modal" :class="{ 'modal-open': rewindConfirmDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">撤回选项</h3>
-        <div class="mt-2 text-sm opacity-80">请选择本次撤回要执行的范围：</div>
-        <div class="mt-4 flex flex-col items-center gap-2">
-          <button
-            v-if="rewindConfirmCanUndoPatch"
-            class="btn btn-sm w-full"
-            :class="rewindConfirmCanUndoPatch ? 'btn-error' : ''"
-            @click="confirmRewindWithPatch"
-          >
-            撤回消息并撤回修改
-          </button>
-          <button class="btn btn-sm w-full" @click="confirmRewindMessageOnly">
-            仅撤回消息
-          </button>
-          <button class="btn btn-sm btn-primary w-full" @click="cancelRewindConfirm">取消</button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="cancelRewindConfirm">close</button>
-      </form>
-    </dialog>
-    <dialog class="modal" :class="{ 'modal-open': configSaveErrorDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">
-          {{ configSaveErrorDialogTitle }}
-        </h3>
-        <pre
-          class="mt-2 whitespace-pre-wrap text-sm"
-          :class="configSaveErrorDialogKind === 'warning' ? 'text-warning' : 'text-error'"
-        >{{ configSaveErrorDialogBody }}</pre>
-        <div class="modal-action">
-          <button class="btn btn-sm btn-primary" @click="closeConfigSaveErrorDialog">{{ t("common.close") }}</button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="closeConfigSaveErrorDialog">close</button>
-      </form>
-    </dialog>
-    <dialog class="modal" :class="{ 'modal-open': terminalApprovalDialogOpen }">
-      <div class="modal-box max-w-2xl">
-        <h3 class="font-semibold text-base">
-          {{ terminalApprovalDialogTitle }}
-        </h3>
-        <TerminalApprovalImpactPanel
-          :approval-kind="terminalApprovalCurrent?.approvalKind"
-          :command="terminalApprovalCurrent?.command"
-          :impact-summary="terminalApprovalImpactSummary"
-          :patch-kinds="terminalApprovalPatchKinds"
-        />
-        <div v-if="terminalApprovalShouldShowCodePreview" class="mt-4">
-          <TerminalApprovalPatchSample
-            :lines="terminalApprovalShowDiffOnly ? terminalApprovalCurrentPatchLines : terminalApprovalPreviewLines"
-            :diff-only="terminalApprovalShowDiffOnly"
-          />
-        </div>
-        <div v-if="terminalApprovalPatchBlocks.length > 1" class="mt-3 flex justify-center">
-          <div class="join">
-            <button
-              v-for="index in terminalApprovalPatchBlocks.length"
-              :key="index"
-              class="join-item"
-              :class="[
-                'btn btn-xs',
-                terminalApprovalCurrentPatchIndex + 1 === index ? 'btn-active' : 'btn-ghost',
-              ]"
-              @click="goToTerminalApprovalPatch(index - 1)"
-            >
-              {{ index }}
-            </button>
-          </div>
-        </div>
-        <div v-if="terminalApprovalQueue.length > 1" class="text-sm opacity-70 mt-2">
-          {{ t("status.terminalApprovalQueueHint", { count: terminalApprovalQueue.length }) }}
-        </div>
-        <div class="modal-action justify-center">
-          <button
-            class="btn btn-sm btn-warning text-warning-content min-w-24"
-            :disabled="terminalApprovalResolving"
-            @click="denyTerminalApproval"
-          >
-            拒绝
-          </button>
-          <button
-            class="btn btn-sm btn-primary text-primary-content min-w-24"
-            :disabled="terminalApprovalResolving"
-            @click="approveTerminalApproval"
-          >
-            批准
-          </button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="denyTerminalApproval">close</button>
-      </form>
-    </dialog>
-    <dialog class="modal" :class="{ 'modal-open': archiveImportPreviewDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">
-          {{ t("archives.importPreviewTitle") }}
-        </h3>
-        <div v-if="archiveImportPreview" class="mt-3 space-y-1 text-sm">
-          <div>{{ t("archives.importPreviewFile", { name: archiveImportPreview.fileName }) }}</div>
-          <div>{{ t("archives.importPreviewTotal", { count: archiveImportPreview.total }) }}</div>
-          <div>{{ t("archives.importPreviewAdd", { count: archiveImportPreview.imported }) }}</div>
-          <div>{{ t("archives.importPreviewReplace", { count: archiveImportPreview.replaced }) }}</div>
-          <div class="text-sm opacity-70 mt-2">{{ t("archives.importPreviewHint") }}</div>
-        </div>
-        <div class="modal-action">
-          <button class="btn btn-sm" :disabled="archiveImportRunning" @click="closeArchiveImportPreviewDialog">
-            {{ t("common.cancel") }}
-          </button>
-          <button class="btn btn-sm btn-primary" :disabled="archiveImportRunning" @click="confirmArchiveImport">
-            {{ archiveImportRunning ? t("common.loading") : t("archives.importConfirm") }}
-          </button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="closeArchiveImportPreviewDialog">close</button>
-      </form>
-    </dialog>
-    <dialog class="modal" :class="{ 'modal-open': skillPlaceholderDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">Skill 列表</h3>
-        <div class="mt-2 text-sm opacity-80">预留功能，暂未实现。</div>
-        <div class="modal-action">
-          <button class="btn btn-sm btn-primary" @click="closeSkillPlaceholderDialog">{{ t("common.close") }}</button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="closeSkillPlaceholderDialog">close</button>
-      </form>
-    </dialog>
-    <dialog class="modal" :class="{ 'modal-open': forceArchiveActionDialogOpen }">
-      <div class="modal-box max-w-md">
-        <h3 class="font-semibold text-base">处理当前会话</h3>
-        <div v-if="forceArchivePreviewLoading" class="mt-3 text-sm opacity-70">正在判断当前会话适合压缩、归档还是丢弃...</div>
-        <template v-else>
-          <div class="mt-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
-            <div class="font-medium">压缩</div>
-            <div class="mt-1 opacity-80">整理较早历史，保留当前会话继续聊。</div>
-            <div class="mt-2 text-xs opacity-70">适合上下文占用偏高，但你还想继续当前话题时使用。</div>
-            <div
-              v-if="forceCompactionPreview?.compactionDisabledReason"
-              class="mt-3 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning-content"
-            >
-              {{ forceCompactionPreview.compactionDisabledReason }}
-            </div>
-          </div>
-          <div class="mt-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
-            <div class="font-medium">归档</div>
-            <div class="mt-1 opacity-80">生成摘要并提炼记忆，保留为归档记录。</div>
-            <div class="mt-2 text-xs opacity-70">适合这段会话已经结束，准备沉淀为历史记录时使用。</div>
-            <div
-              v-if="forceArchivePreview?.archiveDisabledReason"
-              class="mt-3 rounded border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning-content"
-            >
-              {{ forceArchivePreview.archiveDisabledReason }}
-            </div>
-          </div>
-          <div class="mt-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3 text-sm">
-            <div class="font-medium">丢弃</div>
-            <div class="mt-1 opacity-80">直接删除当前会话，不生成摘要，也不保留归档。</div>
-            <div class="mt-2 text-xs opacity-70">适合测试、误触发，或确认这段内容不需要留痕时使用。</div>
-          </div>
-          <div class="mt-3 text-sm opacity-80">
-            <div>当前会话消息数：{{ forceArchivePreview?.messageCount ?? 0 }}</div>
-            <div>助理是否已回复：{{ forceArchivePreview?.hasAssistantReply ? "是" : "否" }}</div>
-            <div>当前上下文占用：{{ forceCompactionPreview?.contextUsagePercent ?? 0 }}%</div>
-          </div>
-        </template>
-        <div class="modal-action">
-          <button
-            class="btn btn-sm btn-error"
-            :disabled="forceArchivePreviewLoading || !forceArchivePreview?.canDropConversation || forcingArchive"
-            @click="confirmDeleteConversationFromArchiveDialog"
-          >
-            丢弃
-          </button>
-          <button
-            class="btn btn-sm btn-primary"
-            :disabled="forceArchivePreviewLoading || !forceCompactionPreview?.canCompact || forcingArchive"
-            @click="confirmForceCompactionAction"
-          >
-            压缩
-          </button>
-          <button
-            class="btn btn-sm btn-secondary"
-            :disabled="forceArchivePreviewLoading || !forceArchivePreview?.canArchive || forcingArchive"
-            @click="confirmForceArchiveAction"
-          >
-            归档
-          </button>
-          <button class="btn btn-sm" :disabled="forceArchivePreviewLoading || forcingArchive" @click="closeForceArchiveActionDialog">
-            {{ t("common.cancel") }}
-          </button>
-        </div>
-      </div>
-      <form method="dialog" class="modal-backdrop">
-        <button @click.prevent="closeForceArchiveActionDialog">close</button>
-      </form>
-    </dialog>
     <ChatWorkspacePickerDialog
       :open="chatWorkspacePickerOpen"
       :saving="chatWorkspacePickerSaving"
@@ -511,7 +311,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from "vue";
 import { useI18n } from "vue-i18n";
-import { open } from "@tauri-apps/plugin-dialog";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invokeTauri } from "./services/tauri-api";
@@ -520,21 +319,30 @@ import { useAppCore } from "./features/shell/composables/use-app-core";
 import { useAppLifecycle } from "./features/shell/composables/use-app-lifecycle";
 import { useAppTheme } from "./features/shell/composables/use-app-theme";
 import { useGithubUpdate } from "./features/shell/composables/use-github-update";
+import {
+  useShellDialogFlows,
+} from "./features/shell/composables/use-shell-dialog-flows";
 import { useTerminalApproval, type TerminalApprovalRequestPayload } from "./features/shell/composables/use-terminal-approval";
 import { applyUiFont, normalizeUiFont } from "./features/shell/composables/use-ui-font";
+import { useWindowActions } from "./features/shell/composables/use-window-actions";
 import { useViewRefresh } from "./features/shell/composables/use-view-refresh";
 import { useWindowShell } from "./features/shell/composables/use-window-shell";
 import { useConfigCore } from "./features/config/composables/use-config-core";
 import { useConfigEditors } from "./features/config/composables/use-config-editors";
-import { useConfigPersistence, type ConfigSaveErrorInfo } from "./features/config/composables/use-config-persistence";
+import { useConfigPersistence } from "./features/config/composables/use-config-persistence";
 import { useConfigRuntime } from "./features/config/composables/use-config-runtime";
 import { useAgentWorkPresence } from "./features/chat/composables/use-agent-work-presence";
 import { useArchivesView } from "./features/chat/composables/use-archives-view";
 import { useArchiveImport } from "./features/chat/composables/use-archive-import";
 import { useAvatarCache } from "./features/chat/composables/use-avatar-cache";
 import { useChatDialogActions } from "./features/chat/composables/use-chat-dialog-actions";
+import { useChatAttachmentPickerFlow } from "./features/chat/composables/use-chat-attachment-picker-flow";
 import { useChatWorkspace } from "./features/chat/composables/use-chat-workspace";
+import { useChatWorkspacePickerFlow } from "./features/chat/composables/use-chat-workspace-picker-flow";
 import { useChatRewindActions } from "./features/chat/composables/use-chat-rewind-actions";
+import { useConfirmPlan } from "./features/chat/composables/use-confirm-plan";
+import { useConversationPlanMode } from "./features/chat/composables/use-conversation-plan-mode";
+import { useSupervisionTask } from "./features/chat/composables/use-supervision-task";
 import { useChatRuntime } from "./features/chat/composables/use-chat-runtime";
 import { useChatMessageBlocks } from "./features/chat/composables/use-chat-turns";
 import { useChatMedia } from "./features/chat/composables/use-chat-media";
@@ -550,15 +358,10 @@ import {
   messageText,
   removeBinaryPlaceholders,
 } from "./utils/chat-message";
-import { inspectUndoablePatchCalls } from "./utils/chat-message-semantics";
-import { formatI18nError, toErrorMessage } from "./utils/error";
-import { formatDateToLocalRfc3339 } from "./utils/time";
+import { formatI18nError } from "./utils/error";
 import AppWindowContent from "./features/shell/components/AppWindowContent.vue";
 import AppWindowHeader from "./features/shell/components/AppWindowHeader.vue";
-import RuntimeLogsDialog from "./features/shell/components/RuntimeLogsDialog.vue";
-import TerminalApprovalImpactPanel from "./features/shell/components/TerminalApprovalImpactPanel.vue";
-import TerminalApprovalPatchSample from "./features/shell/components/TerminalApprovalPatchSample.vue";
-import type { TaskEntry } from "./features/config/views/config-tabs/task-editor";
+import ShellDialogsHost from "./features/shell/components/ShellDialogsHost.vue";
 import type { ChatWorkspaceChoice } from "./features/chat/composables/use-chat-workspace";
 import type {
   PersonaProfile,
@@ -568,7 +371,6 @@ import type {
   ChatTodoItem,
   ChatPersonaPresenceChip,
   ImageTextCacheStats,
-  RuntimeLogEntry,
   ResponseStyleOption,
   ToolLoadStatus,
   UnarchivedConversationSummary,
@@ -585,20 +387,11 @@ const DRAFT_ASSISTANT_ID_PREFIX = "__draft_assistant__:";
 const FOREGROUND_RECENT_MESSAGE_LIMIT = 50;
 const FOREGROUND_MESSAGE_TRIM_THRESHOLD = 80;
 const BACKGROUND_CONVERSATION_CACHE_LIMIT = FOREGROUND_RECENT_MESSAGE_LIMIT;
-const SUPERVISION_TASK_GOAL_PREFIX = "督工任务：";
 type BackgroundConversationBadgeState = "completed" | "failed";
 type ForegroundPaintTrace = {
   id: number;
   conversationId: string;
   startedAt: number;
-};
-type ActiveSupervisionTaskSummary = {
-  taskId: string;
-  goal: string;
-  why: string;
-  todo: string;
-  endAtLocal: string;
-  remainingHours: number;
 };
 type ConversationMessagesAfterSyncedPayload = {
   requestId?: string;
@@ -607,24 +400,6 @@ type ConversationMessagesAfterSyncedPayload = {
   messages?: ChatMessage[];
   fallbackMode?: string | null;
   error?: string | null;
-};
-type ForceArchivePreviewResult = {
-  conversationId: string;
-  canArchive: boolean;
-  canDropConversation: boolean;
-  messageCount: number;
-  hasAssistantReply: boolean;
-  isEmpty: boolean;
-  archiveDisabledReason?: string | null;
-};
-type ForceCompactionPreviewResult = {
-  conversationId: string;
-  canCompact: boolean;
-  messageCount: number;
-  hasAssistantReply: boolean;
-  isEmpty: boolean;
-  contextUsagePercent: number;
-  compactionDisabledReason?: string | null;
 };
 
 const viewMode = ref<"chat" | "archives" | "config">(props.fixedViewMode ?? "config");
@@ -753,26 +528,8 @@ function handleSideConversationListVisibleChange(value: boolean) {
 const allMessages = shallowRef<ChatMessage[]>([]);
 
 const status = ref("Ready.");
-const runtimeLogsDialogOpen = ref(false);
-const runtimeLogs = ref<RuntimeLogEntry[]>([]);
-const runtimeLogsLoading = ref(false);
-const runtimeLogsError = ref("");
-const configSaveErrorDialogOpen = ref(false);
-const configSaveErrorDialogTitle = ref("");
-const configSaveErrorDialogBody = ref("");
-const configSaveErrorDialogKind = ref<"warning" | "error">("error");
 const terminalApprovalQueue = ref<TerminalApprovalRequestPayload[]>([]);
 const terminalApprovalResolving = ref(false);
-const terminalApprovalCurrentPatchIndex = ref(0);
-const skillPlaceholderDialogOpen = ref(false);
-const forceArchiveActionDialogOpen = ref(false);
-const forceArchivePreviewLoading = ref(false);
-const forceArchivePreview = ref<ForceArchivePreviewResult | null>(null);
-const forceCompactionPreview = ref<ForceCompactionPreviewResult | null>(null);
-const rewindConfirmDialogOpen = ref(false);
-const rewindConfirmCanUndoPatch = ref(false);
-const rewindConfirmUndoHint = ref("");
-let rewindConfirmResolver: ((mode: "with_patch" | "message_only" | "cancel") => void) | null = null;
 const loading = ref(false);
 const saving = ref(false);
 const chatting = ref(false);
@@ -868,103 +625,33 @@ const {
   setStatusError,
 });
 
-const currentConversationPlanModeEnabled = computed(() => {
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) return false;
-  return getConversationPlanModeEnabledById(conversationId);
+const {
+  currentConversationPlanModeEnabled,
+  setConversationPlanMode,
+  setCurrentConversationPlanMode,
+} = useConversationPlanMode({
+  currentConversationId: currentChatConversationId,
+  unarchivedConversations,
 });
-
-const inFlightPlanModeRequests = new Map<string, Promise<boolean>>();
-const confirmedConversationPlanModeStates = new Map<string, boolean>();
-
-function getConversationPlanModeEnabledById(conversationId: string): boolean {
-  const normalizedConversationId = String(conversationId || "").trim();
-  if (!normalizedConversationId) return false;
-  return !!unarchivedConversations.value.find((item) =>
-    String(item.conversationId || "").trim() === normalizedConversationId
-  )?.planModeEnabled;
-}
-
-function patchConversationPlanModeInOverview(conversationId: string, planModeEnabled: boolean) {
-  const normalizedConversationId = String(conversationId || "").trim();
-  if (!normalizedConversationId) return;
-  let changed = false;
-  const next = unarchivedConversations.value.map((item) => {
-    if (String(item.conversationId || "").trim() !== normalizedConversationId) {
-      return item;
-    }
-    if (!!item.planModeEnabled === !!planModeEnabled) {
-      return item;
-    }
-    changed = true;
-    return {
-      ...item,
-      planModeEnabled: !!planModeEnabled,
-    };
-  });
-  if (changed) {
-    unarchivedConversations.value = next;
-  }
-}
-
-function queueConversationPlanModeUpdate(
-  conversationId: string,
-  task: () => Promise<boolean>,
-): Promise<boolean> {
-  const previous = inFlightPlanModeRequests.get(conversationId) ?? Promise.resolve(true);
-  let queued!: Promise<boolean>;
-  queued = previous
-    .catch(() => false)
-    .then(task, task)
-    .finally(() => {
-      if (inFlightPlanModeRequests.get(conversationId) === queued) {
-        inFlightPlanModeRequests.delete(conversationId);
-      }
-    });
-  inFlightPlanModeRequests.set(conversationId, queued);
-  return queued;
-}
-
-async function setConversationPlanMode(conversationId: string, value: boolean): Promise<boolean> {
-  const normalizedConversationId = String(conversationId || "").trim();
-  if (!normalizedConversationId) return false;
-  const nextValue = !!value;
-  const previousValue = getConversationPlanModeEnabledById(normalizedConversationId);
-  if (!confirmedConversationPlanModeStates.has(normalizedConversationId)) {
-    confirmedConversationPlanModeStates.set(normalizedConversationId, previousValue);
-  }
-  if (previousValue === nextValue) return true;
-  patchConversationPlanModeInOverview(normalizedConversationId, nextValue);
-  return queueConversationPlanModeUpdate(normalizedConversationId, async () => {
-    try {
-      await invokeTauri<{ conversationId: string; planModeEnabled: boolean }>("set_conversation_plan_mode", {
-        input: {
-          conversationId: normalizedConversationId,
-          planModeEnabled: nextValue,
-        },
-      });
-      confirmedConversationPlanModeStates.set(normalizedConversationId, nextValue);
-      return true;
-    } catch (error) {
-      const fallbackValue = confirmedConversationPlanModeStates.get(normalizedConversationId) ?? previousValue;
-      if (getConversationPlanModeEnabledById(normalizedConversationId) === nextValue) {
-        patchConversationPlanModeInOverview(normalizedConversationId, fallbackValue);
-      }
-      console.warn("[计划模式] 保存会话计划状态失败", {
-        conversationId: normalizedConversationId,
-        nextValue,
-        error,
-      });
-      return false;
-    }
-  });
-}
-
-async function setCurrentConversationPlanMode(value: boolean): Promise<boolean> {
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) return false;
-  return setConversationPlanMode(conversationId, value);
-}
+const {
+  supervisionTaskDialogOpen,
+  supervisionTaskSaving,
+  supervisionTaskError,
+  activeSupervisionTask,
+  chatSupervisionActive,
+  chatSupervisionTitle,
+  openSupervisionTaskDialog,
+  closeSupervisionTaskDialog,
+  saveSupervisionTask,
+  refreshActiveSupervisionTask,
+  startSupervisionTaskPolling,
+  clearSupervisionTaskPollTimer,
+  handleConversationChanged: handleSupervisionConversationChanged,
+} = useSupervisionTask({
+  t: tr,
+  currentConversationId: currentChatConversationId,
+  setStatus,
+});
 const agentWorkPresence = useAgentWorkPresence();
 const {
   archiveImportPreviewDialogOpen,
@@ -1322,34 +1009,17 @@ const onDragOver = chatMedia.onDragOver;
 const onDrop = chatMedia.onDrop;
 const onNativeFileDrop = chatMedia.onNativeFileDrop;
 const removeClipboardImage = chatMedia.removeClipboardImage;
-function removeQueuedAttachmentNotice(index: number) {
-  if (index < 0 || index >= queuedAttachmentNotices.value.length) return;
-  queuedAttachmentNotices.value.splice(index, 1);
-}
 const startHotkeyRecordTest = chatMedia.startHotkeyRecordTest;
 const stopHotkeyRecordTest = chatMedia.stopHotkeyRecordTest;
 const playHotkeyRecordTest = chatMedia.playHotkeyRecordTest;
 const cleanupChatMedia = chatMedia.cleanupChatMedia;
-
-async function pickChatAttachments() {
-  if (chatting.value || forcingArchive.value) return;
-  try {
-    const picked = await open({
-      multiple: true,
-      directory: false,
-      title: "选择附件",
-    });
-    if (!picked) return;
-    const paths = Array.isArray(picked) ? picked : [picked];
-    const normalized = paths
-      .map((v) => String(v || "").trim())
-      .filter(Boolean);
-    if (normalized.length === 0) return;
-    await onNativeFileDrop(normalized);
-  } catch (error) {
-    setStatusError("status.pasteImageReadFailed", error);
-  }
-}
+const { removeQueuedAttachmentNotice, pickChatAttachments } = useChatAttachmentPickerFlow({
+  chatting,
+  forcingArchive,
+  queuedAttachmentNotices,
+  onNativeFileDrop,
+  setStatusError,
+});
 const recordHotkey = useRecordHotkey({
   isActive: () => viewMode.value === "chat",
   getRecordHotkey: () => config.recordHotkey,
@@ -1413,6 +1083,53 @@ const currentForegroundPersona = computed(
     ?? assistantPersonas.value[0]
     ?? null,
 );
+let {
+  runtimeLogsDialogOpen,
+  runtimeLogs,
+  runtimeLogsLoading,
+  runtimeLogsError,
+  configSaveErrorDialogOpen,
+  configSaveErrorDialogTitle,
+  configSaveErrorDialogBody,
+  configSaveErrorDialogKind,
+  skillPlaceholderDialogOpen,
+  forceArchiveActionDialogOpen,
+  forceArchivePreviewLoading,
+  forceArchivePreview,
+  forceCompactionPreview,
+  rewindConfirmDialogOpen,
+  rewindConfirmCanUndoPatch,
+  openForceArchiveActionDialog,
+  closeForceArchiveActionDialog,
+  confirmForceCompactionAction,
+  confirmForceArchiveAction,
+  confirmDeleteConversationFromArchiveDialog,
+  openSkillPlaceholderDialog,
+  closeSkillPlaceholderDialog,
+  requestRecallMode,
+  confirmRewindWithPatch,
+  confirmRewindMessageOnly,
+  cancelRewindConfirm,
+  cancelPendingRewindConfirm,
+  refreshRuntimeLogs,
+  openRuntimeLogsDialog,
+  closeRuntimeLogsDialog,
+  clearRuntimeLogs,
+  closeConfigSaveErrorDialog,
+  openConfigSaveErrorDialog,
+} = {} as ReturnType<typeof useShellDialogFlows>;
+const {
+  openConfigWindow,
+  summonChatWindowFromConfig,
+  closeWindowAndClearForeground,
+  minimizeWindowAndClearForeground,
+  openGithubRepository,
+} = useWindowActions({
+  isChatTauriWindow,
+  closeWindow,
+  minimizeWindow,
+  freezeForegroundConversation,
+});
 // 对话颜色（跳跃分配，最大化对比度）
 const CONVERSATION_COLORS = [
   'primary',   // 0: 紫
@@ -1427,13 +1144,8 @@ const CONVERSATION_COLORS = [
 
 const conversationScrollToBottomRequest = ref(0);
 const currentChatTodos = ref<ChatTodoItem[]>([]);
-const supervisionTaskDialogOpen = ref(false);
-const supervisionTaskSaving = ref(false);
-const supervisionTaskError = ref("");
-const activeSupervisionTask = ref<ActiveSupervisionTaskSummary | null>(null);
 let pendingConversationScrollToBottomConversationId = "";
 let pendingConversationScrollToBottomTimer = 0;
-let supervisionTaskPollTimer = 0;
 
 type SwitchConversationSnapshot = {
   conversationId: string;
@@ -1454,197 +1166,6 @@ type ConversationTodosUpdatedPayload = {
   currentTodo?: string;
   currentTodos?: ChatTodoItem[];
 };
-
-function clearSupervisionTaskPollTimer() {
-  if (supervisionTaskPollTimer) {
-    window.clearInterval(supervisionTaskPollTimer);
-    supervisionTaskPollTimer = 0;
-  }
-}
-
-function normalizeSupervisionGoal(goal: string): string {
-  const text = String(goal || "").trim();
-  if (!text) return SUPERVISION_TASK_GOAL_PREFIX;
-  if (text.startsWith(SUPERVISION_TASK_GOAL_PREFIX)) {
-    return text;
-  }
-  return `${SUPERVISION_TASK_GOAL_PREFIX}${text}`;
-}
-
-function stripSupervisionGoalPrefix(goal: string): string {
-  const text = String(goal || "").trim();
-  if (!text.startsWith(SUPERVISION_TASK_GOAL_PREFIX)) {
-    return text;
-  }
-  return text.slice(SUPERVISION_TASK_GOAL_PREFIX.length).trim();
-}
-
-function parseTaskTime(value?: string | null): Date | null {
-  const raw = String(value || "").trim();
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function supervisionTaskIsActive(task: TaskEntry, conversationId: string): boolean {
-  if (String(task.completionState || "").trim() !== "active") return false;
-  if (String(task.conversationId || "").trim() !== conversationId) return false;
-  if (!String(task.goal || "").trim().startsWith(SUPERVISION_TASK_GOAL_PREFIX)) return false;
-  const runAt = parseTaskTime(task.trigger?.runAtLocal);
-  const endAt = parseTaskTime(task.trigger?.endAtLocal);
-  if (!endAt) return false;
-  const now = new Date();
-  if (runAt) {
-    return now >= runAt && now <= endAt;
-  }
-  return now <= endAt;
-}
-
-function activeSupervisionTaskFromEntry(task: TaskEntry): ActiveSupervisionTaskSummary {
-  const endAt = parseTaskTime(task.trigger?.endAtLocal);
-  const remainingHours = endAt
-    ? Math.min(24, Math.max(1, Math.ceil((endAt.getTime() - Date.now()) / 3_600_000)))
-    : 1;
-  return {
-    taskId: String(task.taskId || "").trim(),
-    goal: stripSupervisionGoalPrefix(task.goal),
-    why: String(task.why || "").trim(),
-    todo: String(task.todo || "").trim(),
-    endAtLocal: String(task.trigger?.endAtLocal || "").trim(),
-    remainingHours,
-  };
-}
-
-const chatSupervisionActive = computed(() => !!activeSupervisionTask.value);
-const chatSupervisionTitle = computed(() => {
-  const task = activeSupervisionTask.value;
-  if (!task) {
-    return t("chat.supervision.buttonHint");
-  }
-  return t("chat.supervision.activeHintShort", { endAt: task.endAtLocal });
-});
-
-async function refreshActiveSupervisionTask(options: { silent?: boolean } = {}) {
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) {
-    activeSupervisionTask.value = null;
-    return;
-  }
-  try {
-    const tasks = await invokeTauri<TaskEntry[]>("task_list_tasks");
-    const nextTask = tasks
-      .filter((task) => supervisionTaskIsActive(task, conversationId))
-      .sort((left, right) => {
-        const leftTime = parseTaskTime(left.updatedAtLocal)?.getTime() ?? 0;
-        const rightTime = parseTaskTime(right.updatedAtLocal)?.getTime() ?? 0;
-        return rightTime - leftTime;
-      })[0];
-    activeSupervisionTask.value = nextTask ? activeSupervisionTaskFromEntry(nextTask) : null;
-  } catch (error) {
-    activeSupervisionTask.value = null;
-    if (!options.silent) {
-      console.warn("[督工] 读取当前会话督工任务失败", error);
-    }
-  }
-}
-
-function openSupervisionTaskDialog() {
-  if (!String(currentChatConversationId.value || "").trim()) {
-    setStatus(t("chat.supervision.noConversation"));
-    return;
-  }
-  supervisionTaskError.value = "";
-  supervisionTaskDialogOpen.value = true;
-}
-
-function closeSupervisionTaskDialog() {
-  if (supervisionTaskSaving.value) return;
-  supervisionTaskDialogOpen.value = false;
-  supervisionTaskError.value = "";
-}
-
-async function saveSupervisionTask(payload: {
-  durationHours: number;
-  goal: string;
-  why: string;
-  todo: string;
-}) {
-  if (supervisionTaskSaving.value) return;
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) {
-    supervisionTaskError.value = t("chat.supervision.noConversation");
-    return;
-  }
-  supervisionTaskSaving.value = true;
-  supervisionTaskError.value = "";
-  try {
-    const now = new Date();
-    now.setSeconds(0, 0);
-    const endAt = new Date(now.getTime() + payload.durationHours * 3_600_000);
-    const trigger = {
-      runAtLocal: formatDateToLocalRfc3339(now),
-      everyMinutes: 0.1,
-      endAtLocal: formatDateToLocalRfc3339(endAt),
-    };
-    let taskId = "";
-    if (activeSupervisionTask.value?.taskId) {
-      const updated = await invokeTauri<TaskEntry>("task_update_task", {
-        input: {
-          taskId: activeSupervisionTask.value.taskId,
-          conversationId,
-          targetScope: "desktop",
-          goal: normalizeSupervisionGoal(payload.goal),
-          why: payload.why,
-          todo: payload.todo,
-          trigger,
-        },
-      });
-      taskId = String(updated.taskId || "").trim();
-      setStatus(
-        t("chat.supervision.updatedStatus", {
-          hours: payload.durationHours,
-        }),
-      );
-    } else {
-      const created = await invokeTauri<TaskEntry>("task_create_task", {
-        input: {
-          conversationId,
-          targetScope: "desktop",
-          goal: normalizeSupervisionGoal(payload.goal),
-          why: payload.why,
-          todo: payload.todo,
-          trigger,
-        },
-      });
-      taskId = String(created.taskId || "").trim();
-      setStatus(
-        t("chat.supervision.createdStatus", {
-          hours: payload.durationHours,
-        }),
-      );
-    }
-    if (taskId) {
-      try {
-        await invokeTauri<boolean>("task_dispatch_task_now", { input: { taskId } });
-      } catch (dispatchError) {
-        console.warn("[督工] 首次触发失败", dispatchError);
-      }
-    }
-    supervisionTaskDialogOpen.value = false;
-    await refreshActiveSupervisionTask({ silent: true });
-  } catch (error) {
-    supervisionTaskError.value = `${t("chat.supervision.saveFailed")}: ${toErrorMessage(error)}`;
-  } finally {
-    supervisionTaskSaving.value = false;
-  }
-}
-
-function startSupervisionTaskPolling() {
-  clearSupervisionTaskPollTimer();
-  supervisionTaskPollTimer = window.setInterval(() => {
-    void refreshActiveSupervisionTask({ silent: true });
-  }, 30_000);
-}
 
 function clearPendingConversationScrollToBottomFallback() {
   if (pendingConversationScrollToBottomTimer) {
@@ -1735,119 +1256,25 @@ const {
   setStatus,
   setStatusError,
 });
-
-const chatWorkspaceDraftChoices = ref<ChatWorkspaceChoice[]>([]);
-const chatWorkspacePickerSaving = ref(false);
-
-function cloneChatWorkspaceChoices(items: ChatWorkspaceChoice[]): ChatWorkspaceChoice[] {
-  return (items || []).map((item) => ({
-    id: String(item.id || "").trim(),
-    name: String(item.name || "").trim(),
-    path: String(item.path || "").trim(),
-    level: item.level,
-    access: item.access,
-  }));
-}
-
-function syncChatWorkspaceDraftFromCurrentState() {
-  chatWorkspaceDraftChoices.value = cloneChatWorkspaceChoices(chatWorkspaceChoices.value);
-}
-
-function openChatWorkspacePicker() {
-  syncChatWorkspaceDraftFromCurrentState();
-  openChatWorkspacePickerBase();
-}
-
-function closeChatWorkspacePicker() {
-  if (chatWorkspacePickerSaving.value) return;
-  closeChatWorkspacePickerBase();
-  syncChatWorkspaceDraftFromCurrentState();
-}
-
-async function addChatWorkspace() {
-  try {
-    const picked = await open({
-      directory: true,
-      multiple: false,
-    });
-    if (!picked || Array.isArray(picked)) return;
-    const nextPath = String(picked || "").trim();
-    if (!nextPath) return;
-    const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
-    const existed = draft.some((item) => String(item.path || "").trim().toLowerCase() === nextPath.toLowerCase());
-    if (existed) {
-      setStatus(tr("config.tools.workspaceAlreadyExists"));
-      return;
-    }
-    const hasMain = draft.some((item) => item.level === "main");
-    draft.push({
-      id: `conversation-workspace-${Math.random().toString(36).slice(2, 8)}`,
-      name: nextPath.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() || nextPath,
-      path: nextPath,
-      level: hasMain ? "secondary" : "main",
-      access: hasMain ? "read_only" : "approval",
-    });
-    chatWorkspaceDraftChoices.value = draft;
-  } catch (error) {
-    setStatusError("status.requestFailed", error);
-  }
-}
-
-async function setChatWorkspaceAsMain(workspaceId: string) {
-  const draft: ChatWorkspaceChoice[] = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value).map((item): ChatWorkspaceChoice => {
-    if (item.level === "system") return item;
-    if (item.id === workspaceId) {
-      return { ...item, level: "main", access: item.access || "approval" };
-    }
-    if (item.level === "main") {
-      return { ...item, level: "secondary" };
-    }
-    return item;
-  });
-  chatWorkspaceDraftChoices.value = draft;
-}
-
-function setChatWorkspaceAccess(workspaceId: string, access: ChatWorkspaceChoice["access"]) {
-  const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
-  const target = draft.find((item) => item.id === workspaceId);
-  if (!target) return;
-  if (target.level === "system") return;
-  target.access = access;
-  chatWorkspaceDraftChoices.value = draft;
-}
-
-function removeChatWorkspace(workspaceId: string) {
-  const current = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
-  const removing = current.find((item) => item.id === workspaceId);
-  const draft = current.filter((item) => item.id !== workspaceId || item.level === "system");
-  if (removing?.level === "main") {
-    const promoteTarget = draft.find((item) => item.level === "secondary");
-    if (promoteTarget) {
-      draft.forEach((item) => {
-        if (item.level === "system") return;
-        if (item.id === promoteTarget.id) {
-          item.level = "main";
-        } else if (item.level === "main") {
-          item.level = "secondary";
-        }
-      });
-    }
-  }
-  chatWorkspaceDraftChoices.value = draft;
-}
-
-async function saveChatWorkspacePicker() {
-  if (chatWorkspacePickerSaving.value) return;
-  chatWorkspacePickerSaving.value = true;
-  try {
-    const draft = cloneChatWorkspaceChoices(chatWorkspaceDraftChoices.value);
-    await saveChatWorkspaces(draft);
-    closeChatWorkspacePickerBase();
-    syncChatWorkspaceDraftFromCurrentState();
-  } finally {
-    chatWorkspacePickerSaving.value = false;
-  }
-}
+const {
+  chatWorkspaceDraftChoices,
+  chatWorkspacePickerSaving,
+  openChatWorkspacePicker,
+  closeChatWorkspacePicker,
+  addChatWorkspace,
+  setChatWorkspaceAsMain,
+  setChatWorkspaceAccess,
+  removeChatWorkspace,
+  saveChatWorkspacePicker,
+} = useChatWorkspacePickerFlow({
+  chatWorkspaceChoices,
+  openChatWorkspacePickerBase,
+  closeChatWorkspacePickerBase,
+  saveChatWorkspaces,
+  setStatus,
+  setStatusError,
+  workspaceAlreadyExistsText: tr("config.tools.workspaceAlreadyExists"),
+});
 const selectedPersonaEditor = computed(
   () => personas.value.find((p) => p.id === personaEditorId.value) ?? null,
 );
@@ -2002,7 +1429,6 @@ const {
   terminalApprovalCurrent,
   terminalApprovalDialogOpen,
   terminalApprovalDialogTitle,
-  terminalApprovalDialogBody,
   enqueueTerminalApprovalRequest,
   denyTerminalApproval,
   approveTerminalApproval,
@@ -2010,210 +1436,6 @@ const {
   queue: terminalApprovalQueue,
   resolving: terminalApprovalResolving,
 });
-
-function splitTerminalApprovalPatches(raw: string): string[][] {
-  const normalized = String(raw || "").replace(/\r/g, "");
-  const lines = normalized.split("\n");
-  if (!normalized.trim()) return [[]];
-
-  const patches: string[][] = [];
-  let currentPatch: string[] = [];
-  let inPatchBlock = false;
-
-  for (const rawLine of lines) {
-    const line = String(rawLine || "");
-    const trimmedLine = line.trim();
-    if (trimmedLine.startsWith("*** Begin Patch")) {
-      if (currentPatch.length > 0) {
-        patches.push(currentPatch);
-      }
-      currentPatch = [line];
-      inPatchBlock = true;
-      continue;
-    }
-
-    if (inPatchBlock && trimmedLine.startsWith("*** End Patch")) {
-      currentPatch.push(line);
-      patches.push(currentPatch);
-      currentPatch = [];
-      inPatchBlock = false;
-      continue;
-    }
-
-    currentPatch.push(line);
-  }
-
-  if (currentPatch.length > 0) {
-    patches.push(currentPatch);
-  }
-
-  return patches.length > 0 ? patches : [lines];
-}
-
-const terminalApprovalPatchBlocks = computed(() => {
-  const current = terminalApprovalCurrent.value;
-  const raw = String(current?.callPreview || current?.command || current?.summary || current?.message || "").replace(/\r/g, "");
-  if (!raw.trim()) return [[]];
-  return splitTerminalApprovalPatches(raw);
-});
-
-const terminalApprovalPreviewLines = computed(() => {
-  const current = terminalApprovalCurrent.value;
-  const raw = String(current?.callPreview || current?.command || current?.summary || current?.message || "").replace(/\r/g, "");
-  if (!raw.trim()) return [];
-  return raw.split("\n");
-});
-
-type TerminalApprovalImpactItem = {
-  path: string;
-  adds: number;
-  removes: number;
-  kind: "update" | "add" | "delete" | "other";
-};
-
-function getTerminalApprovalPatchPath(lines: string[]): string {
-  for (const rawLine of lines) {
-    const line = String(rawLine || "").trim();
-    if (line.startsWith("*** Update File:")) {
-      return line.replace("*** Update File:", "").trim();
-    }
-    if (line.startsWith("*** Add File:")) {
-      return line.replace("*** Add File:", "").trim();
-    }
-    if (line.startsWith("*** Delete File:")) {
-      return line.replace("*** Delete File:", "").trim();
-    }
-  }
-  return "";
-}
-
-function getTerminalApprovalPatchKind(lines: string[]): "update" | "add" | "delete" | "other" {
-  for (const rawLine of lines) {
-    const line = String(rawLine || "").trim();
-    if (line.startsWith("*** Update File:")) return "update";
-    if (line.startsWith("*** Add File:")) return "add";
-    if (line.startsWith("*** Delete File:")) return "delete";
-  }
-  return "other";
-}
-
-function countTerminalApprovalPatchDelta(lines: string[]) {
-  let adds = 0;
-  let removes = 0;
-  for (const rawLine of lines) {
-    const line = String(rawLine || "");
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      adds += 1;
-      continue;
-    }
-    if (line.startsWith("-") && !line.startsWith("---")) {
-      removes += 1;
-    }
-  }
-  return { adds, removes };
-}
-
-const terminalApprovalImpactSummary = computed(() => {
-  const patchItems = terminalApprovalPatchBlocks.value
-    .map((lines) => {
-      const path = getTerminalApprovalPatchPath(lines);
-      if (!path) return null;
-      return {
-        path,
-        kind: getTerminalApprovalPatchKind(lines),
-        ...countTerminalApprovalPatchDelta(lines),
-      };
-    })
-    .filter((item): item is TerminalApprovalImpactItem => !!item);
-  if (patchItems.length > 0) return patchItems;
-
-  const current = terminalApprovalCurrent.value;
-  if (!current) return [];
-  const paths = Array.from(
-    new Set([
-      ...(Array.isArray(current.targetPaths) ? current.targetPaths : []),
-      ...(Array.isArray(current.existingPaths) ? current.existingPaths : []),
-      String(current.requestedPath || "").trim(),
-    ].filter(Boolean)),
-  );
-  return paths.map((path) => ({
-    path,
-    adds: 0,
-    removes: 0,
-    kind: "other" as const,
-  }));
-});
-
-const terminalApprovalCurrentPatchLines = computed(() => {
-  const blocks = terminalApprovalPatchBlocks.value;
-  if (blocks.length === 0) return [];
-  const maxIndex = blocks.length - 1;
-  const safeIndex = Math.min(Math.max(terminalApprovalCurrentPatchIndex.value, 0), maxIndex);
-  return blocks[safeIndex] || [];
-});
-
-const terminalApprovalCurrentPatchKind = computed(() =>
-  getTerminalApprovalPatchKind(terminalApprovalCurrentPatchLines.value),
-);
-
-const terminalApprovalPatchKinds = computed(() =>
-  terminalApprovalPatchBlocks.value.map((lines) => getTerminalApprovalPatchKind(lines)),
-);
-
-const terminalApprovalShowDiffOnly = computed(() =>
-  String(terminalApprovalCurrent.value?.approvalKind || "").trim() === "apply_patch_workspace_write",
-);
-
-const terminalApprovalCurrentDiffLineCount = computed(() =>
-  terminalApprovalCurrentPatchLines.value.reduce((count, rawLine) => {
-    const line = String(rawLine || "");
-    if (line.startsWith("+") && !line.startsWith("+++")) {
-      return count + 1;
-    }
-    if (line.startsWith("-") && !line.startsWith("---")) {
-      return count + 1;
-    }
-    return count;
-  }, 0),
-);
-
-const terminalApprovalShouldShowCodePreview = computed(() => {
-  if (terminalApprovalShowDiffOnly.value) {
-    return terminalApprovalCurrentDiffLineCount.value > 0;
-  }
-  return terminalApprovalPreviewLines.value.length > 0;
-});
-
-watch(
-  () => terminalApprovalCurrent.value?.requestId,
-  () => {
-    terminalApprovalCurrentPatchIndex.value = 0;
-  },
-);
-
-function clampTerminalApprovalPatchIndex() {
-  const total = terminalApprovalPatchBlocks.value.length;
-  if (total <= 1) {
-    terminalApprovalCurrentPatchIndex.value = 0;
-    return;
-  }
-  const maxIndex = total - 1;
-  if (terminalApprovalCurrentPatchIndex.value < 0) {
-    terminalApprovalCurrentPatchIndex.value = 0;
-    return;
-  }
-  if (terminalApprovalCurrentPatchIndex.value > maxIndex) {
-    terminalApprovalCurrentPatchIndex.value = maxIndex;
-  }
-}
-
-watch(terminalApprovalPatchBlocks, clampTerminalApprovalPatchIndex);
-
-function goToTerminalApprovalPatch(index: number) {
-  const maxIndex = Math.max(0, terminalApprovalPatchBlocks.value.length - 1);
-  const nextIndex = Math.min(maxIndex, Math.max(0, Math.floor(index)));
-  terminalApprovalCurrentPatchIndex.value = nextIndex;
-}
 
 function syncUserAliasFromPersona() {
   const next = (userPersona.value?.name || "").trim() || t("archives.roleUser");
@@ -2568,6 +1790,55 @@ const {
   forceCompactNow,
   loadAllMessages,
 } = chatRuntime;
+({
+  runtimeLogsDialogOpen,
+  runtimeLogs,
+  runtimeLogsLoading,
+  runtimeLogsError,
+  configSaveErrorDialogOpen,
+  configSaveErrorDialogTitle,
+  configSaveErrorDialogBody,
+  configSaveErrorDialogKind,
+  skillPlaceholderDialogOpen,
+  forceArchiveActionDialogOpen,
+  forceArchivePreviewLoading,
+  forceArchivePreview,
+  forceCompactionPreview,
+  rewindConfirmDialogOpen,
+  rewindConfirmCanUndoPatch,
+  openForceArchiveActionDialog,
+  closeForceArchiveActionDialog,
+  confirmForceCompactionAction,
+  confirmForceArchiveAction,
+  confirmDeleteConversationFromArchiveDialog,
+  openSkillPlaceholderDialog,
+  closeSkillPlaceholderDialog,
+  requestRecallMode,
+  confirmRewindWithPatch,
+  confirmRewindMessageOnly,
+  cancelRewindConfirm,
+  cancelPendingRewindConfirm,
+  refreshRuntimeLogs,
+  openRuntimeLogsDialog,
+  closeRuntimeLogsDialog,
+  clearRuntimeLogs,
+  closeConfigSaveErrorDialog,
+  openConfigSaveErrorDialog,
+} = useShellDialogFlows({
+  t: tr,
+  configTab,
+  allMessages,
+  tauriWindowLabel,
+  currentForegroundApiConfigId,
+  currentForegroundAgentId,
+  currentForegroundDepartmentId,
+  currentChatConversationId,
+  setStatus,
+  setStatusError,
+  forceCompactNow,
+  forceArchiveNow,
+  deleteUnarchivedConversationFromArchives,
+}));
 
 async function refreshChatUnarchivedConversations() {
   if (conversationForegroundSyncing.value) return;
@@ -3047,140 +2318,6 @@ async function renameCurrentConversation(payload: { conversationId: string; titl
   }
 }
 
-function closeForceArchiveActionDialog() {
-  forceArchiveActionDialogOpen.value = false;
-  forceArchivePreviewLoading.value = false;
-  forceArchivePreview.value = null;
-  forceCompactionPreview.value = null;
-}
-
-async function openForceArchiveActionDialog() {
-  const apiConfigId = String(currentForegroundApiConfigId.value || "").trim();
-  const agentId = String(currentForegroundAgentId.value || "").trim();
-  const departmentId = String(currentForegroundDepartmentId.value || "").trim();
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId || !apiConfigId || !agentId) {
-    setStatus("当前没有可处理的会话。");
-    return;
-  }
-  forceArchiveActionDialogOpen.value = true;
-  forceArchivePreviewLoading.value = true;
-  forceArchivePreview.value = null;
-  forceCompactionPreview.value = null;
-  try {
-    const [archivePreview, compactionPreview] = await Promise.all([
-      invokeTauri<ForceArchivePreviewResult>("preview_force_archive_current", {
-        input: {
-          apiConfigId,
-          agentId,
-          departmentId: departmentId || null,
-          conversationId,
-        },
-      }),
-      invokeTauri<ForceCompactionPreviewResult>("preview_force_compact_current", {
-        input: {
-          apiConfigId,
-          agentId,
-          departmentId: departmentId || null,
-          conversationId,
-        },
-      }),
-    ]);
-    forceArchivePreview.value = archivePreview;
-    forceCompactionPreview.value = compactionPreview;
-  } catch (error) {
-    closeForceArchiveActionDialog();
-    setStatusError("status.loadConversationActionPreviewFailed", error);
-  } finally {
-    forceArchivePreviewLoading.value = false;
-  }
-}
-
-async function confirmForceCompactionAction() {
-  if (!forceCompactionPreview.value?.canCompact) return;
-  closeForceArchiveActionDialog();
-  await forceCompactNow();
-}
-
-async function confirmForceArchiveAction() {
-  if (!forceArchivePreview.value?.canArchive) return;
-  closeForceArchiveActionDialog();
-  await forceArchiveNow();
-}
-
-type ConfirmPlanSessionContext = {
-  messageId: string;
-  apiConfigId: string;
-  agentId: string;
-  departmentId: string;
-  conversationId: string;
-};
-
-function currentConfirmPlanSessionContext(messageId: string): ConfirmPlanSessionContext {
-  return {
-    messageId: String(messageId || "").trim(),
-    apiConfigId: String(currentForegroundApiConfigId.value || "").trim(),
-    agentId: String(currentForegroundAgentId.value || "").trim(),
-    departmentId: String(currentForegroundDepartmentId.value || "").trim(),
-    conversationId: String(currentChatConversationId.value || "").trim(),
-  };
-}
-
-function isConfirmPlanSessionStillCurrent(session: ConfirmPlanSessionContext): boolean {
-  return (
-    session.conversationId === String(currentChatConversationId.value || "").trim()
-    && session.apiConfigId === String(currentForegroundApiConfigId.value || "").trim()
-    && session.agentId === String(currentForegroundAgentId.value || "").trim()
-    && session.departmentId === String(currentForegroundDepartmentId.value || "").trim()
-  );
-}
-
-async function handleConfirmPlan(payload: { messageId: string }) {
-  const session = currentConfirmPlanSessionContext(String(payload?.messageId || ""));
-  if (!session.messageId || !session.conversationId || chatting.value || forcingArchive.value) return;
-  const planModeDisabled = await setConversationPlanMode(session.conversationId, false);
-  if (!planModeDisabled) return;
-  if (!isConfirmPlanSessionStillCurrent(session)) return;
-
-  if (session.apiConfigId && session.agentId) {
-    try {
-      const preview = await invokeTauri<ForceCompactionPreviewResult>("preview_force_compact_current", {
-        input: {
-          apiConfigId: session.apiConfigId,
-          agentId: session.agentId,
-          departmentId: session.departmentId || null,
-          conversationId: session.conversationId,
-        },
-      });
-      if (!isConfirmPlanSessionStillCurrent(session)) return;
-      if (preview?.canCompact) {
-        await forceCompactNow();
-        if (!isConfirmPlanSessionStillCurrent(session)) return;
-      }
-    } catch (error) {
-      console.warn("[计划模式] 确认执行前压缩跳过", {
-        messageId: session.messageId,
-        error,
-      });
-    }
-  }
-
-  await nextTick();
-  if (!isConfirmPlanSessionStillCurrent(session)) return;
-  await chatFlow.sendChat({
-    text: "我同意，并执行计划。",
-    displayText: "我同意，并执行计划。",
-    skipInstructionPrompts: true,
-  });
-}
-
-async function confirmDeleteConversationFromArchiveDialog() {
-  const conversationId = String(currentChatConversationId.value || "").trim();
-  if (!conversationId) return;
-  closeForceArchiveActionDialog();
-  await deleteUnarchivedConversationFromArchives(conversationId);
-}
-
 const {
   addApiConfig,
   removeSelectedApiConfig,
@@ -3573,12 +2710,7 @@ onBeforeUnmount(() => {
   }
   window.removeEventListener("focus", handleWindowFocusForMicPrewarm);
   document.removeEventListener("visibilitychange", handleVisibilityForMicPrewarm);
-  if (rewindConfirmResolver) {
-    const resolver = rewindConfirmResolver;
-    rewindConfirmResolver = null;
-    resolver("cancel");
-  }
-  rewindConfirmDialogOpen.value = false;
+  cancelPendingRewindConfirm();
 });
 
 watch(
@@ -3599,9 +2731,7 @@ watch(
 watch(
   () => currentChatConversationId.value,
   () => {
-    supervisionTaskDialogOpen.value = false;
-    supervisionTaskError.value = "";
-    void refreshActiveSupervisionTask({ silent: true });
+    handleSupervisionConversationChanged();
   },
   { immediate: true },
 );
@@ -3665,176 +2795,6 @@ watch(
 
 function setUiLanguage(value: string) {
   if (!applyUiLanguage(value)) return;
-}
-
-function openSkillPlaceholderDialog() {
-  skillPlaceholderDialogOpen.value = true;
-}
-
-function closeSkillPlaceholderDialog() {
-  skillPlaceholderDialogOpen.value = false;
-}
-
-function isApplyPatchArgsUndoable(rawArgs: string): boolean {
-  const text = String(rawArgs || "").trim();
-  if (!text) return false;
-  if (text.startsWith("*** Begin Patch")) return true;
-  if (!text.startsWith("{")) return false;
-  try {
-    const parsed = JSON.parse(text) as { input?: unknown };
-    return typeof parsed.input === "string" && parsed.input.trim().startsWith("*** Begin Patch");
-  } catch {
-    return false;
-  }
-}
-
-function getUndoAvailabilityForTurn(turnId: string): { canUndo: boolean; hint: string } {
-  return inspectUndoablePatchCalls(allMessages.value || [], turnId, {
-    isApplyPatchArgsUndoable,
-  });
-}
-
-function requestRecallMode(payload: { turnId: string }): Promise<"with_patch" | "message_only" | "cancel"> {
-  const availability = getUndoAvailabilityForTurn(payload.turnId);
-  console.info("[会话撤回] 打开撤回弹窗", {
-    turnId: payload.turnId,
-    canUndoPatch: availability.canUndo,
-    hint: availability.hint || "",
-  });
-  rewindConfirmCanUndoPatch.value = availability.canUndo;
-  rewindConfirmUndoHint.value = availability.hint;
-  rewindConfirmDialogOpen.value = true;
-  return new Promise((resolve) => {
-    rewindConfirmResolver = resolve;
-  });
-}
-
-function resolveRewindConfirm(mode: "with_patch" | "message_only" | "cancel") {
-  console.info("[会话撤回] 弹窗确认", {
-    mode,
-    canUndoPatch: rewindConfirmCanUndoPatch.value,
-    dialogOpen: rewindConfirmDialogOpen.value,
-  });
-  const resolver = rewindConfirmResolver;
-  rewindConfirmResolver = null;
-  rewindConfirmDialogOpen.value = false;
-  rewindConfirmUndoHint.value = "";
-  if (resolver) {
-    resolver(mode);
-  }
-}
-
-function confirmRewindWithPatch() {
-  console.info("[会话撤回] 点击：撤回消息并撤回修改");
-  resolveRewindConfirm("with_patch");
-}
-
-function confirmRewindMessageOnly() {
-  console.info("[会话撤回] 点击：仅撤回消息");
-  resolveRewindConfirm("message_only");
-}
-
-function cancelRewindConfirm() {
-  console.info("[会话撤回] 点击：取消撤回");
-  resolveRewindConfirm("cancel");
-}
-
-function openConfigWindow() {
-  void invokeTauri("show_main_window");
-}
-
-async function refreshRuntimeLogs() {
-  runtimeLogsLoading.value = true;
-  runtimeLogsError.value = "";
-  try {
-    const items = await invokeTauri<RuntimeLogEntry[]>("list_recent_runtime_logs");
-    runtimeLogs.value = items;
-  } catch (error) {
-    runtimeLogsError.value = `加载运行日志失败：${String(error)}`;
-  } finally {
-    runtimeLogsLoading.value = false;
-  }
-}
-
-function openRuntimeLogsDialog() {
-  runtimeLogsDialogOpen.value = true;
-  void (async () => {
-    try {
-      await invokeTauri("append_runtime_log_probe", {
-        message: `日志窗口打开，window=${tauriWindowLabel.value}`,
-      });
-    } catch {
-      // ignore probe write failure, do not block log list refresh
-    }
-    await refreshRuntimeLogs();
-  })();
-}
-
-function closeRuntimeLogsDialog() {
-  runtimeLogsDialogOpen.value = false;
-}
-
-async function clearRuntimeLogs() {
-  runtimeLogsLoading.value = true;
-  runtimeLogsError.value = "";
-  try {
-    await invokeTauri("clear_recent_runtime_logs");
-    runtimeLogs.value = [];
-  } catch (error) {
-    runtimeLogsError.value = `清空运行日志失败：${String(error)}`;
-  } finally {
-    runtimeLogsLoading.value = false;
-  }
-}
-
-function summonChatWindowFromConfig() {
-  if (isChatTauriWindow.value) {
-    freezeForegroundConversation("before_manual_summon");
-  }
-  void invokeTauri("show_chat_window");
-}
-
-async function closeWindowAndClearForeground() {
-  if (isChatTauriWindow.value) {
-    freezeForegroundConversation("close_window");
-  }
-  await closeWindow();
-}
-
-async function minimizeWindowAndClearForeground() {
-  if (isChatTauriWindow.value) {
-    freezeForegroundConversation("minimize_window");
-  }
-  await minimizeWindow();
-}
-
-async function openGithubRepository() {
-  try {
-    const url = await invokeTauri<string>("get_project_repository_url");
-    void invokeTauri("open_external_url", { url });
-  } catch (error) {
-    console.warn("[关于] 获取项目仓库地址失败:", error);
-  }
-}
-
-function closeConfigSaveErrorDialog() {
-  configSaveErrorDialogOpen.value = false;
-}
-
-function openConfigSaveErrorDialog(info: ConfigSaveErrorInfo) {
-  configSaveErrorDialogTitle.value = t("status.saveConfigDialogTitle");
-  if (info.kind === "hotkey_conflict") {
-    configSaveErrorDialogKind.value = "warning";
-    configSaveErrorDialogBody.value = `${t("status.saveConfigHotkeyOccupied", { hotkey: info.hotkey })}\n${t("status.saveConfigDialogHint")}`;
-    configTab.value = "hotkey";
-  } else if (info.kind === "backend_404") {
-    configSaveErrorDialogKind.value = "error";
-    configSaveErrorDialogBody.value = t("status.saveConfigBackend404");
-  } else {
-    configSaveErrorDialogKind.value = "error";
-    configSaveErrorDialogBody.value = t("status.saveConfigFailed", { err: info.errorText });
-  }
-  configSaveErrorDialogOpen.value = true;
 }
 
 async function importPersonaMemories(payload: { agentId: string; file: File }) {
@@ -4032,6 +2992,18 @@ const chatFlow = useChatFlow({
       finalMessageCount: allMessages.value.length,
     });
   },
+});
+
+const { handleConfirmPlan } = useConfirmPlan({
+  currentApiConfigId: currentForegroundApiConfigId,
+  currentAgentId: currentForegroundAgentId,
+  currentDepartmentId: currentForegroundDepartmentId,
+  currentConversationId: currentChatConversationId,
+  chatting,
+  forcingArchive,
+  setConversationPlanMode,
+  forceCompactNow,
+  sendChat: chatFlow.sendChat,
 });
 
 watch(

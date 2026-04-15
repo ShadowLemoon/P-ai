@@ -1,5 +1,12 @@
 # 变更日志
 
+## 更新：UnifiedWindowApp 职责拆分
+
+- 重构（unified-window-app-splitting）：持续拆分 `UnifiedWindowApp.vue` 的壳层职责，把审批弹窗、弹窗宿主、计划模式、确认计划、督工任务、窗口动作、聊天工作区选择器与附件选择等外围编排逻辑迁移到独立 composable / 组件
+  - 新增 `ShellDialogsHost`、`TerminalApprovalDialog` 等壳层组件，统一承接更新提示、运行日志、撤回确认、归档预览、技能占位、强制归档与终端审批等弹窗
+  - 新增 `use-shell-dialog-flows`、`use-window-actions`、`use-conversation-plan-mode`、`use-confirm-plan`、`use-supervision-task`、`use-chat-workspace-picker-flow`、`use-chat-attachment-picker-flow` 等 composable，收口原本堆叠在根组件中的非核心 UI / 流程逻辑
+  - `UnifiedWindowApp.vue` 继续保留聊天总控与跨域编排角色，但已显著减轻模板噪音与外围状态负担，为后续按“聊天同步总控域”继续细拆铺路
+
 ## 更新：终端与补丁审批链路重构
 
 - 重构（terminal-approval-and-apply-patch-review）：重做终端命令与 `apply_patch` 的审批链路、风险展示与补丁预览，收口为“先预检，再审批，再执行”的一致模型

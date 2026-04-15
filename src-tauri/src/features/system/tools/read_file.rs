@@ -480,9 +480,13 @@ async fn read_image_via_vision(
             .conversation_lock
             .lock()
             .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-        let data = state_read_app_data_cached(state)?;
+        let runtime = state_read_runtime_state_cached(state)?;
         drop(guard);
-        find_image_text_cache(&data, &hash, &vision_api.id)
+        runtime
+            .image_text_cache
+            .iter()
+            .find(|entry| entry.hash == hash && entry.vision_api_id == vision_api.id)
+            .map(|entry| entry.text.clone())
     };
     let described = if let Some(text) = cached {
         text
@@ -498,9 +502,33 @@ async fn read_image_via_vision(
             .conversation_lock
             .lock()
             .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-        let mut data = state_read_app_data_cached(state)?;
-        upsert_image_text_cache(&mut data, &hash, &vision_api.id, &converted);
-        state_write_app_data_cached(state, &data)?;
+        let mut runtime = state_read_runtime_state_cached(state)?;
+        if let Some(entry) = runtime
+            .image_text_cache
+            .iter_mut()
+            .find(|entry| entry.hash == hash && entry.vision_api_id == vision_api.id)
+        {
+            entry.text = converted.clone();
+            entry.updated_at = now_iso();
+        } else {
+            runtime.image_text_cache.push(ImageTextCacheEntry {
+                hash: hash.clone(),
+                vision_api_id: vision_api.id.clone(),
+                text: converted.clone(),
+                updated_at: now_iso(),
+            });
+            if runtime.image_text_cache.len() > MAX_IMAGE_TEXT_CACHE_ENTRIES {
+                if let Some((oldest_idx, _)) = runtime
+                    .image_text_cache
+                    .iter()
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| a.updated_at.cmp(&b.updated_at))
+                {
+                    runtime.image_text_cache.remove(oldest_idx);
+                }
+            }
+        }
+        state_write_runtime_state_cached(state, &runtime)?;
         drop(guard);
         converted
     };
@@ -804,8 +832,16 @@ fn test_read_file_state() -> AppState {
             memory_lock: Arc::new(Mutex::new(())),
             cached_config: Arc::new(Mutex::new(None)),
             cached_config_mtime: Arc::new(Mutex::new(None)),
+            cached_agents: Arc::new(Mutex::new(None)),
+            cached_agents_mtime: Arc::new(Mutex::new(None)),
+            cached_runtime_state: Arc::new(Mutex::new(None)),
+            cached_runtime_state_mtime: Arc::new(Mutex::new(None)),
+            cached_chat_index: Arc::new(Mutex::new(None)),
+            cached_chat_index_mtime: Arc::new(Mutex::new(None)),
+            cached_conversations: Arc::new(Mutex::new(std::collections::HashMap::new())),
+            cached_conversation_mtimes: Arc::new(Mutex::new(std::collections::HashMap::new())),
             cached_app_data: Arc::new(Mutex::new(None)),
-            cached_app_data_mtime: Arc::new(Mutex::new(None)),
+            cached_app_data_signature: Arc::new(Mutex::new(None)),
             cached_app_data_dirty: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             app_data_persist_pending: Arc::new(Mutex::new(None)),
             app_data_persist_notify: Arc::new(tokio::sync::Notify::new()),
@@ -1058,4 +1094,3 @@ fn build_pdf_image_read_result_should_paginate_by_page_offset() {
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0].get("pageIndex").and_then(Value::as_u64), Some(1));
 }
-

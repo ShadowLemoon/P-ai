@@ -663,3 +663,288 @@ maxOutputTokens = 8192
         assert_eq!(second_sent, "key-2".to_string());
         assert_eq!(third_sent, "key-1".to_string());
     }
+
+    #[test]
+    fn write_app_data_should_only_flush_changed_shards() {
+        let root = std::env::temp_dir().join(format!("eca-app-data-layout-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("config")).expect("create temp config dir");
+        let data_path = root.join("config").join("app_data.json");
+
+        let mut data = AppData::default();
+        data.conversations = vec![
+            build_test_conversation("conv-a", "Conversation A"),
+            build_test_conversation("conv-b", "Conversation B"),
+        ];
+
+        let first = write_app_data_with_stats(&data_path, &data).expect("write first layout");
+        assert!(first.agents_written);
+        assert!(first.runtime_written);
+        assert!(first.chat_index_written);
+        assert_eq!(first.conversation_writes, 2);
+        assert_eq!(first.conversation_deletes, 0);
+
+        let second = write_app_data_with_stats(&data_path, &data).expect("write same layout");
+        assert!(!second.agents_written);
+        assert!(!second.runtime_written);
+        assert!(!second.chat_index_written);
+        assert_eq!(second.conversation_writes, 0);
+        assert_eq!(second.conversation_deletes, 0);
+
+        let mut runtime_only = data.clone();
+        runtime_only.assistant_department_agent_id = "agent-runtime-only".to_string();
+        let runtime_stats =
+            write_app_data_with_stats(&data_path, &runtime_only).expect("write runtime-only diff");
+        assert!(!runtime_stats.agents_written);
+        assert!(runtime_stats.runtime_written);
+        assert!(!runtime_stats.chat_index_written);
+        assert_eq!(runtime_stats.conversation_writes, 0);
+        assert_eq!(runtime_stats.conversation_deletes, 0);
+    }
+
+    #[test]
+    fn write_agents_and_runtime_shards_should_not_touch_other_files() {
+        let root = std::env::temp_dir().join(format!("eca-app-data-shards-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("config")).expect("create temp config dir");
+        let data_path = root.join("config").join("app_data.json");
+
+        let mut data = AppData::default();
+        data.assistant_department_agent_id = "assistant-before".to_string();
+        data.conversations = vec![build_test_conversation("conv-a", "Conversation A")];
+        write_app_data_with_stats(&data_path, &data).expect("seed layout");
+
+        let agents_path = app_layout_agents_path(&data_path);
+        let runtime_path = app_layout_runtime_state_path(&data_path);
+        let conversation_path = app_layout_chat_conversation_path(&data_path, "conv-a");
+
+        let runtime_before = std::fs::read(&runtime_path).expect("read runtime before");
+        let conversation_before =
+            std::fs::read(&conversation_path).expect("read conversation before");
+
+        let mut agents = data.agents.clone();
+        agents.push(AgentProfile {
+            id: "agent-added".to_string(),
+            name: "Agent Added".to_string(),
+            system_prompt: "test".to_string(),
+            tools: default_agent_tools(),
+            created_at: "2026-04-15T00:00:00Z".to_string(),
+            updated_at: "2026-04-15T00:00:00Z".to_string(),
+            avatar_path: None,
+            avatar_updated_at: None,
+            is_built_in_user: false,
+            is_built_in_system: false,
+            private_memory_enabled: false,
+            source: default_main_source(),
+            scope: default_global_scope(),
+        });
+        assert!(write_agents_shard(&data_path, &agents).expect("write agents shard"));
+        assert_eq!(std::fs::read(&runtime_path).expect("read runtime after agents"), runtime_before);
+        assert_eq!(
+            std::fs::read(&conversation_path).expect("read conversation after agents"),
+            conversation_before
+        );
+
+        let mut runtime = read_runtime_state_shard(&data_path).expect("read runtime shard");
+        runtime.assistant_department_agent_id = "assistant-after".to_string();
+        assert!(write_runtime_state_shard(&data_path, &runtime).expect("write runtime shard"));
+        assert_ne!(
+            std::fs::read(&runtime_path).expect("read runtime after runtime write"),
+            runtime_before
+        );
+        assert_eq!(
+            std::fs::read(&conversation_path).expect("read conversation after runtime"),
+            conversation_before
+        );
+        assert!(!std::fs::read(&agents_path).expect("read agents after runtime").is_empty());
+    }
+
+    #[test]
+    fn write_conversation_shard_should_only_touch_target_conversation_file() {
+        let root = std::env::temp_dir().join(format!("eca-conversation-shard-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("config")).expect("create temp config dir");
+        let data_path = root.join("config").join("app_data.json");
+
+        let mut data = AppData::default();
+        data.conversations = vec![
+            build_test_conversation("conv-a", "Conversation A"),
+            build_test_conversation("conv-b", "Conversation B"),
+        ];
+        write_app_data_with_stats(&data_path, &data).expect("seed layout");
+
+        let conversation_a_path = app_layout_chat_conversation_path(&data_path, "conv-a");
+        let conversation_b_path = app_layout_chat_conversation_path(&data_path, "conv-b");
+        let conversation_a_before =
+            std::fs::read(&conversation_a_path).expect("read conversation a before");
+        let conversation_b_before =
+            std::fs::read(&conversation_b_path).expect("read conversation b before");
+
+        let mut conversation_a = read_conversation_shard(&data_path, "conv-a").expect("read conversation a");
+        conversation_a.title = "Conversation A Updated".to_string();
+        assert!(write_conversation_shard(&data_path, &conversation_a).expect("write conversation a"));
+
+        assert_ne!(
+            std::fs::read(&conversation_a_path).expect("read conversation a after"),
+            conversation_a_before
+        );
+        assert_eq!(
+            std::fs::read(&conversation_b_path).expect("read conversation b after"),
+            conversation_b_before
+        );
+    }
+
+    #[test]
+    fn write_chat_index_shard_should_not_touch_conversation_files() {
+        let root = std::env::temp_dir().join(format!("eca-chat-index-shard-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("config")).expect("create temp config dir");
+        let data_path = root.join("config").join("app_data.json");
+
+        let mut data = AppData::default();
+        data.conversations = vec![
+            build_test_conversation("conv-a", "Conversation A"),
+            build_test_conversation("conv-b", "Conversation B"),
+        ];
+        write_app_data_with_stats(&data_path, &data).expect("seed layout");
+
+        let chat_index_path = app_layout_chat_index_path(&data_path);
+        let conversation_a_path = app_layout_chat_conversation_path(&data_path, "conv-a");
+        let conversation_b_path = app_layout_chat_conversation_path(&data_path, "conv-b");
+        let conversation_a_before =
+            std::fs::read(&conversation_a_path).expect("read conversation a before");
+        let conversation_b_before =
+            std::fs::read(&conversation_b_path).expect("read conversation b before");
+        let chat_index_before = std::fs::read(&chat_index_path).expect("read chat index before");
+
+        let mut index = read_chat_index_shard(&data_path).expect("read chat index shard");
+        index.conversations.reverse();
+        assert!(write_chat_index_shard(&data_path, &index).expect("write chat index shard"));
+
+        assert_ne!(
+            std::fs::read(&chat_index_path).expect("read chat index after"),
+            chat_index_before
+        );
+        assert_eq!(
+            std::fs::read(&conversation_a_path).expect("read conversation a after"),
+            conversation_a_before
+        );
+        assert_eq!(
+            std::fs::read(&conversation_b_path).expect("read conversation b after"),
+            conversation_b_before
+        );
+    }
+
+    #[test]
+    fn upsert_chat_index_conversation_should_replace_existing_item_without_duplicates() {
+        let mut conversation_a = build_test_conversation("conv-a", "Conversation A");
+        let conversation_b = build_test_conversation("conv-b", "Conversation B");
+        let mut index = build_chat_index_file(&[conversation_a.clone(), conversation_b.clone()]);
+
+        conversation_a.updated_at = "2026-04-15T12:34:56Z".to_string();
+        conversation_a.status = "archived".to_string();
+        conversation_a.summary = "updated summary".to_string();
+        conversation_a.archived_at = Some("2026-04-15T12:34:56Z".to_string());
+
+        upsert_chat_index_conversation(&mut index, &conversation_a);
+
+        assert_eq!(index.conversations.len(), 2);
+        let updated = index
+            .conversations
+            .iter()
+            .find(|item| item.id == "conv-a")
+            .expect("find updated chat index item");
+        assert_eq!(updated.updated_at, "2026-04-15T12:34:56Z");
+        assert_eq!(updated.status, "archived");
+        assert_eq!(updated.summary, "updated summary");
+        assert_eq!(
+            updated.archived_at.as_deref(),
+            Some("2026-04-15T12:34:56Z")
+        );
+    }
+
+    #[test]
+    fn runtime_state_shard_should_preserve_pdf_caches() {
+        let root = std::env::temp_dir().join(format!("eca-runtime-pdf-cache-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(root.join("config")).expect("create temp config dir");
+        let data_path = root.join("config").join("app_data.json");
+
+        let mut data = AppData::default();
+        data.pdf_text_cache.push(PdfTextCacheEntry {
+            file_hash: "file-hash-a".to_string(),
+            file_path: "C:/tmp/a.pdf".to_string(),
+            file_name: "a.pdf".to_string(),
+            extracted_text: "pdf text".to_string(),
+            total_pages: 8,
+            extracted_pages: 3,
+            is_truncated: true,
+            conversation_ids: vec!["conv-a".to_string()],
+            created_at: "2026-04-15T00:00:00Z".to_string(),
+            updated_at: "2026-04-15T00:00:00Z".to_string(),
+        });
+        data.pdf_image_cache.push(PdfImageCacheEntry {
+            file_hash: "file-hash-b".to_string(),
+            file_path: "C:/tmp/b.pdf".to_string(),
+            file_name: "b.pdf".to_string(),
+            total_pages: 4,
+            rendered_pages: 2,
+            dpi: 144,
+            images: vec![PdfRenderedImage {
+                page_index: 0,
+                width: 100,
+                height: 200,
+                bytes_base64: "Zm9v".to_string(),
+                mime: "image/png".to_string(),
+            }],
+            conversation_ids: vec!["conv-b".to_string()],
+            created_at: "2026-04-15T00:00:00Z".to_string(),
+            updated_at: "2026-04-15T00:00:00Z".to_string(),
+        });
+
+        let runtime = build_runtime_state_file(&data);
+        assert!(write_runtime_state_shard(&data_path, &runtime).expect("write runtime shard"));
+
+        let restored = read_runtime_state_shard(&data_path).expect("read runtime shard");
+        assert_eq!(restored.pdf_text_cache.len(), 1);
+        assert_eq!(restored.pdf_text_cache[0].file_name, "a.pdf");
+        assert_eq!(restored.pdf_image_cache.len(), 1);
+        assert_eq!(restored.pdf_image_cache[0].file_name, "b.pdf");
+        assert_eq!(restored.pdf_image_cache[0].images.len(), 1);
+    }
+
+    fn build_test_conversation(id: &str, title: &str) -> Conversation {
+        Conversation {
+            id: id.to_string(),
+            title: title.to_string(),
+            agent_id: DEFAULT_AGENT_ID.to_string(),
+            department_id: ASSISTANT_DEPARTMENT_ID.to_string(),
+            last_read_message_id: String::new(),
+            conversation_kind: "chat".to_string(),
+            root_conversation_id: None,
+            delegate_id: None,
+            created_at: "2026-04-15T00:00:00Z".to_string(),
+            updated_at: "2026-04-15T00:00:00Z".to_string(),
+            last_user_at: None,
+            last_assistant_at: None,
+            last_context_usage_ratio: 0.0,
+            last_effective_prompt_tokens: 0,
+            status: "active".to_string(),
+            summary: String::new(),
+            user_profile_snapshot: String::new(),
+            shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
+            archived_at: None,
+            messages: vec![ChatMessage {
+                id: format!("{id}-message-1"),
+                role: "user".to_string(),
+                created_at: "2026-04-15T00:00:00Z".to_string(),
+                speaker_agent_id: None,
+                parts: vec![MessagePart::Text {
+                    text: "hello".to_string(),
+                }],
+                extra_text_blocks: Vec::new(),
+                provider_meta: None,
+                tool_call: None,
+                mcp_call: None,
+            }],
+            current_todos: Vec::new(),
+            memory_recall_table: Vec::new(),
+            plan_mode_enabled: false,
+        }
+    }

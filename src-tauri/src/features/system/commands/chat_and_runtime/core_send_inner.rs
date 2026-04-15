@@ -114,6 +114,54 @@ fn append_user_message_to_conversation(
     conversation
 }
 
+fn find_runtime_image_text_cache(
+    runtime: &RuntimeStateFile,
+    hash: &str,
+    vision_api_id: &str,
+) -> Option<String> {
+    runtime
+        .image_text_cache
+        .iter()
+        .find(|entry| entry.hash == hash && entry.vision_api_id == vision_api_id)
+        .map(|entry| entry.text.clone())
+}
+
+fn upsert_runtime_image_text_cache(
+    runtime: &mut RuntimeStateFile,
+    hash: &str,
+    vision_api_id: &str,
+    text: &str,
+) {
+    if let Some(entry) = runtime
+        .image_text_cache
+        .iter_mut()
+        .find(|entry| entry.hash == hash && entry.vision_api_id == vision_api_id)
+    {
+        entry.text = text.to_string();
+        entry.updated_at = now_iso();
+        return;
+    }
+
+    runtime.image_text_cache.push(ImageTextCacheEntry {
+        hash: hash.to_string(),
+        vision_api_id: vision_api_id.to_string(),
+        text: text.to_string(),
+        updated_at: now_iso(),
+    });
+    if runtime.image_text_cache.len() <= MAX_IMAGE_TEXT_CACHE_ENTRIES {
+        return;
+    }
+    let Some((oldest_idx, _)) = runtime
+        .image_text_cache
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.updated_at.cmp(&b.updated_at))
+    else {
+        return;
+    };
+    runtime.image_text_cache.remove(oldest_idx);
+}
+
 fn plan_mode_prompt_block() -> &'static str {
     "<plan mode>\n先不要直接开始实现。\n先理解用户目标，调查当前上下文或代码，并主动消除会明显改变计划骨架的关键疑问。\n当目标明确、约束明确、现状已调查充分，并且关键疑问已消除后，再调用 plan 工具的 present 动作呈现计划。\n在我明确确认之前，严禁直接修改代码或开始实施。\n</plan mode>"
 }
@@ -322,9 +370,9 @@ async fn resolve_image_description_with_vision_fallback(
 
     {
         let _guard = lock_conversation_with_metrics(state, "image_text_cache_write")?;
-        let mut data = state_read_app_data_cached(state)?;
-        upsert_image_text_cache(&mut data, &hash, &vision_api.id, &trimmed);
-        let _ = state_schedule_app_data_persist(state, &data)?;
+        let mut runtime = state_read_runtime_state_cached(state)?;
+        upsert_runtime_image_text_cache(&mut runtime, &hash, &vision_api.id, &trimmed);
+        state_write_runtime_state_cached(state, &runtime)?;
     }
 
     Ok(Some(trimmed))
@@ -555,7 +603,6 @@ fn update_remote_im_reply_decision_for_message(
         state,
         "update_remote_im_reply_decision_for_message",
     )?;
-    let mut data = state_read_app_data_cached(state)?;
 
     let update_message = |message: &mut ChatMessage| {
         let mut meta = message
@@ -588,21 +635,23 @@ fn update_remote_im_reply_decision_for_message(
         message.provider_meta = Some(meta);
     };
 
-    if let Some(conversation) = data
-        .conversations
-        .iter_mut()
-        .find(|item| item.id == conversation_id && item.summary.trim().is_empty())
-    {
-        if let Some(message) = conversation.messages.iter_mut().rev().find(|message| {
-            message.role.trim() == "assistant"
-                && assistant_message_id
-                    .map(|target_id| message.id == target_id)
-                    .unwrap_or(true)
-        }) {
-            update_message(message);
-            let _ = state_schedule_app_data_persist(state, &data)?;
-            return Ok(());
+    match state_read_conversation_cached(state, conversation_id) {
+        Ok(mut conversation) => {
+            if conversation.summary.trim().is_empty() {
+                if let Some(message) = conversation.messages.iter_mut().rev().find(|message| {
+                    message.role.trim() == "assistant"
+                        && assistant_message_id
+                            .map(|target_id| message.id == target_id)
+                            .unwrap_or(true)
+                }) {
+                    update_message(message);
+                    state_write_conversation_with_chat_index_cached(state, &conversation)?;
+                    return Ok(());
+                }
+            }
         }
+        Err(err) if !err.contains("not found") => return Err(err),
+        Err(_) => {}
     }
 
     if let Some(mut conversation) = delegate_runtime_thread_conversation_get(state, conversation_id)? {
@@ -1541,14 +1590,19 @@ async fn send_chat_message_inner(
 
                     let _guard =
                         lock_conversation_with_metrics(&state, "image_text_cache_write")?;
-                    let mut data = state_read_app_data_cached(&state)?;
+                    let mut runtime = state_read_runtime_state_cached(&state)?;
                     let mapped = if let Some(existing) =
-                        find_image_text_cache(&data, &hash, &vision_api.id)
+                        find_runtime_image_text_cache(&runtime, &hash, &vision_api.id)
                     {
                         format!("[图片{}]\n{}", idx + 1, existing)
                     } else {
-                        upsert_image_text_cache(&mut data, &hash, &vision_api.id, &converted);
-                        let _ = state_schedule_app_data_persist(&state, &data)?;
+                        upsert_runtime_image_text_cache(
+                            &mut runtime,
+                            &hash,
+                            &vision_api.id,
+                            &converted,
+                        );
+                        state_write_runtime_state_cached(&state, &runtime)?;
                         format!("[图片{}]\n{}", idx + 1, converted)
                     };
                     converted_texts.push(mapped);
@@ -1788,32 +1842,29 @@ async fn send_chat_message_inner(
                 log_run_stage("prepare_context.user_message_committed");
                 updated_conversation
             } else {
-                let updated_data = {
+                let updated_conversation = {
                     let _guard = lock_conversation_with_metrics(
                         &state,
                         "prepare_context_commit_user_message",
                     )?;
-                    let mut data = state_read_app_data_cached(&state)?;
-                    let actual_idx = data
-                        .conversations
-                        .iter()
-                        .position(|item| {
-                            item.id == updated_conversation.id
-                                && item.summary.trim().is_empty()
-                        })
-                        .ok_or_else(|| {
-                            format!("指定会话不存在或不可用：{}", updated_conversation.id)
-                        })?;
-                    data.conversations[actual_idx] = updated_conversation.clone();
-                    for memory_id in &recall_payload.raw_ids {
-                        data.conversations[actual_idx]
-                            .memory_recall_table
-                            .push(memory_id.clone());
+                    let mut conversation = state_read_conversation_cached(
+                        &state,
+                        &updated_conversation.id,
+                    )?;
+                    if !conversation.summary.trim().is_empty() {
+                        return Err(format!(
+                            "指定会话不存在或不可用：{}",
+                            updated_conversation.id
+                        ));
                     }
-                    data
+                    conversation = updated_conversation.clone();
+                    for memory_id in &recall_payload.raw_ids {
+                        conversation.memory_recall_table.push(memory_id.clone());
+                    }
+                    state_write_conversation_with_chat_index_cached(&state, &conversation)?;
+                    conversation
                 };
                 log_run_stage("prepare_context.user_message_committed");
-                let _ = state_schedule_app_data_persist(&state, &updated_data)?;
                 log_run_stage("prepare_context.state_persist_scheduled");
                 updated_conversation
             }
@@ -2411,78 +2462,78 @@ async fn send_chat_message_inner(
     log_run_stage("model_reply_ready");
 
     let mut persisted_assistant_message: Option<ChatMessage> = None;
-    let mut app_data_for_persist: Option<AppData> = None;
     {
         let _guard =
             lock_conversation_with_metrics(&state, "assistant_message_commit")?;
 
-        let mut data = state_read_app_data_cached(&state)?;
-        if let Some(conversation) = data
-            .conversations
-            .iter_mut()
-            .find(|c| c.id == conversation_id && c.summary.trim().is_empty())
-        {
-            let now = now_iso();
-            if !suppress_assistant_message {
-                let assistant_message = ChatMessage {
-                    id: Uuid::new_v4().to_string(),
-                    role: "assistant".to_string(),
-                    created_at: now.clone(),
-                    speaker_agent_id: Some(effective_agent_id.clone()),
-                    parts: vec![MessagePart::Text {
-                        text: assistant_text_for_storage.clone(),
-                    }],
-                    extra_text_blocks: Vec::new(),
-                    provider_meta: provider_meta.clone(),
-                    tool_call: if tool_history_events.is_empty() {
-                        None
-                    } else {
-                        Some(tool_history_events.clone())
-                    },
-                    mcp_call: None,
-                };
-                conversation.messages.push(assistant_message.clone());
-                persisted_assistant_message = Some(assistant_message);
-                conversation.updated_at = now.clone();
-                conversation.last_assistant_at = Some(now);
+        match state_read_conversation_cached(&state, &conversation_id) {
+            Ok(mut conversation) => {
+                if !conversation.summary.trim().is_empty() {
+                    return Err(format!("指定会话不存在或不可用：{}", conversation_id));
+                }
+                let now = now_iso();
+                if !suppress_assistant_message {
+                    let assistant_message = ChatMessage {
+                        id: Uuid::new_v4().to_string(),
+                        role: "assistant".to_string(),
+                        created_at: now.clone(),
+                        speaker_agent_id: Some(effective_agent_id.clone()),
+                        parts: vec![MessagePart::Text {
+                            text: assistant_text_for_storage.clone(),
+                        }],
+                        extra_text_blocks: Vec::new(),
+                        provider_meta: provider_meta.clone(),
+                        tool_call: if tool_history_events.is_empty() {
+                            None
+                        } else {
+                            Some(tool_history_events.clone())
+                        },
+                        mcp_call: None,
+                    };
+                    conversation.messages.push(assistant_message.clone());
+                    persisted_assistant_message = Some(assistant_message);
+                    conversation.updated_at = now.clone();
+                    conversation.last_assistant_at = Some(now);
+                }
+                conversation.last_effective_prompt_tokens = effective_prompt_tokens;
+                conversation.last_context_usage_ratio = context_usage_ratio;
+                state_write_conversation_with_chat_index_cached(&state, &conversation)?;
             }
-            conversation.last_effective_prompt_tokens = effective_prompt_tokens;
-            conversation.last_context_usage_ratio = context_usage_ratio;
-            app_data_for_persist = Some(data);
-        } else if let Some(mut conversation) =
-            delegate_runtime_thread_conversation_get(&state, &conversation_id)?
-        {
-            let now = now_iso();
-            if !suppress_assistant_message {
-                let assistant_message = ChatMessage {
-                    id: Uuid::new_v4().to_string(),
-                    role: "assistant".to_string(),
-                    created_at: now.clone(),
-                    speaker_agent_id: Some(effective_agent_id.clone()),
-                    parts: vec![MessagePart::Text {
-                        text: assistant_text_for_storage.clone(),
-                    }],
-                    extra_text_blocks: Vec::new(),
-                    provider_meta: provider_meta.clone(),
-                    tool_call: if tool_history_events.is_empty() {
-                        None
-                    } else {
-                        Some(tool_history_events.clone())
-                    },
-                    mcp_call: None,
-                };
-                conversation.messages.push(assistant_message.clone());
-                persisted_assistant_message = Some(assistant_message);
-                conversation.updated_at = now.clone();
-                conversation.last_assistant_at = Some(now);
+            Err(err) if !err.contains("not found") => return Err(err),
+            Err(_) => {
+                if let Some(mut conversation) =
+                    delegate_runtime_thread_conversation_get(&state, &conversation_id)?
+                {
+                    let now = now_iso();
+                    if !suppress_assistant_message {
+                        let assistant_message = ChatMessage {
+                            id: Uuid::new_v4().to_string(),
+                            role: "assistant".to_string(),
+                            created_at: now.clone(),
+                            speaker_agent_id: Some(effective_agent_id.clone()),
+                            parts: vec![MessagePart::Text {
+                                text: assistant_text_for_storage.clone(),
+                            }],
+                            extra_text_blocks: Vec::new(),
+                            provider_meta: provider_meta.clone(),
+                            tool_call: if tool_history_events.is_empty() {
+                                None
+                            } else {
+                                Some(tool_history_events.clone())
+                            },
+                            mcp_call: None,
+                        };
+                        conversation.messages.push(assistant_message.clone());
+                        persisted_assistant_message = Some(assistant_message);
+                        conversation.updated_at = now.clone();
+                        conversation.last_assistant_at = Some(now);
+                    }
+                    conversation.last_effective_prompt_tokens = effective_prompt_tokens;
+                    conversation.last_context_usage_ratio = context_usage_ratio;
+                    delegate_runtime_thread_conversation_update(&state, &conversation_id, conversation)?;
+                }
             }
-            conversation.last_effective_prompt_tokens = effective_prompt_tokens;
-            conversation.last_context_usage_ratio = context_usage_ratio;
-            delegate_runtime_thread_conversation_update(&state, &conversation_id, conversation)?;
         }
-    }
-    if let Some(data) = app_data_for_persist.as_ref() {
-        let _ = state_schedule_app_data_persist(&state, data)?;
     }
     log_run_stage("assistant_message_persist_scheduled");
 

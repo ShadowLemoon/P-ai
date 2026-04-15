@@ -331,11 +331,11 @@ pub(crate) fn cleanup_pdf_cache_for_conversation(
     conversation_id: &str,
 ) -> Result<(), String> {
     cleanup_pdf_session_memory_cache_for_conversation(conversation_id);
-    let mut data = state_read_app_data_cached(state)?;
-    let original_text_len = data.pdf_text_cache.len();
-    let original_image_len = data.pdf_image_cache.len();
+    let mut runtime = state_read_runtime_state_cached(state)?;
+    let original_text_len = runtime.pdf_text_cache.len();
+    let original_image_len = runtime.pdf_image_cache.len();
 
-    data.pdf_text_cache.retain_mut(|entry| {
+    runtime.pdf_text_cache.retain_mut(|entry| {
         entry.conversation_ids.retain(|id| id != conversation_id);
         if entry.conversation_ids.is_empty() {
             eprintln!("[PDF缓存清理] 删除文本缓存条目 file={}, hash={}", entry.file_name, entry.file_hash);
@@ -346,7 +346,7 @@ pub(crate) fn cleanup_pdf_cache_for_conversation(
         }
     });
 
-    data.pdf_image_cache.retain_mut(|entry| {
+    runtime.pdf_image_cache.retain_mut(|entry| {
         entry.conversation_ids.retain(|id| id != conversation_id);
         if entry.conversation_ids.is_empty() {
             eprintln!("[PDF缓存清理] 删除图片缓存条目 file={}, hash={}", entry.file_name, entry.file_hash);
@@ -357,8 +357,8 @@ pub(crate) fn cleanup_pdf_cache_for_conversation(
         }
     });
 
-    let removed_text = original_text_len - data.pdf_text_cache.len();
-    let removed_image = original_image_len - data.pdf_image_cache.len();
+    let removed_text = original_text_len - runtime.pdf_text_cache.len();
+    let removed_image = original_image_len - runtime.pdf_image_cache.len();
     if removed_text > 0 || removed_image > 0 {
         eprintln!(
             "[PDF缓存清理] 完成 conversation_id={}, removed_text={}, removed_image={}",
@@ -366,6 +366,6 @@ pub(crate) fn cleanup_pdf_cache_for_conversation(
         );
     }
 
-    state_write_app_data_cached(state, &data)?;
+    state_write_runtime_state_cached(state, &runtime)?;
     Ok(())
 }

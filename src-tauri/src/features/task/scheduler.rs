@@ -117,6 +117,7 @@ fn task_resolve_dispatch_session(
     let selected_api = resolve_selected_api_config(&app_config, None)
         .ok_or_else(|| "No API config configured for task dispatch.".to_string())?;
     let mut data = state_read_app_data_cached(state)?;
+    let data_before = data.clone();
     let mut changed = false;
     let before_conversation_count = data.conversations.len();
     let agent_id = if data
@@ -149,7 +150,7 @@ fn task_resolve_dispatch_session(
         .map(|item| item.id.clone())
         .unwrap_or_else(|| ASSISTANT_DEPARTMENT_ID.to_string());
     if changed {
-        state_write_app_data_cached(state, &data)?;
+        persist_app_data_conversation_runtime_delta(state, &data_before, &data)?;
     }
     drop(guard);
     let Some(resolved) = resolved else {

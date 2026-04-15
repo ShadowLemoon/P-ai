@@ -468,6 +468,7 @@ fn delete_archive(archive_id: String, state: State<'_, AppState>) -> Result<(), 
         .map_err(|err| named_lock_error("conversation_lock", file!(), line!(), module_path!(), &err))?;
 
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let before = data.conversations.len();
     data.conversations
         .retain(|c| !(c.id == archive_id && !c.summary.trim().is_empty()));
@@ -477,7 +478,7 @@ fn delete_archive(archive_id: String, state: State<'_, AppState>) -> Result<(), 
         return Err("Archive not found".to_string());
     }
 
-    state_write_app_data_cached(&state, &data)?;
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
     Ok(())
 }

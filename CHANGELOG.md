@@ -1,5 +1,14 @@
 # 变更日志
 
+## 更新：存储层分片读写重构与兼容层收口
+
+- 重构（storage-shard-write-refactor）：保留现有 `config/state/chat/conversations` 文件结构，仅重写 `app_data` 服务层边界，把热路径从整份 `AppData` 读改写切到分片读写、分片缓存与分片持久化
+  - 新增 `agents`、`runtime_state`、`chat/index`、`conversation:<id>` 分片级读写与缓存同步能力，常见配置、人格、单会话更新、会话创建删除、聊天消息追加、Remote IM 与归档链路不再默认走整份状态写回
+  - `write_app_data()` 保留为兼容聚合入口，但补充 deprecated 标注、兼容层文档与结构化诊断日志；生产热路径已收口到分片 API，测试专用全量 state helper 也已显式隔离
+  - 修复 `runtime_state` 分片遗漏的 `image_text_cache`、`pdf_text_cache`、`pdf_image_cache` 等缓存字段，统一图片转文与 PDF 缓存读写口径，避免读写分裂与缓存丢失
+  - 补齐缓存命中条件、poisoned lock 错误处理、会话读取失败日志和 chat index 去重/差量写入逻辑，防止 `None == None` 假命中与静默吞错
+  - 新增静态守卫工作流，阻止新增 `write_app_data()` 业务调用点，并补充分片写入、chat index、PDF 缓存等回归测试
+
 ## 发布：v0.9.8
 
 - 发布（release-0.9.8）：同步版本号，并纳入本轮聊天输入区模型切换与部门首位模型即时同步修复

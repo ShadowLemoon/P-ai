@@ -311,8 +311,9 @@ fn sync_weixin_oc_contact_from_user_id(
         .lock()
         .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
     let mut data = state_read_app_data_cached(state)?;
+    let data_before = data.clone();
     let result = upsert_weixin_oc_contact(&mut data, channel, normalized_user_id);
-    state_write_app_data_cached(state, &data)?;
+    persist_app_data_conversation_runtime_delta(state, &data_before, &data)?;
     drop(guard);
     Ok(result)
 }

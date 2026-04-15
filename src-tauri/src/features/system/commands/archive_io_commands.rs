@@ -412,6 +412,7 @@ fn import_archives_from_json(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
 
     let mut index_by_conversation_id = std::collections::HashMap::<String, usize>::new();
     for (idx, conv) in data.conversations.iter().enumerate() {
@@ -449,7 +450,7 @@ fn import_archives_from_json(
         }
     }
 
-    state_write_app_data_cached(&state, &data)?;
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
 
     Ok(ImportArchivesResult {

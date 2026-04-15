@@ -305,6 +305,7 @@ fn prepare_background_archive_active_conversation(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(state)?;
+    let data_before = data.clone();
     let _ = normalize_single_active_main_conversation(&mut data);
 
     let _source_idx = data
@@ -435,7 +436,7 @@ fn prepare_background_archive_active_conversation(
 
     let app_config = state_read_config_cached(state)?;
     let overview_payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
-    state_write_app_data_cached(state, &data)?;
+    persist_app_data_conversation_runtime_delta(state, &data_before, &data)?;
     drop(guard);
     emit_unarchived_conversation_overview_updated_payload(state, &overview_payload);
     Ok(active_conversation_id)
@@ -1000,6 +1001,7 @@ fn delete_main_conversation_and_activate_latest(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(state)?;
+    let data_before = data.clone();
 
     let before = data.conversations.len();
     data.conversations.retain(|conversation| {
@@ -1023,7 +1025,7 @@ fn delete_main_conversation_and_activate_latest(
         .get(active_idx)
         .map(|item| item.id.clone())
         .ok_or_else(|| "Failed to ensure active conversation after delete.".to_string())?;
-    state_write_app_data_cached(state, &data)?;
+    persist_app_data_conversation_runtime_delta(state, &data_before, &data)?;
     drop(guard);
 
     cleanup_pdf_session_memory_cache_for_conversation(&source.id);
@@ -1742,6 +1744,7 @@ async fn run_context_compaction_pipeline_inner(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
 
     let conversation_idx = data
         .conversations
@@ -1778,7 +1781,7 @@ async fn run_context_compaction_pipeline_inner(
         .conversations
         .get(conversation_idx)
         .map(|item| item.id.clone());
-    state_write_app_data_cached(&state, &data)?;
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
 
     drop(guard);
 
@@ -2016,6 +2019,7 @@ async fn run_archive_pipeline_inner(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let _source_conversation_idx = data
         .conversations
         .iter()
@@ -2043,7 +2047,7 @@ async fn run_archive_pipeline_inner(
         );
         return Err("Failed to ensure active conversation after archive.".to_string());
     }
-    state_write_app_data_cached(&state, &data)?;
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
 
     // 清理PDF缓存
     if let Err(e) = cleanup_pdf_cache_for_conversation(&state, &source.id) {

@@ -895,6 +895,7 @@ async fn process_conversation_batch(
         let _guard = lock_conversation_with_metrics(state, "scheduler_commit")?;
 
         let mut data = state_read_app_data_cached(state)?;
+        let remote_im_contacts_before = serde_json::to_vec(&data.remote_im_contacts).ok();
         if let Some(conversation_idx) = data
             .conversations
             .iter()
@@ -974,7 +975,13 @@ async fn process_conversation_batch(
                 }
             }
             data.conversations[conversation_idx].updated_at = history_flush_time.clone();
-            let _ = state_schedule_app_data_persist(state, &data)?;
+            let persisted_conversation = data.conversations[conversation_idx].clone();
+            let remote_im_runtime_changed =
+                remote_im_contacts_before != serde_json::to_vec(&data.remote_im_contacts).ok();
+            state_write_conversation_with_chat_index_cached(state, &persisted_conversation)?;
+            if remote_im_runtime_changed {
+                state_write_runtime_state_cached(state, &build_runtime_state_file(&data))?;
+            }
         } else {
             complete_pending_chat_events_with_error(
                 state,

@@ -508,7 +508,7 @@ fn apply_conversation_chat_workspace_changes(
         return Ok(conversation.clone());
     }
     let updated = conversation.clone();
-    state_write_app_data_cached(state, &data)?;
+    state_write_conversation_with_chat_index_cached(state, &updated)?;
     Ok(updated)
 }
 

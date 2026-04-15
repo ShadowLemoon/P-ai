@@ -335,7 +335,7 @@ fn persist_aliyun_multimodal_cache_conversation_update(
         ));
     };
     data.conversations[index] = conversation.clone();
-    let _ = state_schedule_app_data_persist(state, &data)?;
+    state_write_conversation_with_chat_index_cached(state, conversation)?;
     Ok(())
 }
 

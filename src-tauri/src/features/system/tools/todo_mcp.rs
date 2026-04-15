@@ -221,15 +221,11 @@ fn conversation_todo_replace(
         .conversation_lock
         .lock()
         .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-    let mut data = state_read_app_data_cached(state)?;
-    let conversation = data
-        .conversations
-        .iter_mut()
-        .find(|conversation| conversation.id == conversation_id.trim())
-        .ok_or_else(|| format!("未找到会话，conversation_id={conversation_id}"))?;
+    let mut conversation = state_read_conversation_cached(state, conversation_id.trim())
+        .map_err(|_| format!("未找到会话，conversation_id={conversation_id}"))?;
     conversation.current_todos = stored.clone();
     conversation.updated_at = now_iso();
-    state_write_app_data_cached(state, &data)?;
+    state_write_conversation_with_chat_index_cached(state, &conversation)?;
     drop(guard);
     Ok(stored)
 }

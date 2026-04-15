@@ -1,0 +1,51 @@
+name: Static Guards
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  guard-write-app-data:
+    name: Guard write_app_data Call Sites
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Block new write_app_data() call sites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $files = Get-ChildItem -Path "src-tauri/src/features" -Recurse -Filter *.rs
+          $matches = $files | Select-String -Pattern '\bwrite_app_data\s*\('
+          $violations = @()
+
+          foreach ($match in $matches) {
+            $line = $match.Line.Trim()
+            $allowed = $false
+
+            if ($line -match '^fn write_app_data\s*\(') {
+              $allowed = $true
+            } elseif ($line -eq 'write_app_data(path, &parsed)?;') {
+              $allowed = $true
+            } elseif ($line -eq 'write_app_data(&state.data_path, data)?;') {
+              $allowed = $true
+            } elseif ($line -eq 'write_app_data(&data_path, &data_to_write)?;') {
+              $allowed = $true
+            }
+
+            if (-not $allowed) {
+              $violations += "$($match.Path):$($match.LineNumber): $line"
+            }
+          }
+
+          if ($violations.Count -gt 0) {
+            Write-Host "发现未批准的 write_app_data() 调用点："
+            $violations | ForEach-Object { Write-Host $_ }
+            throw "Static guard failed: 禁止新增 write_app_data() 调用点，请改用分片写入 API。"
+          }
+
+          Write-Host "[ok] write_app_data() 调用点静态守卫通过"

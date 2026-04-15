@@ -94,6 +94,7 @@ async fn send_chat_message(
             return Err(format!("部门模型未配置: {}", department.id));
         }
 
+        let data_before = data.clone();
         let conversation_id = if let Some(cid) = session
             .conversation_id
             .as_deref()
@@ -150,7 +151,7 @@ async fn send_chat_message(
                 .map(|item| item.id.clone())
                 .ok_or_else(|| "活动会话索引超出范围".to_string())?
         };
-        state_write_app_data_cached(&state, &data)?;
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
 
         (conversation_id, department.id.clone(), api_config_id)
     };
@@ -475,7 +476,13 @@ async fn stop_chat_message(
     if let Some(conversation) = runtime_conversation {
         delegate_runtime_thread_conversation_update(state.inner(), &conversation_id, conversation)?;
     } else {
-        state_write_app_data_cached(&state, &data)?;
+        let persisted_conversation = data
+            .conversations
+            .iter()
+            .find(|item| item.id == conversation_id)
+            .cloned()
+            .ok_or_else(|| "活动会话不存在，无法保存中断回复。".to_string())?;
+        state_write_conversation_with_chat_index_cached(state.inner(), &persisted_conversation)?;
     }
     clear_inflight_completed_tool_history(state.inner(), &chat_key)?;
 

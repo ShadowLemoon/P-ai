@@ -1467,6 +1467,7 @@ fn find_image_text_cache(
         .map(|entry| entry.text.clone())
 }
 
+#[cfg(test)]
 fn upsert_image_text_cache(data: &mut AppData, hash: &str, vision_api_id: &str, text: &str) {
     if let Some(entry) = data
         .image_text_cache

@@ -196,7 +196,7 @@ fn read_app_bootstrap_snapshot(state: &AppState) -> Result<AppBootstrapSnapshot,
     if workspace_changed {
         state_write_config_cached(state, &config)?;
     }
-    let mut data = state_read_app_data_cached(state)?;
+    let mut data = state_read_agents_runtime_snapshot(state)?;
     let assistant_agent_id =
         assistant_department_agent_id(&config).unwrap_or_else(default_assistant_department_agent_id);
     let runtime_changed = if data.assistant_department_agent_id != assistant_agent_id {
@@ -206,7 +206,7 @@ fn read_app_bootstrap_snapshot(state: &AppState) -> Result<AppBootstrapSnapshot,
         false
     };
     if runtime_changed {
-        state_write_app_data_cached(state, &data)?;
+        state_write_runtime_state_cached(state, &build_runtime_state_file(&data))?;
     }
     let runtime_config = runtime_config_with_private_organization(state, &config, &data)?;
     let mut runtime_config_for_agents = config.clone();
@@ -277,7 +277,7 @@ fn save_config(
     if let Some(agent_id) = assistant_department_agent_id(&config) {
         if data.assistant_department_agent_id != agent_id {
             data.assistant_department_agent_id = agent_id;
-            state_write_app_data_cached(&state, &data)?;
+            state_write_runtime_state_cached(&state, &build_runtime_state_file(&data))?;
         }
     }
     register_hotkey_from_config(&app, &config)?;
@@ -295,7 +295,7 @@ fn load_agents(state: State<'_, AppState>) -> Result<Vec<AgentProfile>, String> 
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
     let mut config = state_read_config_cached(&state)?;
-    let data = state_read_app_data_cached(&state)?;
+    let data = state_read_agents_runtime_snapshot(&state)?;
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut config, &mut runtime_data)?;
     drop(guard);
@@ -317,7 +317,10 @@ fn save_agents(
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
     let base_config = read_config(&state.config_path)?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let runtime = state_read_runtime_state_cached(&state)?;
+    let mut data = AppData::default();
+    data.agents = state_read_agents_cached(&state)?;
+    apply_runtime_state_to_app_data(&mut data, &runtime);
     let (private_agent_ids, _) =
         runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
     let previous_agents = data.agents.clone();
@@ -391,7 +394,7 @@ fn save_agents(
         );
     }
 
-    state_write_app_data_cached(&state, &data)?;
+    state_write_agents_cached(&state, &data.agents)?;
     let mut config = state_read_config_cached(&state)?;
     let runtime_agents = runtime_agents_with_private_organization(&state, &config, &data)?;
     let valid_agent_ids = runtime_agents
@@ -505,9 +508,9 @@ fn get_agent_private_memory_count(
         return Err("agentId is required".to_string());
     }
     let config = read_config(&state.config_path)?;
-    let data = state_read_app_data_cached(&state)?;
+    let agents = state_read_agents_cached(&state)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &config, &agents)?;
     if private_agent_ids.contains(agent_id) {
         return Err(private_agent_operation_error(agent_id));
     }
@@ -530,22 +533,21 @@ fn set_agent_private_memory_enabled(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
     if private_agent_ids.contains(agent_id) {
         drop(guard);
         return Err(private_agent_operation_error(agent_id));
     }
 
-    let agent_idx = data
-        .agents
+    let agent_idx = agents
         .iter()
         .position(|a| a.id == agent_id && !a.is_built_in_user)
         .ok_or_else(|| format!("Agent '{}' not found.", agent_id))?;
 
-    let current = data.agents[agent_idx].private_memory_enabled;
+    let current = agents[agent_idx].private_memory_enabled;
     if current == input.enabled {
         drop(guard);
         return Ok(SetAgentPrivateMemoryEnabledResult {
@@ -558,8 +560,8 @@ fn set_agent_private_memory_enabled(
     }
 
     if input.enabled {
-        data.agents[agent_idx].private_memory_enabled = true;
-        state_write_app_data_cached(&state, &data)?;
+        agents[agent_idx].private_memory_enabled = true;
+        state_write_agents_cached(&state, &agents)?;
         drop(guard);
         return Ok(SetAgentPrivateMemoryEnabledResult {
             agent_id: agent_id.to_string(),
@@ -572,8 +574,8 @@ fn set_agent_private_memory_enabled(
 
     let export = memory_store_export_agent_private_memories(&state.data_path, agent_id)?;
     let deleted = memory_store_delete_memories_by_owner_agent_id(&state.data_path, agent_id)?;
-    data.agents[agent_idx].private_memory_enabled = false;
-    state_write_app_data_cached(&state, &data)?;
+    agents[agent_idx].private_memory_enabled = false;
+    state_write_agents_cached(&state, &agents)?;
     drop(guard);
 
     Ok(SetAgentPrivateMemoryEnabledResult {
@@ -595,9 +597,9 @@ fn export_agent_private_memories(
         return Err("agentId is required".to_string());
     }
     let config = read_config(&state.config_path)?;
-    let data = state_read_app_data_cached(&state)?;
+    let agents = state_read_agents_cached(&state)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &config, &agents)?;
     if private_agent_ids.contains(agent_id) {
         return Err(private_agent_operation_error(agent_id));
     }
@@ -622,22 +624,21 @@ fn disable_agent_private_memory(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
     if private_agent_ids.contains(agent_id) {
         drop(guard);
         return Err(private_agent_operation_error(agent_id));
     }
 
-    let agent_idx = data
-        .agents
+    let agent_idx = agents
         .iter()
         .position(|a| a.id == agent_id && !a.is_built_in_user)
         .ok_or_else(|| format!("Agent '{}' not found.", agent_id))?;
 
-    if !data.agents[agent_idx].private_memory_enabled {
+    if !agents[agent_idx].private_memory_enabled {
         drop(guard);
         return Ok(DisableAgentPrivateMemoryResult {
             agent_id: agent_id.to_string(),
@@ -647,8 +648,8 @@ fn disable_agent_private_memory(
     }
 
     let deleted = memory_store_delete_memories_by_owner_agent_id(&state.data_path, agent_id)?;
-    data.agents[agent_idx].private_memory_enabled = false;
-    state_write_app_data_cached(&state, &data)?;
+    agents[agent_idx].private_memory_enabled = false;
+    state_write_agents_cached(&state, &agents)?;
     drop(guard);
 
     Ok(DisableAgentPrivateMemoryResult {
@@ -707,7 +708,7 @@ fn load_chat_settings(state: State<'_, AppState>) -> Result<ChatSettings, String
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
     let mut config = read_config(&state.config_path)?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut data = state_read_agents_runtime_snapshot(&state)?;
     let assistant_agent_id = assistant_department_agent_id(&config).unwrap_or_else(default_assistant_department_agent_id);
     let runtime_changed = if data.assistant_department_agent_id != assistant_agent_id {
         data.assistant_department_agent_id = assistant_agent_id.clone();
@@ -716,7 +717,7 @@ fn load_chat_settings(state: State<'_, AppState>) -> Result<ChatSettings, String
         false
     };
     if runtime_changed {
-        state_write_app_data_cached(&state, &data)?;
+        state_write_runtime_state_cached(&state, &build_runtime_state_file(&data))?;
     }
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut config, &mut runtime_data)?;
@@ -767,9 +768,17 @@ fn build_chat_settings_payload(state: &AppState, data: &AppData, config: &AppCon
     })
 }
 
-fn apply_chat_settings_patch(state: &AppState, data: &mut AppData, config: &AppConfig, input: ChatSettingsPatch) -> Result<ChatSettings, String> {
+fn apply_chat_settings_patch(
+    state: &AppState,
+    agents: &mut Vec<AgentProfile>,
+    runtime: &mut RuntimeStateFile,
+    config: &AppConfig,
+    input: ChatSettingsPatch,
+) -> Result<ChatSettings, String> {
+    let mut agents_changed = false;
+    let mut runtime_changed = false;
     if let Some(agent_id) = input.assistant_department_agent_id {
-        let fallback = data.assistant_department_agent_id.clone();
+        let fallback = runtime.assistant_department_agent_id.clone();
         let target_agent_id = assistant_department_agent_id(config).unwrap_or_else(|| {
             let trimmed = agent_id.trim();
             if trimmed.is_empty() {
@@ -779,7 +788,9 @@ fn apply_chat_settings_patch(state: &AppState, data: &mut AppData, config: &AppC
             }
         });
         let mut runtime_config = config.clone();
-        let mut runtime_data = data.clone();
+        let mut runtime_data = AppData::default();
+        runtime_data.agents = agents.clone();
+        apply_runtime_state_to_app_data(&mut runtime_data, runtime);
         merge_private_organization_into_runtime_data(&state.data_path, &mut runtime_config, &mut runtime_data)?;
         if !runtime_data
             .agents
@@ -788,22 +799,41 @@ fn apply_chat_settings_patch(state: &AppState, data: &mut AppData, config: &AppC
         {
             return Err("Selected agent not found.".to_string());
         }
-        data.assistant_department_agent_id = target_agent_id;
+        if runtime.assistant_department_agent_id != target_agent_id {
+            runtime.assistant_department_agent_id = target_agent_id;
+            runtime_changed = true;
+        }
     }
     if let Some(response_style_id) = input.response_style_id {
-        data.response_style_id = normalize_response_style_id(&response_style_id);
+        let next = normalize_response_style_id(&response_style_id);
+        if runtime.response_style_id != next {
+            runtime.response_style_id = next;
+            runtime_changed = true;
+        }
     }
     if let Some(pdf_read_mode) = input.pdf_read_mode {
-        data.pdf_read_mode = normalize_pdf_read_mode(&pdf_read_mode);
+        let next = normalize_pdf_read_mode(&pdf_read_mode);
+        if runtime.pdf_read_mode != next {
+            runtime.pdf_read_mode = next;
+            runtime_changed = true;
+        }
     }
     if let Some(background_voice_screenshot_keywords) = input.background_voice_screenshot_keywords {
-        data.background_voice_screenshot_keywords = background_voice_screenshot_keywords.trim().to_string();
+        let next = background_voice_screenshot_keywords.trim().to_string();
+        if runtime.background_voice_screenshot_keywords != next {
+            runtime.background_voice_screenshot_keywords = next;
+            runtime_changed = true;
+        }
     }
     if let Some(background_voice_screenshot_mode) = input.background_voice_screenshot_mode {
-        data.background_voice_screenshot_mode = normalize_background_voice_screenshot_mode(&background_voice_screenshot_mode);
+        let next = normalize_background_voice_screenshot_mode(&background_voice_screenshot_mode);
+        if runtime.background_voice_screenshot_mode != next {
+            runtime.background_voice_screenshot_mode = next;
+            runtime_changed = true;
+        }
     }
     if let Some(instruction_presets) = input.instruction_presets {
-        data.instruction_presets = instruction_presets
+        let next = instruction_presets
             .into_iter()
             .map(|item| PromptCommandPreset {
                 id: item.id.trim().to_string(),
@@ -812,18 +842,31 @@ fn apply_chat_settings_patch(state: &AppState, data: &mut AppData, config: &AppC
             })
             .filter(|item| !item.id.is_empty() && !item.name.is_empty() && !item.prompt.is_empty())
             .collect::<Vec<_>>();
+        if runtime.instruction_presets != next {
+            runtime.instruction_presets = next;
+            runtime_changed = true;
+        }
     }
     if let Some(user_alias) = input.user_alias {
         let trimmed = user_alias.trim();
         if !trimmed.is_empty() {
-            if let Some(user_persona) = data.agents.iter_mut().find(|a| a.id == USER_PERSONA_ID) {
+            if let Some(user_persona) = agents.iter_mut().find(|a| a.id == USER_PERSONA_ID) {
                 user_persona.name = trimmed.to_string();
                 user_persona.updated_at = now_iso();
+                agents_changed = true;
             }
         }
     }
-    state_write_app_data_cached(state, data)?;
-    build_chat_settings_payload(state, data, config)
+    if agents_changed {
+        state_write_agents_cached(state, agents)?;
+    }
+    if runtime_changed {
+        state_write_runtime_state_cached(state, runtime)?;
+    }
+    let mut data = AppData::default();
+    data.agents = agents.clone();
+    apply_runtime_state_to_app_data(&mut data, runtime);
+    build_chat_settings_payload(state, &data, config)
 }
 
 #[tauri::command]
@@ -858,9 +901,10 @@ fn patch_chat_settings(
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut data = state_read_agents_runtime_snapshot(&state)?;
     let config = read_config(&state.config_path)?;
-    let payload = apply_chat_settings_patch(&state, &mut data, &config, input)?;
+    let mut runtime = build_runtime_state_file(&data);
+    let payload = apply_chat_settings_patch(&state, &mut data.agents, &mut runtime, &config, input)?;
     drop(guard);
 
     let _ = app.emit("easy-call:chat-settings-updated", &payload);
@@ -961,17 +1005,16 @@ fn save_agent_avatar(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
     if private_agent_ids.contains(input.agent_id.trim()) {
         drop(guard);
         return Err(private_agent_operation_error(input.agent_id.trim()));
     }
 
-    let idx = data
-        .agents
+    let idx = agents
         .iter()
         .position(|a| a.id == input.agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
@@ -988,10 +1031,10 @@ fn save_agent_avatar(
     fs::write(&path, webp).map_err(|err| format!("Write avatar file failed: {err}"))?;
 
     let now = now_iso();
-    data.agents[idx].avatar_path = Some(path.to_string_lossy().to_string());
-    data.agents[idx].avatar_updated_at = Some(now.clone());
-    data.agents[idx].updated_at = now.clone();
-    state_write_app_data_cached(&state, &data)?;
+    agents[idx].avatar_path = Some(path.to_string_lossy().to_string());
+    agents[idx].avatar_updated_at = Some(now.clone());
+    agents[idx].updated_at = now.clone();
+    state_write_agents_cached(&state, &agents)?;
     drop(guard);
 
     Ok(AvatarMeta {
@@ -1013,30 +1056,29 @@ fn clear_agent_avatar(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(&state)?;
+    let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
     let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
+        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
     if private_agent_ids.contains(input.agent_id.trim()) {
         drop(guard);
         return Err(private_agent_operation_error(input.agent_id.trim()));
     }
-    let idx = data
-        .agents
+    let idx = agents
         .iter()
         .position(|a| a.id == input.agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
 
-    if let Some(path) = data.agents[idx].avatar_path.as_deref() {
+    if let Some(path) = agents[idx].avatar_path.as_deref() {
         let p = PathBuf::from(path);
         if p.exists() {
             let _ = fs::remove_file(p);
         }
     }
-    data.agents[idx].avatar_path = None;
-    data.agents[idx].avatar_updated_at = None;
-    data.agents[idx].updated_at = now_iso();
-    state_write_app_data_cached(&state, &data)?;
+    agents[idx].avatar_path = None;
+    agents[idx].avatar_updated_at = None;
+    agents[idx].updated_at = now_iso();
+    state_write_agents_cached(&state, &agents)?;
     drop(guard);
     Ok(())
 }
@@ -1346,6 +1388,7 @@ fn get_chat_snapshot(
     let mut app_config = state_read_config_cached(&state)?;
 
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut app_config, &mut runtime_data)?;
     let requested_agent_id = input.agent_id.trim();
@@ -1373,7 +1416,6 @@ fn get_chat_snapshot(
             .ok_or_else(|| "Selected agent not found.".to_string())?
     };
 
-    let before_len = data.conversations.len();
     let idx = if let Some(existing_idx) =
         latest_active_conversation_index(&data, "", &effective_agent_id)
     {
@@ -1398,9 +1440,7 @@ fn get_chat_snapshot(
         .find(|m| m.role == "assistant")
         .cloned();
 
-    if data.conversations.len() != before_len {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
 
     if let Some(message) = latest_user.as_mut() {
@@ -1780,12 +1820,13 @@ fn list_unarchived_conversations(state: State<'_, AppState>) -> Result<Vec<Unarc
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let app_config = state_read_config_cached(&state)?;
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
     let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let summaries = collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
     if normalized_changed || department_changed {
-        state_write_app_data_cached(&state, &data)?;
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     }
     drop(guard);
     Ok(summaries)
@@ -1881,6 +1922,63 @@ fn build_unarchived_conversation_overview_payload(
     }
 }
 
+fn persist_conversation_set_delta(
+    state: &AppState,
+    before: &[Conversation],
+    after: &[Conversation],
+) -> Result<(), String> {
+    let before_map = before
+        .iter()
+        .map(|conversation| (conversation.id.clone(), conversation))
+        .collect::<std::collections::HashMap<_, _>>();
+    let after_ids = after
+        .iter()
+        .map(|conversation| conversation.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    for conversation in after {
+        let changed = before_map
+            .get(&conversation.id)
+            .map(|previous| serde_json::to_vec(previous).ok() != serde_json::to_vec(conversation).ok())
+            .unwrap_or(true);
+        if changed {
+            state_write_conversation_cached(state, conversation)?;
+        }
+    }
+
+    for conversation in before {
+        if !after_ids.contains(&conversation.id) {
+            state_delete_conversation_cached(state, &conversation.id)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn persist_app_data_conversation_runtime_delta(
+    state: &AppState,
+    before: &AppData,
+    after: &AppData,
+) -> Result<(), String> {
+    let conversations_changed =
+        serde_json::to_vec(&before.conversations).ok() != serde_json::to_vec(&after.conversations).ok();
+    let runtime_before = build_runtime_state_file(before);
+    let runtime_after = build_runtime_state_file(after);
+    let runtime_changed =
+        serde_json::to_vec(&runtime_before).ok() != serde_json::to_vec(&runtime_after).ok();
+
+    if conversations_changed {
+        persist_conversation_set_delta(state, &before.conversations, &after.conversations)?;
+        let chat_index = build_chat_index_file(&after.conversations);
+        state_write_chat_index_cached(state, &chat_index)?;
+    }
+    if runtime_changed {
+        state_write_runtime_state_cached(state, &runtime_after)?;
+    }
+
+    Ok(())
+}
+
 fn emit_unarchived_conversation_overview_updated_payload(
     state: &AppState,
     payload: &UnarchivedConversationOverviewUpdatedPayload,
@@ -1971,25 +2069,30 @@ fn update_conversation_todos_and_emit(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(state)?;
     let app_config = state_read_config_cached(state)?;
-    let current_todo = {
-        let Some(conversation) = data
-            .conversations
-            .iter_mut()
-            .find(|item| item.id == cid && item.summary.trim().is_empty())
-        else {
-            drop(guard);
-            return Ok(());
-        };
-        if conversation.current_todos == stored_todos {
+    let mut conversation = match state_read_conversation_cached(state, cid) {
+        Ok(conversation) if conversation.summary.trim().is_empty() => conversation,
+        Ok(_) => {
             drop(guard);
             return Ok(());
         }
-        conversation.current_todos = stored_todos.clone();
-        conversation_current_todo_text(conversation)
+        Err(err) => {
+            runtime_log_debug(format!(
+                "[Todo] 读取会话失败，函数=update_conversation_todos_and_emit，conversation_id={}，error={}",
+                cid, err
+            ));
+            drop(guard);
+            return Ok(());
+        }
     };
-    state_write_app_data_cached(state, &data)?;
+    if conversation.current_todos == stored_todos {
+        drop(guard);
+        return Ok(());
+    }
+    conversation.current_todos = stored_todos.clone();
+    let current_todo = conversation_current_todo_text(&conversation);
+    state_write_conversation_cached(state, &conversation)?;
+    let data = state_read_app_data_cached(state)?;
     let todo_payload = ConversationTodosUpdatedPayload {
         conversation_id: cid.to_string(),
         current_todo,
@@ -2008,11 +2111,12 @@ fn emit_unarchived_conversation_overview_updated_from_state(state: &AppState) ->
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let mut data = state_read_app_data_cached(state)?;
+    let data_before = data.clone();
     let app_config = state_read_config_cached(state)?;
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
     let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     if normalized_changed || department_changed {
-        state_write_app_data_cached(state, &data)?;
+        persist_app_data_conversation_runtime_delta(state, &data_before, &data)?;
     }
     let payload = build_unarchived_conversation_overview_payload(state, &app_config, &data);
     drop(guard);
@@ -2032,6 +2136,7 @@ fn set_active_unarchived_conversation(
 
     let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
     let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let requested_conversation_id = input
@@ -2095,7 +2200,7 @@ fn set_active_unarchived_conversation(
         }
     }
     if changed {
-        state_write_app_data_cached(&state, &data)?;
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     }
     drop(guard);
     Ok(SetActiveUnarchivedConversationOutput { conversation_id })
@@ -2114,6 +2219,7 @@ fn switch_active_conversation_snapshot(
 
     let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
     let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let requested_conversation_id = input
@@ -2171,7 +2277,7 @@ fn switch_active_conversation_snapshot(
         collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
 
     if changed {
-        state_write_app_data_cached(&state, &data)?;
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     }
     drop(guard);
 
@@ -2271,6 +2377,7 @@ fn create_unarchived_conversation(
 
     let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
+    let before_conversations = data.conversations.clone();
     let requested_department_id = input
         .department_id
         .as_deref()
@@ -2338,7 +2445,21 @@ fn create_unarchived_conversation(
     }
     let overview_payload =
         build_unarchived_conversation_overview_payload(state.inner(), &app_config, &data);
-    state_write_app_data_cached(&state, &data)?;
+    persist_conversation_set_delta(state.inner(), &before_conversations, &data.conversations)?;
+    let chat_index_before = state_read_chat_index_cached(state.inner())?;
+    let chat_index = build_chat_index_file(&data.conversations);
+    if chat_index_before != chat_index {
+        state_write_chat_index_cached(state.inner(), &chat_index)?;
+    }
+    if data.main_conversation_id.as_deref().map(str::trim).filter(|value| !value.is_empty())
+        != state_read_runtime_state_cached(&state)?
+            .main_conversation_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    {
+        state_write_runtime_state_cached(&state, &build_runtime_state_file(&data))?;
+    }
     drop(guard);
     emit_unarchived_conversation_overview_updated_payload(state.inner(), &overview_payload);
 
@@ -2365,8 +2486,8 @@ fn rename_unarchived_conversation(
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
     let app_config = state_read_config_cached(&state)?;
-    let mut data = state_read_app_data_cached(&state)?;
-    let main_conversation_id = data
+    let runtime = state_read_runtime_state_cached(&state)?;
+    let main_conversation_id = runtime
         .main_conversation_id
         .as_deref()
         .map(str::trim)
@@ -2378,14 +2499,13 @@ fn rename_unarchived_conversation(
     }
     ensure_unarchived_conversation_not_organizing(state.inner(), conversation_id)?;
 
-    let Some(conversation) = data.conversations.iter_mut().find(|item| {
-        item.id == conversation_id
-            && item.summary.trim().is_empty()
-            && conversation_visible_in_foreground_lists(item)
-    }) else {
+    let mut conversation = state_read_conversation_cached(&state, conversation_id)?;
+    if !conversation.summary.trim().is_empty()
+        || !conversation_visible_in_foreground_lists(&conversation)
+    {
         drop(guard);
         return Err("未找到可改名的会话".to_string());
-    };
+    }
 
     if conversation.title.trim() == next_title {
         drop(guard);
@@ -2396,7 +2516,8 @@ fn rename_unarchived_conversation(
     }
 
     conversation.title = next_title.clone();
-    state_write_app_data_cached(&state, &data)?;
+    state_write_conversation_cached(&state, &conversation)?;
+    let data = state_read_app_data_cached(&state)?;
     let overview_payload = build_unarchived_conversation_overview_payload(state.inner(), &app_config, &data);
     drop(guard);
 
@@ -2569,6 +2690,8 @@ fn delete_unarchived_conversation(
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
     let app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
+    let before_conversations = data.conversations.clone();
+    let before_runtime = state_read_runtime_state_cached(&state)?;
     let deleted_is_main = data
         .main_conversation_id
         .as_deref()
@@ -2626,7 +2749,15 @@ fn delete_unarchived_conversation(
         .unwrap_or_default();
     let overview_payload =
         build_unarchived_conversation_overview_payload(state.inner(), &app_config, &data);
-    state_write_app_data_cached(&state, &data)?;
+    persist_conversation_set_delta(state.inner(), &before_conversations, &data.conversations)?;
+    let chat_index_before = state_read_chat_index_cached(state.inner())?;
+    let chat_index = build_chat_index_file(&data.conversations);
+    if chat_index_before != chat_index {
+        state_write_chat_index_cached(state.inner(), &chat_index)?;
+    }
+    if before_runtime.main_conversation_id != data.main_conversation_id {
+        state_write_runtime_state_cached(state.inner(), &build_runtime_state_file(&data))?;
+    }
     eprintln!(
         "[会话] 已删除未归档主会话: conversation_id={}",
         conversation_id
@@ -2653,11 +2784,9 @@ fn get_active_conversation_messages(
     let mut app_config = state_read_config_cached(&state)?;
 
     let mut data = state_read_app_data_cached(&state)?;
-    let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
-    if normalized_changed || department_changed {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    let data_before = data.clone();
+    let _normalized_changed = normalize_single_active_main_conversation(&mut data);
+    let _department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut app_config, &mut runtime_data)?;
     let requested_agent_id = input.agent_id.trim();
@@ -2685,7 +2814,6 @@ fn get_active_conversation_messages(
             .ok_or_else(|| "Selected agent not found.".to_string())?
     };
 
-    let before_len = data.conversations.len();
     let requested_conversation_id = input
         .conversation_id
         .as_deref()
@@ -2700,9 +2828,7 @@ fn get_active_conversation_messages(
 
     let mut messages = data.conversations[idx].messages.clone();
 
-    if data.conversations.len() != before_len {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
     materialize_chat_message_parts_from_media_refs(&mut messages, &state.data_path);
     Ok(messages)
@@ -2721,14 +2847,16 @@ fn mark_conversation_read(
         .conversation_lock
         .lock()
         .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-    let mut data = state_read_app_data_cached(&state)?;
-    let Some(conversation) = data
-        .conversations
-        .iter_mut()
-        .find(|conversation| conversation.id.trim() == conversation_id)
-    else {
-        drop(guard);
-        return Ok(());
+    let mut conversation = match state_read_conversation_cached(&state, conversation_id) {
+        Ok(conversation) => conversation,
+        Err(err) => {
+            runtime_log_debug(format!(
+                "[会话已读] 读取会话失败，conversation_id={}，error={}",
+                conversation_id, err
+            ));
+            drop(guard);
+            return Ok(());
+        }
     };
     let next_last_read_message_id = conversation
         .messages
@@ -2740,7 +2868,7 @@ fn mark_conversation_read(
         return Ok(());
     }
     conversation.last_read_message_id = next_last_read_message_id;
-    state_write_app_data_cached(&state, &data)?;
+    state_write_conversation_cached(&state, &conversation)?;
     drop(guard);
     Ok(())
 }
@@ -2913,11 +3041,9 @@ fn get_active_conversation_messages_before(
 
     let mut app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
-    let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
-    if normalized_changed || department_changed {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    let data_before = data.clone();
+    let _normalized_changed = normalize_single_active_main_conversation(&mut data);
+    let _department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut app_config, &mut runtime_data)?;
     let requested_agent_id = input.session.agent_id.trim();
@@ -2945,7 +3071,6 @@ fn get_active_conversation_messages_before(
             .ok_or_else(|| "Selected agent not found.".to_string())?
     };
 
-    let before_len = data.conversations.len();
     let requested_conversation_id = input
         .session
         .conversation_id
@@ -2960,9 +3085,7 @@ fn get_active_conversation_messages_before(
     )?;
 
     let messages = data.conversations[idx].messages.clone();
-    if data.conversations.len() != before_len {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
 
     let before_idx = messages
@@ -2998,11 +3121,9 @@ fn get_active_conversation_messages_after(
 
     let mut app_config = state_read_config_cached(&state)?;
     let mut data = state_read_app_data_cached(&state)?;
-    let normalized_changed = normalize_single_active_main_conversation(&mut data);
-    let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
-    if normalized_changed || department_changed {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    let data_before = data.clone();
+    let _normalized_changed = normalize_single_active_main_conversation(&mut data);
+    let _department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut app_config, &mut runtime_data)?;
     let requested_agent_id = input.session.agent_id.trim();
@@ -3030,7 +3151,6 @@ fn get_active_conversation_messages_after(
             .ok_or_else(|| "Selected agent not found.".to_string())?
     };
 
-    let before_len = data.conversations.len();
     let requested_conversation_id = input
         .session
         .conversation_id
@@ -3045,9 +3165,7 @@ fn get_active_conversation_messages_after(
     )?;
 
     let messages = data.conversations[idx].messages.clone();
-    if data.conversations.len() != before_len {
-        state_write_app_data_cached(&state, &data)?;
-    }
+    persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     drop(guard);
 
     let after_idx = messages
@@ -3203,6 +3321,7 @@ fn rewind_conversation_from_message(
     let mut app_config = read_config(&state.config_path)?;
 
     let mut data = state_read_app_data_cached(&state)?;
+    let data_before = data.clone();
     let mut runtime_data = data.clone();
     merge_private_organization_into_runtime_data(&state.data_path, &mut app_config, &mut runtime_data)?;
     let requested_agent_id = input.session.agent_id.trim();
@@ -3227,7 +3346,6 @@ fn rewind_conversation_from_message(
         return Err(format!("Selected agent '{requested_agent_id}' not found."));
     }
 
-    let before_len = data.conversations.len();
     let requested_conversation_id = input
         .session
         .conversation_id
@@ -3315,8 +3433,8 @@ fn rewind_conversation_from_message(
     conversation.last_context_usage_ratio = 0.0;
     conversation.last_effective_prompt_tokens = 0;
 
-    if data.conversations.len() != before_len || removed_count > 0 {
-        state_write_app_data_cached(&state, &data)?;
+    if removed_count > 0 {
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
     }
     drop(guard);
 

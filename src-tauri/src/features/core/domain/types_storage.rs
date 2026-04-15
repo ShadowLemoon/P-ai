@@ -75,7 +75,7 @@ impl MemoryEntry {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct PromptCommandPreset {
     id: String,

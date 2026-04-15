@@ -166,16 +166,16 @@ fn get_image_text_cache_stats(state: State<'_, AppState>) -> Result<ImageTextCac
         .conversation_lock
         .lock()
         .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-    let data = state_read_app_data_cached(&state)?;
+    let runtime = state_read_runtime_state_cached(&state)?;
     drop(guard);
 
-    let entries = data.image_text_cache.len();
-    let total_chars = data
+    let entries = runtime.image_text_cache.len();
+    let total_chars = runtime
         .image_text_cache
         .iter()
         .map(|entry| entry.text.chars().count())
         .sum::<usize>();
-    let latest_updated_at = data
+    let latest_updated_at = runtime
         .image_text_cache
         .iter()
         .map(|entry| entry.updated_at.clone())
@@ -194,9 +194,9 @@ fn clear_image_text_cache(state: State<'_, AppState>) -> Result<ImageTextCacheSt
         .conversation_lock
         .lock()
         .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-    let mut data = state_read_app_data_cached(&state)?;
-    data.image_text_cache.clear();
-    state_write_app_data_cached(&state, &data)?;
+    let mut runtime = state_read_runtime_state_cached(&state)?;
+    runtime.image_text_cache.clear();
+    state_write_runtime_state_cached(&state, &runtime)?;
     drop(guard);
 
     Ok(ImageTextCacheStats {

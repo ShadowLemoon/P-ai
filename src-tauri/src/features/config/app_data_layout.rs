@@ -164,6 +164,10 @@ struct RuntimeStateFile {
     #[serde(default)]
     image_text_cache: Vec<ImageTextCacheEntry>,
     #[serde(default)]
+    pdf_text_cache: Vec<PdfTextCacheEntry>,
+    #[serde(default)]
+    pdf_image_cache: Vec<PdfImageCacheEntry>,
+    #[serde(default)]
     remote_im_contacts: Vec<RemoteImContact>,
 }
 
@@ -180,12 +184,14 @@ impl Default for RuntimeStateFile {
             instruction_presets: Vec::new(),
             main_conversation_id: None,
             image_text_cache: Vec::new(),
+            pdf_text_cache: Vec::new(),
+            pdf_image_cache: Vec::new(),
             remote_im_contacts: Vec::new(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ChatIndexConversationItem {
     id: String,
@@ -197,11 +203,20 @@ struct ChatIndexConversationItem {
     archived_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct ChatIndexFile {
     #[serde(default)]
     conversations: Vec<ChatIndexConversationItem>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AppDataWriteStats {
+    agents_written: bool,
+    runtime_written: bool,
+    chat_index_written: bool,
+    conversation_writes: usize,
+    conversation_deletes: usize,
 }
 
 fn app_layout_config_dir(path: &PathBuf) -> PathBuf {
@@ -238,6 +253,182 @@ fn app_layout_chat_index_path(path: &PathBuf) -> PathBuf {
 
 fn app_layout_chat_conversation_path(path: &PathBuf, conversation_id: &str) -> PathBuf {
     app_layout_chat_conversations_dir(path).join(format!("{conversation_id}.json"))
+}
+
+fn build_agents_file(agents: &[AgentProfile]) -> AgentsFile {
+    AgentsFile {
+        agents: agents.to_vec(),
+    }
+}
+
+fn build_runtime_state_file(data: &AppData) -> RuntimeStateFile {
+    RuntimeStateFile {
+        version: APP_DATA_SCHEMA_VERSION,
+        assistant_department_agent_id: data.assistant_department_agent_id.clone(),
+        user_alias: data.user_alias.clone(),
+        response_style_id: data.response_style_id.clone(),
+        pdf_read_mode: data.pdf_read_mode.clone(),
+        background_voice_screenshot_keywords: data.background_voice_screenshot_keywords.clone(),
+        background_voice_screenshot_mode: data.background_voice_screenshot_mode.clone(),
+        instruction_presets: data.instruction_presets.clone(),
+        main_conversation_id: data.main_conversation_id.clone(),
+        image_text_cache: data.image_text_cache.clone(),
+        pdf_text_cache: data.pdf_text_cache.clone(),
+        pdf_image_cache: data.pdf_image_cache.clone(),
+        remote_im_contacts: data.remote_im_contacts.clone(),
+    }
+}
+
+fn build_chat_index_item(conversation: &Conversation) -> ChatIndexConversationItem {
+    ChatIndexConversationItem {
+        id: conversation.id.clone(),
+        updated_at: conversation.updated_at.clone(),
+        status: conversation.status.clone(),
+        summary: conversation.summary.clone(),
+        archived_at: conversation.archived_at.clone(),
+    }
+}
+
+fn build_chat_index_file(conversations: &[Conversation]) -> ChatIndexFile {
+    ChatIndexFile {
+        conversations: conversations
+            .iter()
+            .map(build_chat_index_item)
+            .collect::<Vec<_>>(),
+    }
+}
+
+fn upsert_chat_index_conversation(index: &mut ChatIndexFile, conversation: &Conversation) {
+    let next = build_chat_index_item(conversation);
+    if let Some(existing) = index
+        .conversations
+        .iter_mut()
+        .find(|item| item.id == conversation.id)
+    {
+        *existing = next;
+    } else {
+        index.conversations.push(next);
+    }
+}
+
+fn apply_runtime_state_to_app_data(data: &mut AppData, runtime: &RuntimeStateFile) {
+    data.version = runtime.version;
+    data.assistant_department_agent_id = runtime.assistant_department_agent_id.clone();
+    data.user_alias = runtime.user_alias.clone();
+    data.response_style_id = runtime.response_style_id.clone();
+    data.pdf_read_mode = runtime.pdf_read_mode.clone();
+    data.background_voice_screenshot_keywords =
+        runtime.background_voice_screenshot_keywords.clone();
+    data.background_voice_screenshot_mode = runtime.background_voice_screenshot_mode.clone();
+    data.instruction_presets = runtime.instruction_presets.clone();
+    data.main_conversation_id = runtime.main_conversation_id.clone();
+    data.image_text_cache = runtime.image_text_cache.clone();
+    data.pdf_text_cache = runtime.pdf_text_cache.clone();
+    data.pdf_image_cache = runtime.pdf_image_cache.clone();
+    data.remote_im_contacts = runtime.remote_im_contacts.clone();
+}
+
+fn read_agents_shard(path: &PathBuf) -> Result<Vec<AgentProfile>, String> {
+    if !app_layout_exists(path) && path.exists() {
+        return Ok(read_app_data(path)?.agents);
+    }
+    if app_layout_agents_path(path).exists() {
+        Ok(read_json_file::<AgentsFile>(&app_layout_agents_path(path), "agents file")?.agents)
+    } else {
+        Ok(AppData::default().agents)
+    }
+}
+
+fn write_agents_shard(path: &PathBuf, agents: &[AgentProfile]) -> Result<bool, String> {
+    fs::create_dir_all(app_layout_config_dir(path))
+        .map_err(|err| format!("Create config layout dir failed: {err}"))?;
+    write_json_file_atomic_if_changed(
+        &app_layout_agents_path(path),
+        &build_agents_file(agents),
+        "agents file",
+    )
+}
+
+fn read_runtime_state_shard(path: &PathBuf) -> Result<RuntimeStateFile, String> {
+    if !app_layout_exists(path) && path.exists() {
+        let data = read_app_data(path)?;
+        return Ok(build_runtime_state_file(&data));
+    }
+    if app_layout_runtime_state_path(path).exists() {
+        read_json_file::<RuntimeStateFile>(&app_layout_runtime_state_path(path), "runtime state file")
+    } else {
+        Ok(RuntimeStateFile::default())
+    }
+}
+
+fn write_runtime_state_shard(path: &PathBuf, runtime: &RuntimeStateFile) -> Result<bool, String> {
+    fs::create_dir_all(app_layout_state_dir(path))
+        .map_err(|err| format!("Create state layout dir failed: {err}"))?;
+    write_json_file_atomic_if_changed(
+        &app_layout_runtime_state_path(path),
+        runtime,
+        "runtime state file",
+    )
+}
+
+fn read_conversation_shard(path: &PathBuf, conversation_id: &str) -> Result<Conversation, String> {
+    let conversation_id = conversation_id.trim();
+    if conversation_id.is_empty() {
+        return Err("Conversation id is empty".to_string());
+    }
+    let conversation_path = app_layout_chat_conversation_path(path, conversation_id);
+    if conversation_path.exists() {
+        return read_json_file::<Conversation>(&conversation_path, "conversation file");
+    }
+    if !app_layout_exists(path) && path.exists() {
+        let data = read_app_data(path)?;
+        if let Some(conversation) = data
+            .conversations
+            .into_iter()
+            .find(|item| item.id.trim() == conversation_id)
+        {
+            return Ok(conversation);
+        }
+    }
+    Err(format!("Conversation '{conversation_id}' not found."))
+}
+
+fn write_conversation_shard(path: &PathBuf, conversation: &Conversation) -> Result<bool, String> {
+    fs::create_dir_all(app_layout_chat_conversations_dir(path))
+        .map_err(|err| format!("Create chat conversations dir failed: {err}"))?;
+    write_json_file_atomic_if_changed(
+        &app_layout_chat_conversation_path(path, &conversation.id),
+        conversation,
+        "conversation file",
+    )
+}
+
+fn delete_conversation_shard(path: &PathBuf, conversation_id: &str) -> Result<bool, String> {
+    let conversation_path = app_layout_chat_conversation_path(path, conversation_id);
+    if !conversation_path.exists() {
+        return Ok(false);
+    }
+    fs::remove_file(&conversation_path)
+        .map_err(|err| format!("Delete conversation file failed: {err}"))?;
+    Ok(true)
+}
+
+fn read_chat_index_shard(path: &PathBuf) -> Result<ChatIndexFile, String> {
+    if !app_layout_exists(path) && path.exists() {
+        let data = read_app_data(path)?;
+        return Ok(build_chat_index_file(&data.conversations));
+    }
+    if app_layout_chat_index_path(path).exists() {
+        read_json_file::<ChatIndexFile>(&app_layout_chat_index_path(path), "chat index file")
+    } else {
+        Ok(ChatIndexFile::default())
+    }
+}
+
+fn write_chat_index_shard(path: &PathBuf, index: &ChatIndexFile) -> Result<bool, String> {
+    fs::create_dir_all(app_layout_chat_dir(path))
+        .map_err(|err| format!("Create chat layout dir failed: {err}"))?;
+    write_json_file_atomic_if_changed(&app_layout_chat_index_path(path), index, "chat index file")
 }
 
 fn app_layout_exists(path: &PathBuf) -> bool {
@@ -284,6 +475,66 @@ where
     })
 }
 
+fn file_metadata_signature(path: &PathBuf) -> (u64, Option<std::time::SystemTime>) {
+    match fs::metadata(path) {
+        Ok(metadata) => (metadata.len(), metadata.modified().ok()),
+        Err(_) => (0, None),
+    }
+}
+
+fn app_data_cache_signature(path: &PathBuf) -> AppDataCacheSignature {
+    let agents_path = app_layout_agents_path(path);
+    let runtime_path = app_layout_runtime_state_path(path);
+    let chat_index_path = app_layout_chat_index_path(path);
+    let (agents_len, agents_modified) = file_metadata_signature(&agents_path);
+    let (runtime_len, runtime_modified) = file_metadata_signature(&runtime_path);
+    let (chat_index_len, chat_index_modified) = file_metadata_signature(&chat_index_path);
+
+    let mut conversations = ConversationDirCacheSignature::default();
+    let conversations_dir = app_layout_chat_conversations_dir(path);
+    if let Ok(entries) = fs::read_dir(conversations_dir) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.extension().and_then(|value| value.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            conversations.file_count += 1;
+            conversations.total_size = conversations.total_size.saturating_add(metadata.len());
+            let modified = metadata.modified().ok();
+            let file_name = entry.file_name().to_string_lossy().to_string();
+            let should_replace_latest = match (
+                conversations.latest_modified,
+                modified,
+                conversations.latest_file_name.as_str(),
+            ) {
+                (None, Some(_), _) => true,
+                (None, None, current_name) => file_name.as_str() > current_name,
+                (Some(current), Some(next), current_name) => {
+                    next > current || (next == current && file_name.as_str() > current_name)
+                }
+                (Some(_), None, _) => false,
+            };
+            if should_replace_latest {
+                conversations.latest_modified = modified;
+                conversations.latest_file_name = file_name;
+            }
+        }
+    }
+
+    AppDataCacheSignature {
+        agents_len,
+        agents_modified,
+        runtime_len,
+        runtime_modified,
+        chat_index_len,
+        chat_index_modified,
+        conversations,
+    }
+}
+
 fn write_json_file_atomic<T>(path: &PathBuf, value: &T, label: &str) -> Result<(), String>
 where
     T: Serialize,
@@ -305,6 +556,38 @@ where
         let _ = fs::remove_file(&tmp);
     }
     Ok(())
+}
+
+fn write_json_file_atomic_if_changed<T>(
+    path: &PathBuf,
+    value: &T,
+    label: &str,
+) -> Result<bool, String>
+where
+    T: Serialize,
+{
+    ensure_parent_dir(path)?;
+    let body = serde_json::to_vec_pretty(value).map_err(|err| format!("Serialize {label} failed: {err}"))?;
+    if let Ok(existing) = fs::read(path) {
+        if existing == body {
+            return Ok(false);
+        }
+    }
+    let file_name = path
+        .file_name()
+        .and_then(|v| v.to_str())
+        .ok_or_else(|| format!("Invalid {label} file path"))?;
+    let tmp = path.with_file_name(format!("{file_name}.tmp"));
+    fs::write(&tmp, body).map_err(|err| format!("Write temp {label} failed: {err}"))?;
+    if let Err(rename_err) = fs::rename(&tmp, path) {
+        fs::copy(&tmp, path).map_err(|copy_err| {
+            format!(
+                "Finalize {label} failed (rename: {rename_err}; copy: {copy_err})"
+            )
+        })?;
+        let _ = fs::remove_file(&tmp);
+    }
+    Ok(true)
 }
 
 fn read_legacy_app_data(path: &PathBuf) -> Result<AppData, String> {
@@ -463,8 +746,8 @@ fn read_layout_app_data(path: &PathBuf) -> Result<AppData, String> {
         archived_conversations: Vec::new(),
         image_text_cache: runtime.image_text_cache,
         remote_im_contacts: runtime.remote_im_contacts,
-        pdf_text_cache: Vec::new(),
-        pdf_image_cache: Vec::new(),
+        pdf_text_cache: runtime.pdf_text_cache,
+        pdf_image_cache: runtime.pdf_image_cache,
     })
 }
 
@@ -491,28 +774,18 @@ fn read_app_data(path: &PathBuf) -> Result<AppData, String> {
         || main_conversation_marker_changed
         || !app_layout_exists(path)
     {
+        #[allow(deprecated)]
         write_app_data(path, &parsed)?;
     }
     Ok(parsed)
 }
 
-fn write_app_data(path: &PathBuf, data: &AppData) -> Result<(), String> {
-    let agents = AgentsFile {
-        agents: data.agents.clone(),
-    };
-    let runtime = RuntimeStateFile {
-        version: APP_DATA_SCHEMA_VERSION,
-        assistant_department_agent_id: data.assistant_department_agent_id.clone(),
-        user_alias: data.user_alias.clone(),
-        response_style_id: data.response_style_id.clone(),
-        pdf_read_mode: data.pdf_read_mode.clone(),
-        background_voice_screenshot_keywords: data.background_voice_screenshot_keywords.clone(),
-        background_voice_screenshot_mode: data.background_voice_screenshot_mode.clone(),
-        instruction_presets: data.instruction_presets.clone(),
-        main_conversation_id: data.main_conversation_id.clone(),
-        image_text_cache: data.image_text_cache.clone(),
-        remote_im_contacts: data.remote_im_contacts.clone(),
-    };
+// AppData 聚合写入需要保留，作为兼容/迁移/全量导入导出入口。
+// 但业务热路径禁止直接依赖它，应该优先走分片写入：
+// agents / runtime_state / chat_index / conversation:<id>
+fn write_app_data_with_stats(path: &PathBuf, data: &AppData) -> Result<AppDataWriteStats, String> {
+    let agents = build_agents_file(&data.agents);
+    let runtime = build_runtime_state_file(data);
     let index = ChatIndexFile {
         conversations: data
             .conversations
@@ -538,13 +811,19 @@ fn write_app_data(path: &PathBuf, data: &AppData) -> Result<(), String> {
     fs::create_dir_all(app_layout_backups_dir(path))
         .map_err(|err| format!("Create backups dir failed: {err}"))?;
 
-    write_json_file_atomic(&app_layout_agents_path(path), &agents, "agents file")?;
-    write_json_file_atomic(
+    let mut stats = AppDataWriteStats::default();
+
+    stats.agents_written = write_json_file_atomic_if_changed(
+        &app_layout_agents_path(path),
+        &agents,
+        "agents file",
+    )?;
+    stats.runtime_written = write_json_file_atomic_if_changed(
         &app_layout_runtime_state_path(path),
         &runtime,
         "runtime state file",
     )?;
-    write_json_file_atomic(
+    stats.chat_index_written = write_json_file_atomic_if_changed(
         &app_layout_chat_index_path(path),
         &index,
         "chat index file",
@@ -554,7 +833,9 @@ fn write_app_data(path: &PathBuf, data: &AppData) -> Result<(), String> {
     for conv in &data.conversations {
         expected_ids.insert(conv.id.clone());
         let conv_path = app_layout_chat_conversation_path(path, &conv.id);
-        write_json_file_atomic(&conv_path, conv, "conversation file")?;
+        if write_json_file_atomic_if_changed(&conv_path, conv, "conversation file")? {
+            stats.conversation_writes += 1;
+        }
     }
     if let Ok(entries) = fs::read_dir(app_layout_chat_conversations_dir(path)) {
         for entry in entries.flatten() {
@@ -568,9 +849,39 @@ fn write_app_data(path: &PathBuf, data: &AppData) -> Result<(), String> {
                 .unwrap_or_default()
                 .to_string();
             if !expected_ids.contains(&stem) {
-                let _ = fs::remove_file(p);
+                if fs::remove_file(p).is_ok() {
+                    stats.conversation_deletes += 1;
+                }
             }
         }
     }
+    Ok(stats)
+}
+
+/// Compatibility-only full AppData writer.
+///
+/// New production code must not add new call sites to this function. Prefer shard APIs:
+/// `write_agents_shard`, `write_runtime_state_shard`, `write_chat_index_shard`,
+/// `write_conversation_shard`, and their cached state wrappers.
+///
+/// Migration timeline:
+/// - New code: forbidden immediately.
+/// - Existing compatibility / migration / import-export flows: temporarily allowed.
+/// - After compatibility-only callers are fully isolated, reevaluate final removal.
+#[deprecated(
+    note = "兼容层专用的全量 AppData 写入器；新代码禁止调用，请改用 agents/runtime_state/chat_index/conversation 分片写入 API。"
+)]
+fn write_app_data(path: &PathBuf, data: &AppData) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    let stats = write_app_data_with_stats(path, data)?;
+    runtime_log_debug(format!(
+        "[应用数据写入] 任务=应用数据写入，状态=完成，触发=兼容层全量写入，agents_written={}，runtime_written={}，chat_index_written={}，conversation_writes={}，conversation_deletes={}，duration_ms={}",
+        stats.agents_written,
+        stats.runtime_written,
+        stats.chat_index_written,
+        stats.conversation_writes,
+        stats.conversation_deletes,
+        started.elapsed().as_millis()
+    ));
     Ok(())
 }

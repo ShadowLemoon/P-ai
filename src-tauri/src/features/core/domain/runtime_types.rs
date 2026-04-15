@@ -79,6 +79,25 @@ struct PendingAppDataPersist {
     data: AppData,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ConversationDirCacheSignature {
+    file_count: u64,
+    total_size: u64,
+    latest_file_name: String,
+    latest_modified: Option<std::time::SystemTime>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct AppDataCacheSignature {
+    agents_len: u64,
+    agents_modified: Option<std::time::SystemTime>,
+    runtime_len: u64,
+    runtime_modified: Option<std::time::SystemTime>,
+    chat_index_len: u64,
+    chat_index_modified: Option<std::time::SystemTime>,
+    conversations: ConversationDirCacheSignature,
+}
+
 fn normalize_prepared_prompt_extra_blocks(blocks: &[String]) -> Vec<String> {
     blocks
         .iter()

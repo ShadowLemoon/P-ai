@@ -432,7 +432,7 @@ async fn call_model_openai_stream_internal(
     let mut options = genai::chat::ChatOptions::default()
         .with_capture_usage(true)
         .with_capture_content(true)
-        .with_capture_reasoning_content(true)
+        .with_capture_reasoning_content(false)
         .with_extra_headers(provider_genai_headers(&api_config));
     if let Some(reasoning_effort) = provider_genai_reasoning_effort(&api_config) {
         options = options.with_reasoning_effort(reasoning_effort);
@@ -486,7 +486,7 @@ async fn call_model_openai_non_stream(
     let mut options = genai::chat::ChatOptions::default()
         .with_capture_usage(true)
         .with_capture_content(true)
-        .with_capture_reasoning_content(true)
+        .with_capture_reasoning_content(false)
         .with_extra_headers(provider_genai_headers(&api_config));
     if let Some(reasoning_effort) = provider_genai_reasoning_effort(&api_config) {
         options = options.with_reasoning_effort(reasoning_effort);
@@ -539,7 +539,7 @@ async fn call_model_openai_responses(
     let mut options = genai::chat::ChatOptions::default()
         .with_capture_usage(true)
         .with_capture_content(true)
-        .with_capture_reasoning_content(true)
+        .with_capture_reasoning_content(false)
         .with_extra_headers(provider_genai_headers(&api_config));
     if let Some(reasoning_effort) = provider_genai_reasoning_effort(&api_config) {
         options = options.with_reasoning_effort(reasoning_effort);
@@ -578,7 +578,7 @@ async fn call_model_gemini(
     let mut options = genai::chat::ChatOptions::default()
         .with_capture_usage(true)
         .with_capture_content(true)
-        .with_capture_reasoning_content(true)
+        .with_capture_reasoning_content(false)
         .with_extra_headers(provider_genai_headers(&api_config));
     if let Some(reasoning_effort) = provider_genai_reasoning_effort(&api_config) {
         options = options.with_reasoning_effort(reasoning_effort);
@@ -628,7 +628,7 @@ async fn call_model_anthropic(
     let mut options = genai::chat::ChatOptions::default()
         .with_capture_usage(true)
         .with_capture_content(true)
-        .with_capture_reasoning_content(true)
+        .with_capture_reasoning_content(false)
         .with_extra_headers(provider_genai_headers(&api_config));
     if let Some(reasoning_effort) = provider_genai_reasoning_effort(&api_config) {
         options = options.with_reasoning_effort(reasoning_effort);

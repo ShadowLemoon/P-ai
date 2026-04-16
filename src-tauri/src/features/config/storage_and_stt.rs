@@ -366,6 +366,12 @@ fn normalize_tools_list(
     }
 }
 
+fn is_codex_spark_model(model_id: &str) -> bool {
+    let normalized = model_id.trim().to_ascii_lowercase();
+    normalized.starts_with("gpt-5.3-codex-spark")
+        || normalized.contains("-codex-spark")
+}
+
 fn normalize_api_tools(config: &mut AppConfig) {
     for provider in &mut config.api_providers {
         provider.enable_audio = false;
@@ -402,6 +408,10 @@ fn normalize_api_tools(config: &mut AppConfig) {
                 model.context_window_tokens = default_codex_context_window_tokens();
                 model.max_output_tokens = default_max_output_tokens();
                 model.custom_max_output_tokens_enabled = false;
+
+                if is_codex_spark_model(&model.model) {
+                    model.enable_image = false;
+                }
             }
         }
         if provider.request_format.is_codex() {
@@ -445,6 +455,10 @@ fn normalize_api_tools(config: &mut AppConfig) {
             api.context_window_tokens = default_codex_context_window_tokens();
             api.max_output_tokens = default_max_output_tokens();
             api.custom_max_output_tokens_enabled = false;
+
+            if is_codex_spark_model(&api.model) {
+                api.enable_image = false;
+            }
         }
         api.custom_max_output_tokens_enabled =
             api.request_format.is_anthropic() || api.custom_max_output_tokens_enabled;

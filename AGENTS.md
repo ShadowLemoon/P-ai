@@ -110,6 +110,8 @@ Tauri 管理 3 个无边框窗口：`main`（配置，900×900）、`chat`（对
 - 当前仅支持 Windows 应用内自动更新；Linux 仍维护发布构建链路
 - `src-tauri/tauri.conf.json` 中的 `plugins.updater.pubkey` 只是启动期占位，真正使用的公钥由构建时 `TAURI_UPDATER_PUBLIC_KEY` 注入并在 Rust 侧覆盖
 - 便携版通过 `PORTABLE` 标记识别，自动更新走 `zip -> staging -> helper 替换 -> 备份回滚`
+- 修改版本号时，必须同步更新以下文件：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.lock`、`CHANGELOG.md`
+- 修改 `src-tauri/Cargo.lock` 时，只允许更新本项目包 `easy-call-ai` 的版本条目；禁止使用全局替换批量改第三方依赖版本号，避免引入错误 checksum
 
 ### 代码组织原则
 

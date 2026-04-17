@@ -12,12 +12,12 @@
               </svg>
             </div>
             <div>
-              <div class="text-2xl font-bold">{{ t("config.migration.exportTitle") }}</div>
-              <div class="mt-1 opacity-70">{{ t("config.migration.exportHint") }}</div>
+              <div class="card-title text-base">{{ t("config.migration.exportTitle") }}</div>
+              <div class="mt-1 text-sm opacity-70">{{ t("config.migration.exportHint") }}</div>
             </div>
           </div>
 
-          <div class="rounded-box border border-sky-200 bg-sky-50 px-4 py-3 text-sky-900">
+          <div class="rounded-box border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center rounded-full bg-sky-200/80 px-2 py-1 text-sm font-bold">i</div>
               <span>{{ t("config.migration.exportNotice") }}</span>
@@ -25,7 +25,7 @@
           </div>
 
           <label class="form-control w-full gap-2">
-            <span class="font-semibold">{{ t("config.migration.password") }}</span>
+            <span class="text-sm font-medium">{{ t("config.migration.password") }}</span>
             <label class="input input-bordered flex w-full items-center gap-3">
               <input
                 v-model.trim="exportPassword"
@@ -65,12 +65,12 @@
               </svg>
             </div>
             <div>
-              <div class="text-2xl font-bold">{{ t("config.migration.importTitle") }}</div>
-              <div class="mt-1 opacity-70">{{ t("config.migration.importHint") }}</div>
+              <div class="card-title text-base">{{ t("config.migration.importTitle") }}</div>
+              <div class="mt-1 text-sm opacity-70">{{ t("config.migration.importHint") }}</div>
             </div>
           </div>
 
-          <div class="rounded-box border border-sky-200 bg-sky-50 px-4 py-3 text-sky-900">
+          <div class="rounded-box border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center rounded-full bg-sky-200/80 px-2 py-1 text-sm font-bold">i</div>
               <span>{{ t("config.migration.importNotice") }}</span>
@@ -86,12 +86,12 @@
             <svg xmlns="http://www.w3.org/2000/svg" class="mb-4 h-12 w-12 text-base-content/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
               <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v4a1 1 0 0 0 1 1h4M12 13v6m-3-3h6M6 3h7l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
             </svg>
-            <div class="text-xl font-bold">{{ t("config.migration.importUploadTitle") }}</div>
-            <div class="mt-2 whitespace-pre-line opacity-70">{{ t("config.migration.importUploadHint") }}</div>
+            <div class="text-base font-semibold">{{ t("config.migration.importUploadTitle") }}</div>
+            <div class="mt-2 whitespace-pre-line text-sm opacity-70">{{ t("config.migration.importUploadHint") }}</div>
           </button>
 
           <label v-if="needImportPassword" class="form-control w-full gap-2">
-            <span class="font-semibold">{{ t("config.migration.decryptPassword") }}</span>
+            <span class="text-sm font-medium">{{ t("config.migration.decryptPassword") }}</span>
             <label class="input input-bordered flex w-full items-center gap-3">
               <input
                 v-model.trim="importPassword"
@@ -118,8 +118,8 @@
           </button>
 
           <div v-if="previewResult" class="rounded-box border border-base-300 bg-base-100 p-5">
-            <div class="mb-4 text-lg font-semibold">{{ t("config.migration.previewTitle") }}</div>
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div class="mb-4 text-base font-semibold">{{ t("config.migration.previewTitle") }}</div>
+            <div class="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
               <div class="rounded-box bg-base-200/60 p-4">{{ t("config.migration.packageVersion", { version: previewResult.packageVersion }) }}</div>
               <div class="rounded-box bg-base-200/60 p-4">{{ t("config.migration.memoryAdded", { count: previewResult.memoryAddedCount }) }}</div>
               <div class="rounded-box bg-base-200/60 p-4">{{ t("config.migration.memoryMerged", { count: previewResult.memoryMergedCount }) }}</div>

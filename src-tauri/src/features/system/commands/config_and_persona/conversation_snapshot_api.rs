@@ -610,6 +610,15 @@ struct SwitchActiveConversationSnapshotInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ForegroundConversationLightSnapshotInput {
+    #[serde(default)]
+    conversation_id: Option<String>,
+    #[serde(default)]
+    agent_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SwitchActiveConversationSnapshotOutput {
     conversation_id: String,
     messages: Vec<ChatMessage>,
@@ -620,6 +629,29 @@ struct SwitchActiveConversationSnapshotOutput {
     current_todos: Vec<ConversationTodoItem>,
     unarchived_conversations: Vec<UnarchivedConversationSummary>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ForegroundConversationLightSnapshotOutput {
+    conversation_id: String,
+    messages: Vec<ChatMessage>,
+    has_more_history: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_todo: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    current_todos: Vec<ConversationTodoItem>,
+}
+
+#[derive(Debug, Clone)]
+struct ForegroundConversationSnapshotCore {
+    conversation_id: String,
+    messages: Vec<ChatMessage>,
+    has_more_history: bool,
+    current_todo: Option<String>,
+    current_todos: Vec<ConversationTodoItem>,
+}
+
+const SWITCH_SNAPSHOT_RECENT_LIMIT: usize = 50;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

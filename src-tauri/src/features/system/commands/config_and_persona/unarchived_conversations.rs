@@ -3,7 +3,7 @@ fn switch_active_conversation_snapshot(
     input: SwitchActiveConversationSnapshotInput,
     state: State<'_, AppState>,
 ) -> Result<SwitchActiveConversationSnapshotOutput, String> {
-    const SWITCH_SNAPSHOT_RECENT_LIMIT: usize = 50;
+    let started_at = std::time::Instant::now();
     let guard = state
         .conversation_lock
         .lock()
@@ -14,6 +14,63 @@ fn switch_active_conversation_snapshot(
     let data_before = data.clone();
     let normalized_changed = normalize_single_active_main_conversation(&mut data);
     let department_changed = normalize_foreground_conversation_departments(&app_config, &mut data);
+    let target_idx = resolve_foreground_snapshot_target_index(&input, &app_config, &mut data)?;
+    let target_conversation_id = data
+        .conversations
+        .get(target_idx)
+        .map(|item| item.id.clone())
+        .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
+    ensure_unarchived_conversation_not_organizing(state.inner(), &target_conversation_id)?;
+
+    let mut changed = normalized_changed || department_changed;
+    for conversation in data.conversations.iter_mut() {
+        if !conversation_visible_in_foreground_lists(conversation) || !conversation.summary.trim().is_empty() {
+            continue;
+        }
+        if conversation.status.trim() != "active" {
+            conversation.status = "active".to_string();
+            changed = true;
+        }
+    }
+
+    let mut snapshot = build_foreground_conversation_snapshot_core(
+        &data,
+        target_idx,
+        SWITCH_SNAPSHOT_RECENT_LIMIT,
+    )?;
+    let unarchived_conversations =
+        collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
+
+    if changed {
+        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
+    }
+    drop(guard);
+
+    materialize_chat_message_parts_from_media_refs(&mut snapshot.messages, &state.data_path);
+    runtime_log_info(format!(
+        "[前台重型快照] 完成，conversation_id={}，message_count={}，has_more_history={}，summary_count={}，duration_ms={}",
+        snapshot.conversation_id,
+        snapshot.messages.len(),
+        snapshot.has_more_history,
+        unarchived_conversations.len(),
+        started_at.elapsed().as_millis()
+    ));
+
+    Ok(SwitchActiveConversationSnapshotOutput {
+        conversation_id: snapshot.conversation_id,
+        messages: snapshot.messages,
+        has_more_history: snapshot.has_more_history,
+        current_todo: snapshot.current_todo,
+        current_todos: snapshot.current_todos,
+        unarchived_conversations,
+    })
+}
+
+fn resolve_foreground_snapshot_target_index(
+    input: &SwitchActiveConversationSnapshotInput,
+    app_config: &AppConfig,
+    data: &mut AppData,
+) -> Result<usize, String> {
     let requested_conversation_id = input
         .conversation_id
         .as_deref()
@@ -26,11 +83,55 @@ fn switch_active_conversation_snapshot(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .unwrap_or_else(|| data.assistant_department_agent_id.clone());
-    let target_idx = resolve_unarchived_conversation_index_with_fallback(
-        &mut data,
-        &app_config,
+    resolve_unarchived_conversation_index_with_fallback(
+        data,
+        app_config,
         &effective_agent_id,
         requested_conversation_id,
+    )
+}
+
+fn build_foreground_conversation_snapshot_core(
+    data: &AppData,
+    target_idx: usize,
+    recent_limit: usize,
+) -> Result<ForegroundConversationSnapshotCore, String> {
+    let conversation = data
+        .conversations
+        .get(target_idx)
+        .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
+    let total_messages = conversation.messages.len();
+    let start = total_messages.saturating_sub(recent_limit);
+    let messages = conversation.messages[start..].to_vec();
+    Ok(ForegroundConversationSnapshotCore {
+        conversation_id: conversation.id.clone(),
+        messages,
+        has_more_history: start > 0,
+        current_todo: conversation_current_todo_text(conversation),
+        current_todos: conversation.current_todos.clone(),
+    })
+}
+
+#[tauri::command]
+fn get_foreground_conversation_light_snapshot(
+    input: ForegroundConversationLightSnapshotInput,
+    state: State<'_, AppState>,
+) -> Result<ForegroundConversationLightSnapshotOutput, String> {
+    let started_at = std::time::Instant::now();
+    let guard = state
+        .conversation_lock
+        .lock()
+        .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
+
+    let app_config = state_read_config_cached(&state)?;
+    let mut data = state_read_app_data_cached(&state)?;
+    let target_idx = resolve_foreground_snapshot_target_index(
+        &SwitchActiveConversationSnapshotInput {
+            conversation_id: input.conversation_id.clone(),
+            agent_id: input.agent_id.clone(),
+        },
+        &app_config,
+        &mut data,
     )?;
     let target_conversation_id = data
         .conversations
@@ -39,56 +140,28 @@ fn switch_active_conversation_snapshot(
         .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
     ensure_unarchived_conversation_not_organizing(state.inner(), &target_conversation_id)?;
 
-    let mut changed = normalized_changed || department_changed;
-    for (_idx, conversation) in data.conversations.iter_mut().enumerate() {
-        if !conversation_visible_in_foreground_lists(conversation) || !conversation.summary.trim().is_empty() {
-            continue;
-        }
-        let target_status = "active";
-        if conversation.status.trim() != target_status {
-            conversation.status = target_status.to_string();
-            changed = true;
-        }
-    }
-
-    let conversation_id = data
-        .conversations
-        .get(target_idx)
-        .map(|item| item.id.clone())
-        .ok_or_else(|| "Unarchived conversation index out of bounds.".to_string())?;
-    let all_messages = data
-        .conversations
-        .get(target_idx)
-        .map(|item| item.messages.clone())
-        .ok_or_else(|| "Unarchived conversation messages not found.".to_string())?;
-    let total_messages = all_messages.len();
-    let start = total_messages.saturating_sub(SWITCH_SNAPSHOT_RECENT_LIMIT);
-    let mut messages = all_messages[start..].to_vec();
-    let has_more_history = start > 0;
-    let unarchived_conversations =
-        collect_unarchived_conversation_summaries(state.inner(), &app_config, &data);
-
-    if changed {
-        persist_app_data_conversation_runtime_delta(&state, &data_before, &data)?;
-    }
+    let mut snapshot = build_foreground_conversation_snapshot_core(
+        &data,
+        target_idx,
+        SWITCH_SNAPSHOT_RECENT_LIMIT,
+    )?;
     drop(guard);
 
-    materialize_chat_message_parts_from_media_refs(&mut messages, &state.data_path);
+    materialize_chat_message_parts_from_media_refs(&mut snapshot.messages, &state.data_path);
+    runtime_log_info(format!(
+        "[前台轻量快照] 完成，conversation_id={}，message_count={}，has_more_history={}，duration_ms={}",
+        snapshot.conversation_id,
+        snapshot.messages.len(),
+        snapshot.has_more_history,
+        started_at.elapsed().as_millis()
+    ));
 
-    Ok(SwitchActiveConversationSnapshotOutput {
-        conversation_id: conversation_id.clone(),
-        messages,
-        has_more_history,
-        current_todo: data
-            .conversations
-            .get(target_idx)
-            .and_then(conversation_current_todo_text),
-        current_todos: data
-            .conversations
-            .get(target_idx)
-            .map(|conversation| conversation.current_todos.clone())
-            .unwrap_or_default(),
-        unarchived_conversations,
+    Ok(ForegroundConversationLightSnapshotOutput {
+        conversation_id: snapshot.conversation_id,
+        messages: snapshot.messages,
+        has_more_history: snapshot.has_more_history,
+        current_todo: snapshot.current_todo,
+        current_todos: snapshot.current_todos,
     })
 }
 

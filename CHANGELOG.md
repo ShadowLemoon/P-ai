@@ -1,5 +1,12 @@
 # 变更日志
 
+## 更新：前台切会话轻量快照
+
+- 优化（foreground-conversation-light-snapshot）：前台切会话主路径新增轻量快照接口 `get_foreground_conversation_light_snapshot`，只返回当前会话最近消息、`hasMoreHistory` 与当前 `todo/todos`，不再在首屏热路径中同步构建整份 `unarchivedConversations`
+  - Rust 侧保留原有 `switch_active_conversation_snapshot(...)` 作为重型兼容入口，但新增共享 helper 将“当前会话最近消息快照”抽出为独立核心逻辑，避免切会话首屏继续被会话列表摘要、全局归一化与持久化副作用拖慢
+  - 前端 `UnifiedWindowApp.vue` 的切会话、新建、派生、投送与前台恢复链路改为优先调用轻量快照接口，只在独立链路中刷新未归档会话摘要，同时保留现有异步补消息 `request_conversation_messages_after_async(...)` 不变
+  - 这样前台切换首屏只依赖“当前会话内容”，会话列表摘要与补消息解耦，实测切会话卡顿显著下降
+
 ## 发布：v0.9.14
 
 - 修复（remote-im-bound-department-agent-fallback）：远程 IM 联系人已绑定部门但未显式绑定人格时，不再错误回退到全局 `default-agent`；现在会优先从目标部门自身的 `agent_ids` 中选择可用人格，避免出现 `agentId 与部门不匹配` 导致消息持续入队失败

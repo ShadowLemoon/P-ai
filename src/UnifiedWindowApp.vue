@@ -1223,7 +1223,7 @@ type SwitchConversationSnapshot = {
   hasMoreHistory: boolean;
   currentTodo?: string;
   currentTodos?: ChatTodoItem[];
-  unarchivedConversations: UnarchivedConversationSummary[];
+  unarchivedConversations?: UnarchivedConversationSummary[];
 };
 
 type ConversationTodosUpdatedPayload = {
@@ -1937,7 +1937,18 @@ async function refreshChatUnarchivedConversations() {
   if (conversationForegroundSyncing.value) return;
   try {
     conversationForegroundSyncing.value = true;
-    const snapshot = await requestConversationSnapshot(String(currentChatConversationId.value || "").trim() || null);
+    await refreshUnarchivedConversationOverview();
+    const currentConversationId = String(currentChatConversationId.value || "").trim();
+    const nextConversationId = currentConversationId && unarchivedConversations.value.some((item) =>
+      String(item.conversationId || "").trim() === currentConversationId
+    )
+      ? currentConversationId
+      : pickForegroundConversationId(unarchivedConversations.value);
+    if (!nextConversationId) {
+      clearForegroundConversation("refresh_unarchived_conversations_empty");
+      return;
+    }
+    const snapshot = await requestConversationLightSnapshot(nextConversationId);
     applyConversationSnapshot(snapshot);
   } finally {
     conversationForegroundSyncing.value = false;
@@ -2271,9 +2282,9 @@ function applyConversationSnapshot(snapshot: SwitchConversationSnapshot) {
   hasMoreBackendHistory.value = !!snapshot.hasMoreHistory;
   cacheConversationMessages(nextConversationId, nextMessages);
   clearConversationBadge(nextConversationId);
-  unarchivedConversations.value = Array.isArray(snapshot.unarchivedConversations)
-    ? snapshot.unarchivedConversations
-    : [];
+  if (Array.isArray(snapshot.unarchivedConversations)) {
+    unarchivedConversations.value = snapshot.unarchivedConversations;
+  }
   scheduleConversationScrollToBottomFallback(nextConversationId);
 }
 
@@ -2383,13 +2394,22 @@ function updateForegroundConversationOverviewFromMessages(
   }
 }
 
-async function requestConversationSnapshot(conversationId?: string | null): Promise<SwitchConversationSnapshot> {
-  return invokeTauri<SwitchConversationSnapshot>("switch_active_conversation_snapshot", {
+async function requestConversationLightSnapshot(conversationId?: string | null): Promise<SwitchConversationSnapshot> {
+  return invokeTauri<SwitchConversationSnapshot>("get_foreground_conversation_light_snapshot", {
     input: {
       conversationId: String(conversationId || "").trim() || null,
       agentId: String(currentForegroundAgentId.value || "").trim() || null,
     },
   });
+}
+
+async function requestUnarchivedConversationOverview(): Promise<UnarchivedConversationSummary[]> {
+  return invokeTauri<UnarchivedConversationSummary[]>("list_unarchived_conversations");
+}
+
+async function refreshUnarchivedConversationOverview() {
+  const items = await requestUnarchivedConversationOverview();
+  unarchivedConversations.value = Array.isArray(items) ? items : [];
 }
 
 async function markConversationRead(conversationId?: string | null) {
@@ -2422,7 +2442,7 @@ async function recoverForegroundConversationFromOverview(reason: string, preferr
       clearForegroundConversation(reason);
       return;
     }
-    const snapshot = await requestConversationSnapshot(nextConversationId);
+    const snapshot = await requestConversationLightSnapshot(nextConversationId);
     applyConversationSnapshot(snapshot);
   } finally {
     conversationForegroundSyncing.value = false;
@@ -2479,7 +2499,7 @@ async function switchUnarchivedConversation(conversationId: string) {
       displayBlockCount: displayMessageBlocks.value.length,
       syncCostMs: Math.round((perfNow() - startedAt) * 10) / 10,
     });
-    const snapshot = await requestConversationSnapshot(cid);
+    const snapshot = await requestConversationLightSnapshot(cid);
     applyConversationSnapshot(snapshot);
     await nextTick();
     void requestConversationMessagesAfterAsync(cid, trace).catch((error) => {
@@ -2510,7 +2530,8 @@ async function createUnarchivedConversation(input?: { title?: string; department
     });
     const conversationId = String(result?.conversationId || "").trim();
     if (!conversationId) return;
-    const snapshot = await requestConversationSnapshot(conversationId);
+    await refreshUnarchivedConversationOverview();
+    const snapshot = await requestConversationLightSnapshot(conversationId);
     applyConversationSnapshot(snapshot);
   } catch (error) {
     setStatus(`投送失败：${formatI18nError(tr, "status.requestFailed", error)}`);
@@ -2544,7 +2565,8 @@ async function deriveConversationFromSelection(payload: { count: number; message
     });
     const conversationId = String(result?.conversationId || "").trim();
     if (!conversationId) return;
-    const snapshot = await requestConversationSnapshot(conversationId);
+    await refreshUnarchivedConversationOverview();
+    const snapshot = await requestConversationLightSnapshot(conversationId);
     applyConversationSnapshot(snapshot);
     const warning = String(result?.warning || "").trim();
     if (warning) {
@@ -2593,7 +2615,8 @@ async function deliverConversationFromSelection(payload: {
     });
     const effectiveTargetConversationId = String(result?.targetConversationId || targetConversationId).trim();
     if (!effectiveTargetConversationId) return;
-    const snapshot = await requestConversationSnapshot(effectiveTargetConversationId);
+    await refreshUnarchivedConversationOverview();
+    const snapshot = await requestConversationLightSnapshot(effectiveTargetConversationId);
     applyConversationSnapshot(snapshot);
     setStatus(`已投送 ${Number(result?.deliveredCount || selectedMessageIds.length)} 条消息`);
   } catch (error) {

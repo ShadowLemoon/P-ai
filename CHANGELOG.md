@@ -2,6 +2,7 @@
 
 ## 发布：v0.9.13
 
+- 修复（markdown-renderer-polish）：适配新版 `markstream-vue` 后续渲染样式回归，收口聊天消息与工具审查侧栏中的 Markdown 排版、列表/引用字号、代码块主题与本地化文案；补齐新版代码块头部与正文配色、展开按钮显隐判断，并移除旧版 `cropperjs/dist/cropper.css` 入口以兼容 `cropperjs 2.x` 构建路径变更
 - 维护（deps-phase-3-high-risk）：按依赖升级盘点计划完成第三阶高风险升级；前端提升 `vite`、`@vitejs/plugin-vue`、`typescript`、`vue-i18n`、`shiki`、`lucide-vue-next`、`cropperjs`，后端提升 `time`、`rmcp`、`reqwest`、`genai`、`rusqlite`、`tantivy`、`zip`，并补齐新版 `cropperjs` 裁剪流程、`rmcp` builder/HTTP 头签名、`tantivy` 搜索 collector 与若干终端/记忆兼容改造；通过 `pnpm typecheck` 与 `cargo check` 校验
 - 维护（deps-phase-2-medium-risk）：按依赖升级盘点计划完成第二阶中风险升级；前端提升 `mermaid` 与 `markstream-vue`，后端提升 `async-openai`、`tokio`、`tokio-tungstenite`、`pdf_oxide`、`xcap`、`windows-sys`，并收口 `ChatShikiCodeBlockNode` 对新版 `markstream-vue` 的 `themes` 类型兼容；通过 `pnpm typecheck` 与 `cargo check` 校验
 - 维护（deps-phase-1-low-risk）：按依赖升级盘点计划完成第一阶低风险升级；前端提升 `@tauri-apps/plugin-dialog`、`@tauri-apps/cli`、`vue`、`vue-tsc`、`tailwindcss`、`@tailwindcss/postcss`、`postcss`、`katex`、`stream-markdown`，后端提升 `tauri`、`tauri-build`、`tauri-plugin-dialog`、`tauri-plugin-updater`、`tauri-plugin-single-instance` 与 `captis`，并通过 `pnpm typecheck`、`cargo check`、`pnpm exec tauri info` 校验

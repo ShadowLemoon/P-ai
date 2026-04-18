@@ -467,6 +467,7 @@ const markdownCodeBlockProps = {
   showFontSizeButtons: false,
   enableFontSizeControl: false,
   isShowPreview: false,
+  showTooltips: false,
 };
 const markdownMermaidProps = {
   showHeader: true,
@@ -477,6 +478,7 @@ const markdownMermaidProps = {
   showZoomControls: true,
   showModeToggle: false,
   enableWheelZoom: true,
+  showTooltips: false,
 };
 const imageDataUrlCache = new Map<string, string>();
 const imageDataUrlPromiseCache = new Map<string, Promise<string>>();
@@ -968,17 +970,71 @@ function openResolvedImagePreview(
 }
 
 .assistant-markdown :deep(.ecall-markdown-content) {
+  --ms-font-sans: var(
+    --app-font-family,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    sans-serif
+  );
+  --ms-text-body: 0.875rem;
+  --ms-leading-body: 1.5;
+  --ms-text-h1: 1.02rem;
+  --ms-leading-h1: 1.5;
+  --ms-text-h2: 0.98rem;
+  --ms-leading-h2: 1.5;
+  --ms-text-h3: 0.94rem;
+  --ms-leading-h3: 1.5;
+  --ms-text-h4: 0.9rem;
+  --ms-text-h5: 0.875rem;
+  --ms-text-h6: 0.875rem;
+  --ms-flow-paragraph-y: 0.25rem;
+  --ms-flow-list-y: 0.25rem;
+  --ms-flow-list-item-y: 0.12rem;
+  --ms-flow-list-indent: 1.05rem;
+  --ms-flow-list-indent-mobile: 1.05rem;
+  --ms-flow-blockquote-y: 0.25rem;
+  --ms-flow-blockquote-indent: 0.68rem;
   min-width: 0;
   max-width: 100%;
   overflow-x: hidden;
-  font-size: 0.9rem;
+  font-family: inherit;
+  font-size: 0.875rem;
   line-height: 1.5;
+}
+
+.assistant-markdown :deep(.ecall-markdown-content .paragraph-node),
+.assistant-markdown :deep(.ecall-markdown-content .heading-node),
+.assistant-markdown :deep(.ecall-markdown-content .list-node),
+.assistant-markdown :deep(.ecall-markdown-content .list-item),
+.assistant-markdown :deep(.ecall-markdown-content .blockquote),
+.assistant-markdown :deep(.ecall-markdown-content .link-node),
+.assistant-markdown :deep(.ecall-markdown-content .strong-node),
+.assistant-markdown :deep(.ecall-markdown-content .inline-code),
+.assistant-markdown :deep(.ecall-markdown-content .table-node-wrapper),
+.assistant-markdown :deep(.ecall-markdown-content .hr-node) {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .assistant-markdown :deep(.ecall-markdown-content.markdown-renderer) {
   content-visibility: visible !important;
   contain: none !important;
   contain-intrinsic-size: auto !important;
+}
+
+.assistant-markdown :deep(.ecall-markdown-content .markdown-renderer),
+.assistant-markdown :deep(.ecall-markdown-content .node-slot),
+.assistant-markdown :deep(.ecall-markdown-content .node-content),
+.assistant-markdown :deep(.ecall-markdown-content .text-node) {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 
 .assistant-markdown :deep(.markstream-vue .typewriter-enter-from) {
@@ -1009,12 +1065,12 @@ function openResolvedImagePreview(
   margin-bottom: 0;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content :where(p,ul,ol,blockquote,pre,table,figure)) {
+.assistant-markdown :deep(.ecall-markdown-content :where(p,ul,ol,blockquote,pre,table,figure,.paragraph-node,.list-node,.blockquote,.table-node-wrapper,.code-block-container,._mermaid,.vmr-container)) {
   margin-top: 0.25rem;
   margin-bottom: 0.25rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content :where(h1,h2,h3,h4)) {
+.assistant-markdown :deep(.ecall-markdown-content :where(h1,h2,h3,h4,.heading-node)) {
   margin-top: 0.7rem;
   margin-bottom: 0.32rem;
   font-weight: 600;
@@ -1022,85 +1078,104 @@ function openResolvedImagePreview(
   letter-spacing: -0.015em;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content h1) {
-  font-size: 1.12rem;
+.assistant-markdown :deep(.ecall-markdown-content :where(h1,.heading-node.heading-1)) {
+  font-size: 1.02rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content h2) {
-  font-size: 1.04rem;
-}
-
-.assistant-markdown :deep(.ecall-markdown-content h3) {
+.assistant-markdown :deep(.ecall-markdown-content :where(h2,.heading-node.heading-2)) {
   font-size: 0.98rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content h4) {
+.assistant-markdown :deep(.ecall-markdown-content :where(h3,.heading-node.heading-3)) {
   font-size: 0.94rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content :where(ul,ol)) {
+.assistant-markdown :deep(.ecall-markdown-content :where(h4,.heading-node.heading-4)) {
+  font-size: 0.9rem;
+}
+
+.assistant-markdown :deep(.ecall-markdown-content :where(ul,ol,.list-node)) {
   padding-left: 1.05rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content li) {
+.assistant-markdown :deep(.ecall-markdown-content :where(li,.list-item)) {
   margin: 0.12rem 0;
+  padding-left: 0;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content li > :where(p,ul,ol)) {
+.assistant-markdown :deep(.ecall-markdown-content :where(li,.list-item) > :where(p,ul,ol,.paragraph-node,.list-node)) {
   margin-top: 0.16rem;
   margin-bottom: 0.16rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content a) {
+.assistant-markdown :deep(.ecall-markdown-content :where(a,.link-node)) {
   text-decoration: underline;
   text-underline-offset: 0.18em;
   text-decoration-color: hsl(var(--bc) / 0.28);
 }
 
-.assistant-markdown :deep(.ecall-markdown-content a:hover) {
+.assistant-markdown :deep(.ecall-markdown-content :where(a,.link-node):hover) {
   text-decoration-color: hsl(var(--bc) / 0.5);
 }
 
-.assistant-markdown :deep(.ecall-markdown-content strong) {
+.assistant-markdown :deep(.ecall-markdown-content :where(strong,.strong-node)) {
   font-weight: 600;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content blockquote) {
+.assistant-markdown :deep(.ecall-markdown-content :where(blockquote,.blockquote)) {
   border-left: 3px solid hsl(var(--bc) / 0.16);
   padding-left: 0.68rem;
   color: hsl(var(--bc) / 0.82);
 }
 
-.assistant-markdown :deep(.ecall-markdown-content hr) {
+.assistant-markdown :deep(.ecall-markdown-content :where(blockquote,.blockquote) .markdown-renderer),
+.assistant-markdown :deep(.ecall-markdown-content :where(ul,ol,.list-node,li,.list-item) .markdown-renderer) {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.assistant-markdown :deep(.ecall-markdown-content :where(hr,.hr-node)) {
   border: 0;
   border-top: 1px solid hsl(var(--bc) / 0.14);
   margin: 0.65rem 0;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content :not(pre) > code) {
+.assistant-markdown :deep(.ecall-markdown-content :where(:not(pre) > code,.inline-code)) {
   border: 1px solid hsl(var(--bc) / 0.12);
   background: hsl(var(--b2));
   border-radius: 0.4rem;
   padding: 0.08rem 0.3rem;
+  font-family: var(
+    --ms-font-mono,
+    ui-monospace,
+    "SFMono-Regular",
+    "SF Mono",
+    Menlo,
+    Monaco,
+    Consolas,
+    "Liberation Mono",
+    "Courier New",
+    monospace
+  );
   font-size: 0.86em;
   font-weight: 500;
 }
 
 
-.assistant-markdown :deep(.ecall-markdown-content table) {
+.assistant-markdown :deep(.ecall-markdown-content :where(table,.table-node)) {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.9rem;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content th) {
+.assistant-markdown :deep(.ecall-markdown-content :where(th,.table-node th)) {
   border-bottom: 1px solid hsl(var(--bc) / 0.16);
   padding: 0.36rem 0.5rem;
   text-align: left;
   font-weight: 600;
 }
 
-.assistant-markdown :deep(.ecall-markdown-content td) {
+.assistant-markdown :deep(.ecall-markdown-content :where(td,.table-node td)) {
   border-bottom: 1px solid hsl(var(--bc) / 0.1);
   padding: 0.34rem 0.5rem;
 }
@@ -1117,6 +1192,7 @@ function openResolvedImagePreview(
 .ecall-assistant-bubble {
   min-width: 3rem;
   min-height: 2.25rem;
+  font-size: 0.875rem;
   transition:
     box-shadow 220ms ease,
     transform 220ms ease,

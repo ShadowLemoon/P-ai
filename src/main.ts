@@ -1,7 +1,6 @@
 import { createApp } from "vue";
 import ConfigApp from "./apps/config/ConfigApp.vue";
 import "./style.css";
-import "cropperjs/dist/cropper.css";
 import "katex/dist/katex.min.css";
 import { i18n } from "./i18n";
 

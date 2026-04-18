@@ -35,9 +35,12 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
   const updateProgressPercent = ref<number | null>(null);
   const updateRuntimeKind = ref<"installer" | "portable">("installer");
   const latestCheckResult = ref<GithubUpdateInfo | null>(null);
+  const hasAvailableUpdate = computed(() => !!latestCheckResult.value?.hasUpdate);
   const checkingUpdate = computed(() => checkingUpdateRequest.value || updateInProgress.value);
 
   let updateProgressUnlisten: UnlistenFn | null = null;
+  let dailyCheckTimer: number | null = null;
+  let dailyCheckStarted = false;
 
   function runtimeLabel(kind: "installer" | "portable") {
     return kind === "portable" ? "便携版" : "安装版";
@@ -90,6 +93,32 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
     updateDialogOpen.value = true;
   }
 
+  function clearDailyCheckTimer() {
+    if (dailyCheckTimer != null) {
+      window.clearTimeout(dailyCheckTimer);
+      dailyCheckTimer = null;
+    }
+  }
+
+  function msUntilNextFourAm() {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(4, 0, 0, 0);
+    if (next.getTime() <= now.getTime()) {
+      next.setDate(next.getDate() + 1);
+    }
+    return Math.max(1000, next.getTime() - now.getTime());
+  }
+
+  function scheduleNextDailyCheck() {
+    clearDailyCheckTimer();
+    dailyCheckTimer = window.setTimeout(() => {
+      void checkGithubUpdate(true).finally(() => {
+        scheduleNextDailyCheck();
+      });
+    }, msUntilNextFourAm());
+  }
+
   function syncDialogFromProgress(payload: UpdateProgressPayload) {
     updateRuntimeKind.value = payload.runtimeKind;
     updateDialogReleaseUrl.value = latestCheckResult.value?.releaseUrl || "";
@@ -122,12 +151,16 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
     if (checkingUpdate.value) return;
     checkingUpdateRequest.value = true;
     try {
-      options.status.value = "检查更新中...";
+      if (!silent) {
+        options.status.value = "检查更新中...";
+      }
       const result = await invokeTauri<GithubUpdateInfo>("check_github_update");
       latestCheckResult.value = result;
       updateRuntimeKind.value = result.runtimeKind;
       if (!result?.hasUpdate) {
-        options.status.value = `当前已是最新版本 ${result.currentVersion}`;
+        if (!silent) {
+          options.status.value = `当前已是最新版本 ${result.currentVersion}`;
+        }
         if (!silent) {
           openCheckResultDialog(result);
         }
@@ -183,11 +216,26 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
   }
 
   async function autoCheckGithubUpdate() {
+    if (dailyCheckStarted) return;
+    dailyCheckStarted = true;
     await checkGithubUpdate(true);
+    scheduleNextDailyCheck();
   }
 
   async function manualCheckGithubUpdate() {
     await checkGithubUpdate(false);
+  }
+
+  async function triggerUpdateToLatest() {
+    if (updateInProgress.value || checkingUpdateRequest.value) {
+      updateDialogOpen.value = true;
+      return;
+    }
+    if (latestCheckResult.value?.hasUpdate) {
+      openCheckResultDialog(latestCheckResult.value);
+      return;
+    }
+    await manualCheckGithubUpdate();
   }
 
   void listen<UpdateProgressPayload>("easy-call:update-status", (event) => {
@@ -207,10 +255,14 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
   onBeforeUnmount(() => {
     updateProgressUnlisten?.();
     updateProgressUnlisten = null;
+    clearDailyCheckTimer();
+    dailyCheckStarted = false;
   });
 
   return {
     checkingUpdate,
+    hasAvailableUpdate,
+    latestCheckResult,
     updateDialogOpen,
     updateDialogTitle,
     updateDialogBody,
@@ -223,5 +275,6 @@ export function useGithubUpdate(options: UseGithubUpdateOptions) {
     confirmUpdateDialogPrimary,
     autoCheckGithubUpdate,
     manualCheckGithubUpdate,
+    triggerUpdateToLatest,
   };
 }

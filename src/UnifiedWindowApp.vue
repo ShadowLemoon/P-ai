@@ -25,12 +25,18 @@
       :config-search-query="configSearchQuery"
       :config-search-results="configSearchResults"
       :config-search-placeholder="t('config.search.placeholder')"
+      :show-update-to-latest-button="showUpdateToLatestButton"
+      :has-available-update="hasAvailableUpdate"
+      :checking-update="checkingUpdate"
+      :update-to-latest-label="updateToLatestLabel"
+      :update-to-latest-title="updateToLatestTitle"
       @open-archives="openCurrentHistory"
       @open-config="openConfigWindow"
       @minimize-window="minimizeWindowAndClearForeground"
       @toggle-maximize-window="toggleMaximizeWindow"
       @update:config-search-query="updateConfigSearchQuery"
       @select-config-search-result="handleSelectConfigSearchResult"
+      @update-to-latest="triggerUpdateToLatest"
       @switch-conversation="switchUnarchivedConversation"
       @rename-conversation="renameCurrentConversation"
       @create-conversation="createUnarchivedConversation"
@@ -250,6 +256,7 @@
       :handle-memory-import-file="handleMemoryImportFile"
       :close-prompt-preview="closePromptPreview"
       :checking-update="checkingUpdate"
+      :has-available-update="hasAvailableUpdate"
       :check-update="manualCheckGithubUpdate"
       :open-github="openGithubRepository"
       :last-saved-config-json="lastSavedConfigJson"
@@ -606,6 +613,8 @@ const { perfNow, perfLog, setStatus, setStatusError, localeOptions, applyUiLangu
 });
 const {
   checkingUpdate,
+  hasAvailableUpdate,
+  latestCheckResult,
   updateDialogOpen,
   updateDialogTitle,
   updateDialogBody,
@@ -618,9 +627,21 @@ const {
   confirmUpdateDialogPrimary,
   autoCheckGithubUpdate,
   manualCheckGithubUpdate,
+  triggerUpdateToLatest,
 } = useGithubUpdate({
   viewMode,
   status,
+});
+const showUpdateToLatestButton = computed(() => hasAvailableUpdate.value);
+const updateToLatestLabel = computed(() =>
+  checkingUpdate.value ? t("about.updating") : t("about.updateNow"),
+);
+const updateToLatestTitle = computed(() => {
+  const latestVersion = String(latestCheckResult.value?.latestVersion || "").trim();
+  if (latestVersion) {
+    return t("about.updateAvailableAction", { version: latestVersion });
+  }
+  return t("about.updateNow");
 });
 
 const {

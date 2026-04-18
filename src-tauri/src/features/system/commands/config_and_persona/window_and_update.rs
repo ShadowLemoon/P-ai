@@ -99,10 +99,7 @@ fn is_newer_version(current: &str, latest: &str) -> bool {
     false
 }
 
-const GITHUB_RELEASE_API: &str = "https://api.github.com/repos/kawayiYokami/P-ai/releases/latest";
-const GITEE_RELEASE_API: &str = "https://gitee.com/api/v5/repos/yokami618/P-ai/releases/latest";
 const GITHUB_REPO_PAGE: &str = "https://github.com/kawayiYokami/P-ai";
-const GITEE_REPO_PAGE: &str = "https://gitee.com/yokami618/P-ai";
 
 fn set_preferred_release_source(state: &AppState, source: &str) {
     match state.preferred_release_source.lock() {
@@ -119,65 +116,13 @@ fn set_preferred_release_source(state: &AppState, source: &str) {
     }
 }
 
-fn get_preferred_release_source(state: &AppState) -> String {
-    match state.preferred_release_source.lock() {
-        Ok(slot) => slot.clone(),
-        Err(err) => {
-            eprintln!(
-                "get_preferred_release_source 锁定 preferred_release_source 失败：err={}",
-                err
-            );
-            "github".to_string()
-        }
-    }
-}
-
 async fn probe_release_source_once(state: &AppState) {
-    let client = match reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(3))
-        .build()
-    {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("[更新源] 初始化探测客户端失败: {}", err);
-            return;
-        }
-    };
-    let github_ok = client
-        .get(GITHUB_RELEASE_API)
-        .header(reqwest::header::USER_AGENT, "p-ai/startup-probe")
-        .send()
-        .await
-        .map(|resp| resp.status().is_success())
-        .unwrap_or(false);
-    let gitee_ok = client
-        .get(GITEE_RELEASE_API)
-        .header(reqwest::header::USER_AGENT, "p-ai/startup-probe")
-        .send()
-        .await
-        .map(|resp| resp.status().is_success())
-        .unwrap_or(false);
-    let selected = if github_ok {
-        "github"
-    } else if gitee_ok {
-        "gitee"
-    } else {
-        "github"
-    };
-    set_preferred_release_source(state, selected);
-    eprintln!(
-        "[更新源] 启动探测完成: github_ok={}, gitee_ok={}, selected={}",
-        github_ok, gitee_ok, selected
-    );
+    set_preferred_release_source(state, "github");
 }
 
 #[tauri::command]
-fn get_project_repository_url(state: State<'_, AppState>) -> String {
-    if get_preferred_release_source(state.inner()) == "gitee" {
-        GITEE_REPO_PAGE.to_string()
-    } else {
-        GITHUB_REPO_PAGE.to_string()
-    }
+fn get_project_repository_url(_state: State<'_, AppState>) -> String {
+    GITHUB_REPO_PAGE.to_string()
 }
 
 #[tauri::command]
@@ -300,4 +245,3 @@ fn save_config(
     let _ = app.emit("easy-call:config-updated", &runtime_config);
     Ok(runtime_config)
 }
-

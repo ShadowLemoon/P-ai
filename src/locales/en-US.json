@@ -1082,6 +1082,11 @@
   "about": {
     "version": "Version",
     "checkUpdate": "Check for Updates",
-    "repository": "Git Repository"
+    "repository": "Git Repository",
+    "updateToLatest": "Update to Latest",
+    "updateNow": "Update Now",
+    "updating": "Updating",
+    "updateAvailableBadge": "Update available",
+    "updateAvailableAction": "New version {version} is available. Click to update"
   }
 }

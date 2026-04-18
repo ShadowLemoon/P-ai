@@ -48,7 +48,10 @@
           <a :class="{ 'active': props.configTab === 'migration', 'menu-active': props.configTab === 'migration', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('migration')">{{ t("config.tabs.migration") }}</a>
         </li>
         <li>
-          <a :class="{ 'active': props.configTab === 'about', 'menu-active': props.configTab === 'about', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('about')">{{ t("config.tabs.about") }}</a>
+          <a :class="{ 'active': props.configTab === 'about', 'menu-active': props.configTab === 'about', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('about')">
+            <span>{{ t("config.tabs.about") }}</span>
+            <span v-if="props.hasAvailableUpdate" class="ml-2 inline-flex h-2.5 w-2.5 rounded-full bg-error shrink-0" :title="t('about.updateAvailableBadge')"></span>
+          </a>
         </li>
       </ul>
     </div>
@@ -405,6 +408,7 @@ const props = defineProps<{
   hotkeyTestRecordingMs: number;
   hotkeyTestAudioReady: boolean;
   checkingUpdate: boolean;
+  hasAvailableUpdate: boolean;
   saveConfigAction: () => Promise<boolean> | boolean;
   restoreConfigAction: () => boolean;
   lastSavedConfigJson: string;

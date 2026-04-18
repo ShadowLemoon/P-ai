@@ -93,7 +93,23 @@
       <span class="truncate text-sm font-semibold text-base-content">{{ combinedTitle }}</span>
     </div>
 
-    <div v-if="viewMode !== 'chat'" class="relative z-10 min-w-0 justify-self-start" aria-hidden="true"></div>
+    <div v-if="viewMode !== 'chat'" class="relative z-10 min-w-0 justify-self-start flex items-center gap-2" @mousedown.stop>
+      <button
+        v-if="viewMode === 'config' && showUpdateToLatestButton"
+        class="btn btn-success btn-sm h-8 min-h-8 gap-2 px-3 relative shadow-sm"
+        :title="updateToLatestTitle || ''"
+        @click.stop="$emit('update-to-latest')"
+      >
+        <span
+          v-if="hasAvailableUpdate && !checkingUpdate"
+          class="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-error"
+          aria-hidden="true"
+        ></span>
+        <span v-if="checkingUpdate" class="loading loading-spinner loading-xs"></span>
+        <Download v-else class="h-3.5 w-3.5" />
+        <span>{{ updateToLatestLabel }}</span>
+      </button>
+    </div>
 
     <div
       v-if="viewMode !== 'chat'"
@@ -245,7 +261,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { FoldVertical, History, Minus, Search, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
+import { Download, FoldVertical, History, Minus, Search, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
 import type { ChatConversationOverviewItem } from "../../../types/app";
 import ChatConversationListCard from "../../chat/components/ChatConversationListCard.vue";
 import type { ConfigSearchResult, ConfigSearchTab } from "../../config/search/config-search";
@@ -292,6 +308,11 @@ const props = defineProps<{
   configSearchQuery?: string;
   configSearchResults?: ConfigSearchResult[];
   configSearchPlaceholder?: string;
+  showUpdateToLatestButton?: boolean;
+  hasAvailableUpdate?: boolean;
+  checkingUpdate?: boolean;
+  updateToLatestLabel?: string;
+  updateToLatestTitle?: string;
 }>();
 
 const emit = defineEmits<{
@@ -306,6 +327,7 @@ const emit = defineEmits<{
   (e: "close-window"): void;
   (e: "update:config-search-query", value: string): void;
   (e: "select-config-search-result", tab: ConfigSearchTab): void;
+  (e: "update-to-latest"): void;
 }>();
 
 const { t } = useI18n();

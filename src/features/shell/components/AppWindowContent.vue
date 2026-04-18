@@ -53,6 +53,7 @@
       :hotkey-test-recording-ms="hotkeyTestRecordingMs"
       :hotkey-test-audio-ready="!!hotkeyTestAudio"
       :checking-update="checkingUpdate"
+      :has-available-update="hasAvailableUpdate"
       :save-config-action="saveConfig"
       :restore-config-action="restoreConfig"
       :last-saved-config-json="lastSavedConfigJson"
@@ -354,6 +355,7 @@ const props = defineProps<{
   hotkeyTestRecordingMs: number;
   hotkeyTestAudio: unknown;
   checkingUpdate: boolean;
+  hasAvailableUpdate: boolean;
   setStatus: (text: string) => void;
   userAlias: string;
   selectedPersonaName: string;

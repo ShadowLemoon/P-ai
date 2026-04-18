@@ -107,6 +107,17 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
     await options.onRefreshMessages();
   }
 
+  function resolveValidBatchKey(
+    batches: ToolReviewBatchSummary[],
+    preferredKey?: string | null,
+  ): string {
+    const normalizedPreferredKey = String(preferredKey || "").trim();
+    if (normalizedPreferredKey && batches.some((batch) => batch.batchKey === normalizedPreferredKey)) {
+      return normalizedPreferredKey;
+    }
+    return String(batches[batches.length - 1]?.batchKey || "").trim();
+  }
+
   async function refreshToolReviewBatches() {
     const conversationId = String(options.activeConversationId.value || "").trim();
     if (!conversationId) {
@@ -127,11 +138,9 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
         toolReviewPanelOpen.value = false;
       }
       const currentKey = String(toolReviewCurrentBatchKey.value || "").trim();
-      if (currentKey && toolReviewBatches.value.some((batch) => batch.batchKey === currentKey)) {
-        toolReviewCurrentBatchKey.value = currentKey;
-      } else {
-        toolReviewCurrentBatchKey.value = String(result?.currentBatchKey || toolReviewBatches.value[toolReviewBatches.value.length - 1]?.batchKey || "").trim();
-      }
+      toolReviewCurrentBatchKey.value = currentKey
+        ? resolveValidBatchKey(toolReviewBatches.value, currentKey)
+        : resolveValidBatchKey(toolReviewBatches.value, result?.currentBatchKey);
       const validCallIds = new Set(toolReviewBatches.value.flatMap((batch) => batch.items.map((item) => item.callId)));
       toolReviewDetailMap.value = Object.fromEntries(
         Object.entries(toolReviewDetailMap.value).filter(([callId]) => validCallIds.has(callId))

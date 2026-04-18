@@ -1,13 +1,13 @@
 <template>
   <aside v-bind="rootAttrs" class="flex h-full min-h-0 flex-col overflow-x-hidden">
-    <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+    <div class="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden">
       <div v-if="errorText" class="mx-4 my-4 rounded-box border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
         {{ errorText }}
       </div>
 
       <template v-if="currentBatch">
         <div class="flex min-h-full flex-col">
-          <div class="-mx-4 flex flex-col gap-3">
+          <div class="flex flex-col gap-2 py-2">
             <ToolReviewItemCard
               v-for="item in currentBatch.items"
               :key="item.callId"
@@ -19,7 +19,7 @@
               @review="emit('reviewItem', $event)"
             />
           </div>
-          <div v-if="batches.length > 1" class="mt-auto px-4 py-3">
+          <div v-if="batches.length > 1" class="mt-auto pb-2 pt-2">
             <div class="join flex justify-center">
               <button
                 type="button"
@@ -49,7 +49,7 @@
         </div>
       </template>
 
-      <div v-else class="text-sm text-base-content/65">
+      <div v-else class="py-2 text-sm text-base-content/65">
         {{ t("chat.toolReview.empty") }}
       </div>
     </div>
@@ -254,6 +254,7 @@ function closeReportDialog() {
 </script>
 
 <style scoped>
+
 .assistant-markdown :deep(.ecall-markdown-content.prose) {
   --tw-prose-body: currentColor;
   --tw-prose-headings: currentColor;

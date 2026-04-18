@@ -318,7 +318,7 @@
       </div>
         <ToolReviewSidebar
           v-if="toolReviewPanelOpen"
-          class="w-104 max-w-[42vw] shrink-0 border-l border-base-300 bg-base-100"
+          class="w-104 max-w-[42vw] shrink-0 border-l border-base-300 bg-base-100 pt-2"
           :batches="toolReviewBatches"
           :current-batch-key="toolReviewCurrentBatchKey"
         :detail-map="toolReviewDetailMap"

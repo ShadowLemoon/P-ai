@@ -192,7 +192,7 @@
       <Teleport to="body">
         <div
           v-if="mentionPanelOpen"
-          class="fixed z-[1200]"
+          class="fixed z-1200"
           :style="mentionPanelStyle"
         >
           <div class="dropdown-content mt-2 w-max max-w-[min(80vw,20rem)] overflow-hidden rounded-box border border-base-300 bg-base-100 p-1 shadow-xl">

@@ -60,6 +60,7 @@ type UseChatFlowOptions = {
   streamToolCalls?: Ref<Array<{ name: string; argsText: string; status?: "doing" | "done" }>>;
   chatErrorText: Ref<string>;
   allMessages: Ref<ChatMessage[]>;
+  onOwnUserDraftInserted?: () => void;
   t: (key: string, params?: Record<string, unknown>) => string;
   formatRequestFailed: (error: unknown) => string;
   removeBinaryPlaceholders: (text: string) => string;
@@ -1347,6 +1348,7 @@ export function useChatFlow(options: UseChatFlowOptions) {
     pendingTerminalEvent = null;
     if (!hasForegroundRoundInFlight) {
       insertUserDraft(gen, plainText, sentImages, attachments, selectedMentions);
+      options.onOwnUserDraftInserted?.();
     }
 
     if (!hasForegroundRoundInFlight) {

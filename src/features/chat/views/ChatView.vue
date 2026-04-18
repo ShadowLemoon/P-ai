@@ -30,6 +30,7 @@
       <div
         ref="scrollContainer"
         class="ecall-chat-scroll-container relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto p-3 scrollbar-gutter-stable"
+        :data-chat-interaction-locked="chatting || frozen ? 'true' : undefined"
         @scroll="onScroll"
       >
         <div v-if="hasActiveOrPendingTodo" class="sticky top-0 z-20 flex justify-center pt-1">
@@ -101,7 +102,7 @@
           </div>
           <template v-else-if="item.kind === 'message'">
             <ChatMessageItem
-              v-memo="[item.block, chatting, frozen, markdownIsDark, playingAudioId, userAlias, userAvatarUrl, personaNameMap, personaAvatarUrlMap, messageSelectionModeEnabled, selectedMessageRenderIdSet.has(item.renderId)]"
+              v-memo="messageMemoKey(item.block, item.renderId, item.blockIndex)"
               :block="item.block"
               :selection-key="item.renderId"
               :selection-mode-enabled="messageSelectionModeEnabled"
@@ -140,7 +141,7 @@
             >
               <template v-for="groupItem in item.items" :key="groupItem.renderId">
                 <ChatMessageItem
-                  v-memo="[groupItem.block, chatting, frozen, markdownIsDark, activeTurnUserId, playingAudioId, userAlias, userAvatarUrl, personaNameMap, personaAvatarUrlMap]"
+                  v-memo="messageMemoKey(groupItem.block, groupItem.renderId, groupItem.blockIndex)"
                   :block="groupItem.block"
                   :selection-key="groupItem.renderId"
                   :selection-mode-enabled="messageSelectionModeEnabled"
@@ -750,7 +751,31 @@ function isRightAlignedMessage(block: ChatMessageBlock): boolean {
 
 function blockRenderId(block: ChatMessageBlock, blockIndex: number): string {
   const rawId = String(block.id || "").trim();
-  return rawId ? `${rawId}-${blockIndex}` : `block-${blockIndex}`;
+  return rawId || `block-${blockIndex}`;
+}
+
+function messageMemoKey(block: ChatMessageBlock, renderId: string, blockIndex: number) {
+  const selected = selectedMessageRenderIdSet.value.has(renderId);
+  const activeTurnUser = renderId === activeTurnUserId.value;
+  const canRegenerate = canRegenerateBlock(block, blockIndex);
+  const canConfirm = canConfirmPlan(block);
+  const requiresInteractionState = canRegenerate || canConfirm;
+  return [
+    block,
+    markdownIsDark.value,
+    playingAudioId.value,
+    props.userAlias,
+    props.userAvatarUrl,
+    props.personaNameMap,
+    props.personaAvatarUrlMap,
+    messageSelectionModeEnabled.value,
+    selected,
+    activeTurnUser,
+    canRegenerate,
+    canConfirm,
+    requiresInteractionState ? props.chatting : false,
+    requiresInteractionState ? props.frozen : false,
+  ];
 }
 
 function isCompactionBlock(block: ChatMessageBlock): boolean {
@@ -975,6 +1000,17 @@ onBeforeUnmount(() => {
 .ecall-chat-scroll-container {
   overscroll-behavior-y: contain;
   overflow-anchor: none;
+}
+
+.ecall-chat-scroll-container[data-chat-interaction-locked="true"] :deep(.ecall-message-footer),
+.ecall-chat-scroll-container[data-chat-interaction-locked="true"] :deep(.ecall-message-footer-action),
+.ecall-chat-scroll-container[data-chat-interaction-locked="true"] :deep(.ecall-message-recall-action) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+.ecall-chat-scroll-container[data-chat-interaction-locked="true"] :deep(.ecall-plan-confirm-action) {
+  pointer-events: none !important;
 }
 
 .ecall-turn-group {

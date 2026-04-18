@@ -89,7 +89,7 @@
               <div v-if="block.planCard.action === 'present'" class="space-y-2">
                 <button
                   type="button"
-                  class="btn btn-sm btn-primary"
+                  class="ecall-plan-confirm-action btn btn-sm btn-primary"
                   :disabled="chatting || frozen || !canConfirmPlan"
                   @click="emit('confirmPlan', { messageId: block.sourceMessageId || block.id })"
                 >
@@ -293,12 +293,12 @@
           </div>
           <div
             :class="[
-              'chat-footer mt-1 flex h-6 items-center gap-1.5 transition-opacity',
+              'chat-footer ecall-message-footer mt-1 flex h-6 items-center gap-1.5 transition-opacity',
               selectionModeEnabled
                 ? 'opacity-100 pointer-events-auto'
                 : canRegenerate
                   ? 'opacity-100 pointer-events-auto'
-                  : !chatting && !frozen
+                  : !block.isStreaming
                     ? 'opacity-0 pointer-events-none group-hover/user-turn:opacity-100 group-hover/user-turn:pointer-events-auto'
                     : 'opacity-0 pointer-events-none',
             ]"
@@ -306,30 +306,30 @@
             <button
               v-if="!selectionModeEnabled"
               type="button"
-              class="inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[11px] text-base-content/55 hover:text-base-content"
+              class="ecall-message-footer-action inline-flex h-6 min-w-6 items-center justify-center rounded px-1 text-[11px] text-base-content/55 hover:text-base-content"
               :title="'多选'"
-              :class="!block.isStreaming && !chatting && !frozen ? '' : 'opacity-0 pointer-events-none'"
-              :disabled="block.isStreaming || chatting || frozen"
+              :class="!block.isStreaming ? '' : 'opacity-0 pointer-events-none'"
+              :disabled="block.isStreaming"
               @click="emit('enterSelectionMode', selectionKey)"
             >
               <CircleCheckBig class="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
-              class="inline-flex h-6 w-6 items-center justify-center rounded text-base-content/55 hover:text-base-content"
+              class="ecall-message-footer-action inline-flex h-6 w-6 items-center justify-center rounded text-base-content/55 hover:text-base-content"
               :title="t('chat.copy')"
-              :class="!selectionModeEnabled && !block.isStreaming && !chatting && !frozen ? '' : 'opacity-0 pointer-events-none'"
-              :disabled="selectionModeEnabled || block.isStreaming || chatting || frozen"
+              :class="!selectionModeEnabled && !block.isStreaming ? '' : 'opacity-0 pointer-events-none'"
+              :disabled="selectionModeEnabled || block.isStreaming"
               @click="emit('copyMessage', block)"
             >
               <Copy class="h-3.5 w-3.5" />
             </button>
             <button
               type="button"
-              class="inline-flex h-6 w-6 items-center justify-center rounded text-base-content/55 hover:text-base-content"
+              class="ecall-message-footer-action inline-flex h-6 w-6 items-center justify-center rounded text-base-content/55 hover:text-base-content"
               :title="t('chat.regenerate')"
-              :class="!selectionModeEnabled && !block.isStreaming && !chatting && !frozen && canRegenerate ? '' : 'opacity-0 pointer-events-none'"
-              :disabled="selectionModeEnabled || block.isStreaming || chatting || frozen || !canRegenerate"
+              :class="!selectionModeEnabled && !block.isStreaming && canRegenerate ? '' : 'opacity-0 pointer-events-none'"
+              :disabled="selectionModeEnabled || block.isStreaming || !canRegenerate"
               @click="emit('regenerateTurn', { turnId: block.sourceMessageId || block.id })"
             >
               <RotateCcw class="h-3.5 w-3.5" />
@@ -344,11 +344,11 @@
           v-if="isOwnMessage(block)"
           type="button"
           :class="[
-            'inline-flex h-5 w-5 items-center justify-center rounded text-base-content/40 hover:text-base-content opacity-0 pointer-events-none transition-opacity',
-            !selectionModeEnabled && !chatting && !frozen ? 'group-hover/user-turn:opacity-100 group-hover/user-turn:pointer-events-auto' : '',
+            'ecall-message-recall-action inline-flex h-5 w-5 items-center justify-center rounded text-base-content/40 hover:text-base-content opacity-0 pointer-events-none transition-opacity',
+            !selectionModeEnabled ? 'group-hover/user-turn:opacity-100 group-hover/user-turn:pointer-events-auto' : '',
           ]"
           :title="t('chat.recall')"
-          :disabled="selectionModeEnabled || chatting || frozen"
+          :disabled="selectionModeEnabled"
           @click="emit('recallTurn', { turnId: block.sourceMessageId || block.id })"
         >
           <Undo2 class="h-3 w-3" />

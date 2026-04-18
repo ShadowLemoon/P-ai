@@ -513,6 +513,7 @@ const latestAssistantText = ref("");
 const latestReasoningStandardText = ref("");
 const latestReasoningInlineText = ref("");
 const latestOwnMessageAlignRequest = ref(0);
+let suppressNextOwnMessageAlignFromHistoryFlushed = 0;
 const toolStatusText = ref("");
 const toolStatusState = ref<"running" | "done" | "failed" | "">("");
 const streamToolCalls = ref<Array<{ name: string; argsText: string }>>([]);
@@ -2034,6 +2035,40 @@ function areMessagesEquivalent(left: ChatMessage[], right: ChatMessage[]): boole
   return true;
 }
 
+function messageContentSignature(message?: ChatMessage | null): string {
+  return [
+    String(message?.id || "").trim(),
+    String(message?.createdAt || "").trim(),
+    String(message?.role || "").trim(),
+    String(message?.speakerAgentId || "").trim(),
+    JSON.stringify(message?.providerMeta || {}),
+    JSON.stringify(message?.parts || []),
+    JSON.stringify(message?.extraTextBlocks || []),
+    JSON.stringify(message?.toolCall || []),
+  ].join("|");
+}
+
+function reuseStableMessageReferences(nextMessages: ChatMessage[], previousMessages: ChatMessage[]): ChatMessage[] {
+  if (!Array.isArray(nextMessages) || nextMessages.length <= 0) {
+    return [];
+  }
+  const previousById = new Map<string, ChatMessage>();
+  for (const message of Array.isArray(previousMessages) ? previousMessages : []) {
+    const messageId = String(message?.id || "").trim();
+    if (!messageId) continue;
+    previousById.set(messageId, message);
+  }
+  return nextMessages.map((message) => {
+    const messageId = String(message?.id || "").trim();
+    if (!messageId) return message;
+    const previous = previousById.get(messageId);
+    if (!previous) return message;
+    return messageContentSignature(previous) === messageContentSignature(message)
+      ? previous
+      : message;
+  });
+}
+
 function beginForegroundPaintTrace(conversationId: string): ForegroundPaintTrace {
   return {
     id: ++foregroundPaintTraceSeq,
@@ -2159,7 +2194,8 @@ function mergeConversationMessagesFromSyncPayload(
     existingIds.add(messageId);
     merged.push(message);
   }
-  return merged.length > 0 ? merged : cachedDisplay;
+  const nextMerged = merged.length > 0 ? merged : cachedDisplay;
+  return reuseStableMessageReferences(nextMerged, cachedDisplay);
 }
 
 async function applyConversationMessagesAfterSynced(payload: ConversationMessagesAfterSyncedPayload) {
@@ -2211,7 +2247,8 @@ function applyConversationMessageAppended(payload?: ConversationMessageAppendedP
   }
 
   const existing = allMessages.value.filter((item) => String(item?.id || "").trim() !== messageId);
-  allMessages.value = [...existing, message];
+  const stableMessage = reuseStableMessageReferences([message], allMessages.value)[0] || message;
+  allMessages.value = [...existing, stableMessage];
   clearConversationBadge(conversationId);
   updateForegroundConversationOverviewFromMessages(conversationId, message);
   triggerConversationScrollToBottom(conversationId, "delegate_message_appended");
@@ -2219,7 +2256,8 @@ function applyConversationMessageAppended(payload?: ConversationMessageAppendedP
 
 function applyConversationSnapshot(snapshot: SwitchConversationSnapshot) {
   const nextConversationId = String(snapshot.conversationId || "").trim();
-  const nextMessages = freezeConversationMessages(Array.isArray(snapshot.messages) ? snapshot.messages : []);
+  const rawNextMessages = freezeConversationMessages(Array.isArray(snapshot.messages) ? snapshot.messages : []);
+  const nextMessages = reuseStableMessageReferences(rawNextMessages, allMessages.value);
   currentChatConversationId.value = nextConversationId;
   currentChatTodos.value = Array.isArray(snapshot.currentTodos)
     ? snapshot.currentTodos
@@ -3153,6 +3191,10 @@ const chatFlow = useChatFlow({
   streamToolCalls,
   chatErrorText,
   allMessages,
+  onOwnUserDraftInserted: () => {
+    suppressNextOwnMessageAlignFromHistoryFlushed += 1;
+    latestOwnMessageAlignRequest.value += 1;
+  },
   t: tr,
   formatRequestFailed: (error) => formatI18nError(tr, "status.requestFailed", error),
   removeBinaryPlaceholders,
@@ -3253,7 +3295,11 @@ const chatFlow = useChatFlow({
         const messageMeta = ((meta.message_meta || meta.messageMeta || {}) as Record<string, unknown>);
         return String(messageMeta.kind || "").trim() !== "summary_context_seed";
       });
-      allMessages.value = [...prepended, ...existing, ...appended];
+      const nextMessages = reuseStableMessageReferences(
+        [...prepended, ...existing, ...appended],
+        allMessages.value,
+      );
+      allMessages.value = nextMessages;
       const appendedSummary = uniqueIncoming.map((message) => {
         const meta = (message.providerMeta || {}) as Record<string, unknown>;
         const origin = meta.origin as Record<string, unknown> | undefined;
@@ -3280,7 +3326,11 @@ const chatFlow = useChatFlow({
       })}`);
       const appendedOwnUserMessage = appended.some((message) => isLocalOwnUserMessage(message));
       if (appendedOwnUserMessage) {
-        latestOwnMessageAlignRequest.value += 1;
+        if (suppressNextOwnMessageAlignFromHistoryFlushed > 0) {
+          suppressNextOwnMessageAlignFromHistoryFlushed -= 1;
+        } else {
+          latestOwnMessageAlignRequest.value += 1;
+        }
       }
       console.warn("[聊天追踪][历史刷写处理] 合并完成", {
         windowLabel: tauriWindowLabel.value,

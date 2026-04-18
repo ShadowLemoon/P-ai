@@ -5,11 +5,14 @@ const MCP_READ_FILE_API_FLAG: &str = "--mcp-read-file-api-config-id";
 
 #[derive(Debug, Clone, serde::Deserialize, rmcp::schemars::JsonSchema)]
 struct McpReadFileArgs {
+    /// 要读取的本地文件绝对路径。
     absolute_path: String,
+    /// 分页起点。对文本、Office 等非 PDF 内容按行计数；对 PDF 按页计数。默认从 0 开始。
     #[serde(default)]
-    offset: Option<usize>,
+    start: Option<usize>,
+    /// 分页大小。对文本、Office 等非 PDF 内容表示返回多少行；对 PDF 表示返回多少页。
     #[serde(default)]
-    limit: Option<usize>,
+    count: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -35,7 +38,7 @@ impl ReadFileMcpServer {
 impl ReadFileMcpServer {
     #[rmcp::tool(
         name = "read_file",
-        description = "读取本地文件内容。自动识别文本、图片、PDF 与 Office 文件；absolute_path 必须是绝对路径；offset/limit 用于分页，文本结果按现有文本续读语义处理，PDF 图片结果按页继续读取。"
+        description = "读取本地文件内容。自动识别文本、图片、PDF 与 Office 文件；absolute_path 必须是绝对路径；分页统一使用 start/count：对文本、代码、Office 等非 PDF 内容，start 表示起始行、count 表示返回行数；对 PDF，start 表示起始页、count 表示返回页数。搜索工具若返回命中行号，可直接把该行号附近换算成 start 继续读取。"
     )]
     async fn read_file(
         &self,
@@ -47,8 +50,8 @@ impl ReadFileMcpServer {
         let started = std::time::Instant::now();
         let request = ReadFileRequest {
             absolute_path: args.absolute_path,
-            offset: args.offset,
-            limit: args.limit,
+            start: args.start,
+            count: args.count,
         };
         let result = builtin_read_file(
             &self.app_state,

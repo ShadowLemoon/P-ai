@@ -2,6 +2,7 @@
 
 ## 发布：v0.9.12
 
+- 修复（read-file-start-count-rename）：`read_file` 工具参数从 `offset/limit` 重命名为 `start/count`，并同步更新返回字段与续读提示；现在对文本/代码/Office 明确表示“起始行 + 行数”，对 PDF 明确表示“起始页 + 页数”，降低模型把分页参数误解为通用偏移量的概率
 - 修复（chat-session-binding-rebind）：聊天发送与 `@人格` 发送前新增会话绑定纠偏；当旧会话引用的部门已不存在时，直接提示“部门已经消失”；当部门仍在但原人格已不再属于该部门时，会自动切换到该部门当前可用人格并回写会话绑定，避免继续抛出 `Agent ... is not assigned to department ...`
 - 修复（mcp-tool-parameter-visibility）：MCP 配置页工具列表新增参数展示；后端会把工具 `input_schema` 一并返回前端，已部署工具现在可在名称下看到参数类型、必填标记、枚举/范围与示例内容，避免只能看见工具名和描述却无法判断调用入参
 - 功能（remote-im-proactive-state-machine）：远程联系人新增 `away/present + idle/busy` 主动应答状态机；入站消息先做联系人在场判定，支持忙时挂单次待办、`away -> present` 时插入轻量上下文边界、联系人消息游标与压缩边界持久化，以及基于 `patienceSeconds` 的耐心离场策略；同时补齐自动发送成功回写、关键后端测试与联系人配置页新字段

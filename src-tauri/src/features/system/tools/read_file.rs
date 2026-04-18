@@ -51,9 +51,9 @@ impl ReadFileDetectedType {
 struct ReadFileRequest {
     absolute_path: String,
     #[serde(default)]
-    offset: Option<usize>,
+    start: Option<usize>,
     #[serde(default)]
-    limit: Option<usize>,
+    count: Option<usize>,
 }
 
 trait ReadFileReader {
@@ -150,27 +150,27 @@ fn ensure_absolute_file_path(request: &ReadFileRequest) -> Result<std::path::Pat
     Ok(path)
 }
 
-fn paginate_lines(lines: &[String], offset: usize, limit: Option<usize>) -> (Vec<String>, Option<usize>) {
-    if offset >= lines.len() {
+fn paginate_lines(lines: &[String], start: usize, count: Option<usize>) -> (Vec<String>, Option<usize>) {
+    if start >= lines.len() {
         return (Vec::new(), None);
     }
-    let end = limit
-        .map(|size| offset.saturating_add(size).min(lines.len()))
+    let end = count
+        .map(|size| start.saturating_add(size).min(lines.len()))
         .unwrap_or(lines.len());
-    let chunk = lines[offset..end].to_vec();
-    let next_offset = if end < lines.len() { Some(end) } else { None };
-    (chunk, next_offset)
+    let chunk = lines[start..end].to_vec();
+    let next_start = if end < lines.len() { Some(end) } else { None };
+    (chunk, next_start)
 }
 
-fn paginate_window(total: usize, offset: usize, limit: Option<usize>) -> (usize, usize, Option<usize>) {
-    if offset >= total {
-        return (offset, offset, None);
+fn paginate_window(total: usize, start: usize, count: Option<usize>) -> (usize, usize, Option<usize>) {
+    if start >= total {
+        return (start, start, None);
     }
-    let end = limit
-        .map(|size| offset.saturating_add(size).min(total))
+    let end = count
+        .map(|size| start.saturating_add(size).min(total))
         .unwrap_or(total);
-    let next_offset = if end < total { Some(end) } else { None };
-    (offset, end, next_offset)
+    let next_start = if end < total { Some(end) } else { None };
+    (start, end, next_start)
 }
 
 fn truncate_text_for_read_file(text: &str) -> (String, bool) {
@@ -215,27 +215,27 @@ fn build_text_read_result(
     detected: ReadFileDetectedType,
     reader_kind: &str,
     text: &str,
-    offset: Option<usize>,
-    limit: Option<usize>,
+    start: Option<usize>,
+    count: Option<usize>,
     extra_metadata: Value,
 ) -> Value {
     let lines = text.replace('\r', "").split('\n').map(|v| v.to_string()).collect::<Vec<_>>();
-    let applied_offset = offset.unwrap_or(0);
-    let (selected_lines, next_offset_by_lines) = paginate_lines(&lines, applied_offset, limit);
+    let applied_start = start.unwrap_or(0);
+    let (selected_lines, next_start_by_lines) = paginate_lines(&lines, applied_start, count);
     let joined = selected_lines.join("\n");
     let (truncated_text, char_truncated) = truncate_text_for_read_file(&joined);
-    let next_offset = if char_truncated {
-        next_offset_by_lines.or(Some(applied_offset + selected_lines.len()))
+    let next_start = if char_truncated {
+        next_start_by_lines.or(Some(applied_start + selected_lines.len()))
     } else {
-        next_offset_by_lines
+        next_start_by_lines
     };
     let mut output = String::new();
     if char_truncated {
-        let continue_offset = next_offset.unwrap_or(applied_offset + selected_lines.len());
+        let continue_start = next_start.unwrap_or(applied_start + selected_lines.len());
         output.push_str("Content was truncated to fit within 30000 character limit.\n");
         output.push_str(&format!(
-            "To continue reading, use offset={} in the next read_file call.\n\n",
-            continue_offset
+            "To continue reading, use start={} in the next read_file call.\n\n",
+            continue_start
         ));
     }
     output.push_str(&truncated_text);
@@ -245,12 +245,12 @@ fn build_text_read_result(
         "detectedType": detected.as_str(),
         "readerKind": reader_kind,
         "truncated": char_truncated,
-        "nextOffset": next_offset,
+        "nextStart": next_start,
         "content": output,
         "metadata": {
             "kind": "text",
-            "lineOffset": applied_offset,
-            "lineLimit": limit,
+            "lineStart": applied_start,
+            "lineCount": count,
             "returnedLineCount": selected_lines.len(),
             "totalLineCount": lines.len(),
             "returnedCharCount": joined.chars().count().min(READ_FILE_TEXT_LIMIT_CHARS),
@@ -274,16 +274,16 @@ fn build_pdf_image_read_result(
     path: &std::path::Path,
     detected: ReadFileDetectedType,
     structured: &PdfExtractStructuredResult,
-    offset: Option<usize>,
-    limit: Option<usize>,
+    start: Option<usize>,
+    count: Option<usize>,
 ) -> Value {
-    let applied_offset = offset.unwrap_or(0);
+    let applied_start = start.unwrap_or(0);
     let total_pages = structured.total_pages as usize;
-    let (start, end, next_offset) = paginate_window(total_pages, applied_offset, limit);
-    let selected_pages = if start >= total_pages {
+    let (window_start, end, next_start) = paginate_window(total_pages, applied_start, count);
+    let selected_pages = if window_start >= total_pages {
         Vec::new()
     } else {
-        structured.pages[start..end].to_vec()
+        structured.pages[window_start..end].to_vec()
     };
     let parts = selected_pages
         .iter()
@@ -307,7 +307,7 @@ fn build_pdf_image_read_result(
         "detectedType": detected.as_str(),
         "readerKind": "pdf_image_direct",
         "truncated": false,
-        "nextOffset": next_offset,
+        "nextStart": next_start,
         "parts": parts,
         "response": {
             "ok": true,
@@ -315,18 +315,18 @@ fn build_pdf_image_read_result(
             "detectedType": detected.as_str(),
             "readerKind": "pdf_image_direct",
             "fileName": structured.file_name,
-            "pageOffset": applied_offset,
-            "pageLimit": limit,
+            "pageStart": applied_start,
+            "pageCount": count,
             "returnedPageCount": selected_pages.len(),
             "returnedImageCount": selected_pages.iter().map(|page| page.images.len()).sum::<usize>(),
             "totalPages": structured.total_pages,
-            "nextOffset": next_offset
+            "nextStart": next_start
         },
         "metadata": {
             "kind": "image",
             "fileName": structured.file_name,
-            "pageOffset": applied_offset,
-            "pageLimit": limit,
+            "pageStart": applied_start,
+            "pageCount": count,
             "returnedPageCount": selected_pages.len(),
             "returnedImageCount": selected_pages.iter().map(|page| page.images.len()).sum::<usize>(),
             "totalPages": structured.total_pages,
@@ -395,7 +395,7 @@ fn build_direct_image_read_result(
         "detectedType": detected.as_str(),
         "readerKind": "image_direct",
         "truncated": false,
-        "nextOffset": Value::Null,
+        "nextStart": Value::Null,
         "imageMime": mime,
         "imageBase64": image_base64,
         "response": {
@@ -538,8 +538,8 @@ async fn read_image_via_vision(
         detected,
         "image_vision_fallback",
         &described,
-        request.offset,
-        request.limit,
+        request.start,
+        request.count,
         serde_json::json!({
             "imageConvertedToText": true,
             "visionApiId": vision_api.id,
@@ -575,8 +575,8 @@ impl ReadFileReader for TextFileReader {
             detected,
             self.reader_kind(),
             &text,
-            request.offset,
-            request.limit,
+            request.start,
+            request.count,
             serde_json::json!({}),
         ))
     }
@@ -615,8 +615,8 @@ impl ReadFileReader for PdfFileReader {
                 &path,
                 detected,
                 &structured,
-                request.offset,
-                request.limit,
+                request.start,
+                request.count,
             ));
         }
         let text = structured
@@ -630,8 +630,8 @@ impl ReadFileReader for PdfFileReader {
             detected,
             self.reader_kind(),
             &text,
-            request.offset,
-            request.limit,
+            request.start,
+            request.count,
             serde_json::json!({
                 "totalPages": structured.total_pages,
                 "includeImages": structured.include_images
@@ -728,8 +728,8 @@ impl ReadFileReader for OfficeLitchiReader {
             detected,
             self.reader_kind(),
             &text,
-            request.offset,
-            request.limit,
+            request.start,
+            request.count,
             serde_json::json!({
                 "experimental": true
             }),
@@ -932,8 +932,8 @@ fn builtin_read_file_should_paginate_text_file() {
             "__frontend_tool_preview__",
             ReadFileRequest {
                 absolute_path: file.to_string_lossy().to_string(),
-                offset: Some(1),
-                limit: Some(2),
+                start: Some(1),
+                count: Some(2),
             },
         ))
         .expect("read text");
@@ -942,7 +942,7 @@ fn builtin_read_file_should_paginate_text_file() {
             value.get("content").and_then(Value::as_str),
             Some("line2\nline3")
         );
-        assert_eq!(value.get("nextOffset").and_then(Value::as_u64), Some(3));
+        assert_eq!(value.get("nextStart").and_then(Value::as_u64), Some(3));
 }
 
 #[cfg(test)]
@@ -997,8 +997,8 @@ fn builtin_read_file_should_return_root_image_payload_when_model_supports_image(
                     "vision-a",
                     ReadFileRequest {
                         absolute_path: file.to_string_lossy().to_string(),
-                        offset: None,
-                        limit: None,
+                        start: None,
+                        count: None,
                     },
                 )
                 .await
@@ -1030,18 +1030,18 @@ fn builtin_read_file_should_prefix_truncation_notice_only_when_truncated() {
             "__frontend_tool_preview__",
             ReadFileRequest {
                 absolute_path: file.to_string_lossy().to_string(),
-                offset: None,
-                limit: None,
+                start: None,
+                count: None,
             },
         ))
         .expect("read truncated text");
         let text = value.get("content").and_then(Value::as_str).unwrap_or_default();
-        assert!(text.starts_with("Content was truncated to fit within 30000 character limit.\nTo continue reading, use offset="));
+        assert!(text.starts_with("Content was truncated to fit within 30000 character limit.\nTo continue reading, use start="));
     }
 
 #[cfg(test)]
 #[test]
-fn build_pdf_image_read_result_should_paginate_by_page_offset() {
+fn build_pdf_image_read_result_should_paginate_by_page_start() {
         let path = std::path::PathBuf::from("E:\\docs\\sample.pdf");
         let structured = PdfExtractStructuredResult {
             file_name: "sample.pdf".to_string(),
@@ -1093,7 +1093,7 @@ fn build_pdf_image_read_result_should_paginate_by_page_offset() {
         );
 
         assert_eq!(value.get("readerKind").and_then(Value::as_str), Some("pdf_image_direct"));
-        assert_eq!(value.get("nextOffset").and_then(Value::as_u64), Some(2));
+        assert_eq!(value.get("nextStart").and_then(Value::as_u64), Some(2));
         let parts = value.get("parts").and_then(Value::as_array).expect("parts");
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0].get("pageIndex").and_then(Value::as_u64), Some(1));

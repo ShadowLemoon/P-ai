@@ -702,12 +702,13 @@ fn remote_im_finalize_round_completion(
     reply_target: Option<&RemoteImReplyTarget>,
     failed_error: Option<&str>,
     finished_at: &str,
-) -> Result<(), String> {
+) -> Result<Vec<RemoteImActivationSource>, String> {
     if activated_sources.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let data = state_read_app_data_cached(state)?;
     let mut runtime_states = lock_remote_im_contact_runtime_states(state)?;
+    let mut follow_up_sources = Vec::<RemoteImActivationSource>::new();
     for source in activated_sources {
         let Some(contact) = remote_im_contact_by_activation_source(&data, source) else {
             continue;
@@ -727,6 +728,7 @@ fn remote_im_finalize_round_completion(
             );
             continue;
         }
+        let should_follow_up_after_round = previous_pending;
         match reply_decision.unwrap_or("") {
             "send" => {
                 let target_matched = reply_target
@@ -758,18 +760,24 @@ fn remote_im_finalize_round_completion(
             }
             _ => {}
         }
+        if should_follow_up_after_round {
+            runtime.has_pending = false;
+            runtime.presence_state = RemoteImPresenceState::Present;
+            follow_up_sources.push(source.clone());
+        }
         eprintln!(
-            "[远程联系人状态机] 轮次结束 完成: contact_id={}, decision={}, presence={:?}->{:?}, pending={}->{}, last_success_reply_at={}",
+            "[远程联系人状态机] 轮次结束 完成: contact_id={}, decision={}, presence={:?}->{:?}, pending={}->{}, follow_up={}, last_success_reply_at={}",
             contact.id,
             reply_decision.unwrap_or(""),
             previous_presence,
             runtime.presence_state,
             previous_pending,
             runtime.has_pending,
+            should_follow_up_after_round,
             runtime.last_success_reply_at.as_deref().unwrap_or("")
         );
     }
-    Ok(())
+    Ok(follow_up_sources)
 }
 
 fn remote_im_finalize_async_send_result(

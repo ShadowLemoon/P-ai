@@ -1183,7 +1183,7 @@ async fn process_conversation_batch(
                 oldest_queue_created_at,
             ).await {
                 Ok(result) => {
-                    if let Err(finalize_err) = remote_im_finalize_round_completion(
+                    let mut follow_up_sources = match remote_im_finalize_round_completion(
                         state,
                         &activated_remote_im_sources,
                         result.remote_im_reply_decision.as_deref(),
@@ -1191,13 +1191,74 @@ async fn process_conversation_batch(
                         None,
                         &history_flush_time,
                     ) {
-                        runtime_log_warn(format!(
+                        Ok(sources) => sources,
+                        Err(finalize_err) => {
+                            runtime_log_warn(format!(
                             "[聊天调度] 远程联系人轮次收尾失败（完成分支），conversation_id={}，error={}",
                             conversation_id, finalize_err
-                        ));
-                    }
+                            ));
+                            Vec::new()
+                        }
+                    };
                     emit_round_completed_event(state, conversation_id, &result);
                     complete_pending_chat_events_with_result(state, &event_ids, result)?;
+                    while !follow_up_sources.is_empty() {
+                        let follow_up_started_at = now_iso();
+                        eprintln!(
+                            "[远程联系人状态机] 待办续跑 开始: conversation_id={}, source_count={}",
+                            conversation_id,
+                            follow_up_sources.len()
+                        );
+                        match activate_main_assistant(
+                            state,
+                            &first_event.session_info,
+                            conversation_id,
+                            None,
+                            None,
+                            follow_up_sources.clone(),
+                            &follow_up_started_at,
+                        )
+                        .await
+                        {
+                            Ok(follow_up_result) => {
+                                follow_up_sources = match remote_im_finalize_round_completion(
+                                    state,
+                                    &follow_up_sources,
+                                    follow_up_result.remote_im_reply_decision.as_deref(),
+                                    follow_up_result.remote_im_reply_target.as_ref(),
+                                    None,
+                                    &follow_up_started_at,
+                                ) {
+                                    Ok(sources) => sources,
+                                    Err(finalize_err) => {
+                                        runtime_log_warn(format!(
+                                            "[聊天调度] 远程联系人待办续跑收尾失败，conversation_id={}，error={}",
+                                            conversation_id, finalize_err
+                                        ));
+                                        Vec::new()
+                                    }
+                                };
+                                emit_round_completed_event(state, conversation_id, &follow_up_result);
+                            }
+                            Err(err) => {
+                                emit_round_failed_event(state, conversation_id, &err);
+                                if let Err(finalize_err) = remote_im_finalize_round_completion(
+                                    state,
+                                    &follow_up_sources,
+                                    None,
+                                    None,
+                                    Some(&err),
+                                    &follow_up_started_at,
+                                ) {
+                                    runtime_log_warn(format!(
+                                        "[聊天调度] 远程联系人待办续跑收尾失败（失败分支），conversation_id={}，original_error={}，finalize_error={}",
+                                        conversation_id, err, finalize_err
+                                    ));
+                                }
+                                return Err(err);
+                            }
+                        }
+                    }
                 }
                 Err(err) => {
                     emit_round_failed_event(state, conversation_id, &err);

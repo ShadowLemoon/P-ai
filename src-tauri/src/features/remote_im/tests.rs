@@ -889,6 +889,108 @@
     }
 
     #[test]
+    fn remote_im_finalize_round_completion_should_consume_pending_into_follow_up() {
+        let state = remote_im_test_state();
+        let contact = remote_im_test_contact("contact-a", "conversation-a");
+        let mut data = AppData::default();
+        data.remote_im_contacts.push(contact);
+        state_write_app_data_cached(&state, &data).expect("write app data");
+
+        {
+            let mut runtime_states =
+                lock_remote_im_contact_runtime_states(&state).expect("lock runtime states");
+            runtime_states.insert(
+                "contact-a".to_string(),
+                RemoteImContactRuntimeState {
+                    presence_state: RemoteImPresenceState::Present,
+                    work_state: RemoteImWorkState::Busy,
+                    has_pending: true,
+                    last_success_reply_at: Some(now_iso()),
+                    needs_boundary: false,
+                },
+            );
+        }
+
+        let follow_up_sources = remote_im_finalize_round_completion(
+            &state,
+            &[RemoteImActivationSource {
+                channel_id: "channel-a".to_string(),
+                platform: RemoteImPlatform::OnebotV11,
+                remote_contact_type: "private".to_string(),
+                remote_contact_id: "remote-a".to_string(),
+                remote_contact_name: "张三".to_string(),
+            }],
+            Some("send"),
+            Some(&RemoteImReplyTarget {
+                channel_id: "channel-a".to_string(),
+                contact_id: "remote-a".to_string(),
+            }),
+            None,
+            &now_iso(),
+        )
+        .expect("finalize round");
+
+        assert_eq!(follow_up_sources.len(), 1);
+        let runtime_states = lock_remote_im_contact_runtime_states(&state).expect("lock runtime states");
+        let runtime = runtime_states.get("contact-a").expect("runtime exists");
+        assert_eq!(runtime.work_state, RemoteImWorkState::Idle);
+        assert_eq!(runtime.presence_state, RemoteImPresenceState::Present);
+        assert!(!runtime.has_pending);
+    }
+
+    #[test]
+    fn remote_im_finalize_round_completion_should_not_refresh_last_success_on_no_reply() {
+        let state = remote_im_test_state();
+        let contact = remote_im_test_contact("contact-a", "conversation-a");
+        let mut data = AppData::default();
+        data.remote_im_contacts.push(contact);
+        state_write_app_data_cached(&state, &data).expect("write app data");
+
+        let previous_success_at = (time::OffsetDateTime::now_utc() - time::Duration::seconds(123))
+            .format(&time::format_description::well_known::Rfc3339)
+            .expect("format old time");
+
+        {
+            let mut runtime_states =
+                lock_remote_im_contact_runtime_states(&state).expect("lock runtime states");
+            runtime_states.insert(
+                "contact-a".to_string(),
+                RemoteImContactRuntimeState {
+                    presence_state: RemoteImPresenceState::Present,
+                    work_state: RemoteImWorkState::Busy,
+                    has_pending: false,
+                    last_success_reply_at: Some(previous_success_at.clone()),
+                    needs_boundary: false,
+                },
+            );
+        }
+
+        let follow_up_sources = remote_im_finalize_round_completion(
+            &state,
+            &[RemoteImActivationSource {
+                channel_id: "channel-a".to_string(),
+                platform: RemoteImPlatform::OnebotV11,
+                remote_contact_type: "private".to_string(),
+                remote_contact_id: "remote-a".to_string(),
+                remote_contact_name: "张三".to_string(),
+            }],
+            Some("no_reply"),
+            None,
+            None,
+            &now_iso(),
+        )
+        .expect("finalize round");
+
+        assert!(follow_up_sources.is_empty());
+        let runtime_states = lock_remote_im_contact_runtime_states(&state).expect("lock runtime states");
+        let runtime = runtime_states.get("contact-a").expect("runtime exists");
+        assert_eq!(
+            runtime.last_success_reply_at.as_deref(),
+            Some(previous_success_at.as_str())
+        );
+    }
+
+    #[test]
     fn remote_im_handle_persisted_event_after_history_flush_should_insert_presence_boundary() {
         let state = remote_im_test_state();
         let mut data = AppData::default();

@@ -3,11 +3,13 @@ struct BuiltinRemoteImSendTool {
     app_state: AppState,
 }
 
+const REMOTE_IM_NO_REPLY_COOLDOWN_SECS: u64 = 7;
+
 impl RuntimeToolMetadata for BuiltinRemoteImSendTool {
     fn provider_tool_definition(&self) -> ProviderToolDefinition {
         ProviderToolDefinition::new(
             "remote_im_send",
-            "远程联系人回复决策工具。来自联系人的消息，必须且只能通过本工具完成回复决策：回复时使用 action=send；决定不回复时也必须使用 action=no_reply；不要直接输出给联系人的回复正文来代替工具调用。action=list 仅用于获取可用联系人。",
+            "远程联系人回复决策工具。来自联系人的消息，必须且只能通过本工具完成回复决策：回复时使用 action=send；决定不回复时使用 action=no_reply（内置先发呆 7 秒，再结束本轮，且不会刷新上次成功回复时间）；不要直接输出给联系人的回复正文来代替工具调用。action=list 仅用于获取可用联系人。",
             serde_json::json!({
               "type": "object",
               "properties": {
@@ -248,6 +250,18 @@ async fn builtin_remote_im_send(
                     ))
                 }
             };
+            runtime_log_info(format!(
+                "[远程联系人回复决策] no_reply 开始: action=no_reply, cooldown_seconds={}",
+                REMOTE_IM_NO_REPLY_COOLDOWN_SECS
+            ));
+            tokio::time::sleep(std::time::Duration::from_secs(
+                REMOTE_IM_NO_REPLY_COOLDOWN_SECS,
+            ))
+            .await;
+            runtime_log_info(format!(
+                "[远程联系人回复决策] no_reply 完成: action=no_reply, cooldown_seconds={}",
+                REMOTE_IM_NO_REPLY_COOLDOWN_SECS
+            ));
             return Ok(serde_json::json!({
                 "ok": true,
                 "action": "no_reply",

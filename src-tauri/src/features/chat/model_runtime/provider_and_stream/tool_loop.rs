@@ -221,6 +221,47 @@ fn should_stop_after_remote_im_send(tool_name: &str, tool_result: &str) -> bool 
         .unwrap_or(false)
 }
 
+fn remote_im_send_requests_done(tool_name: &str, tool_args: &str) -> bool {
+    if tool_name != "remote_im_send" {
+        return false;
+    }
+    let Ok(value) = serde_json::from_str::<Value>(tool_args) else {
+        return false;
+    };
+    let Some(status) = value.get("status").and_then(Value::as_str) else {
+        return false;
+    };
+    status.trim().eq_ignore_ascii_case("done")
+}
+
+fn reorder_turn_tool_calls_for_remote_im_done(
+    tool_calls: Vec<genai::chat::ToolCall>,
+) -> Vec<genai::chat::ToolCall> {
+    let mut normal = Vec::<genai::chat::ToolCall>::new();
+    let mut remote_im_done = Vec::<genai::chat::ToolCall>::new();
+    for tool_call in tool_calls {
+        let tool_args = match &tool_call.fn_arguments {
+            Value::String(raw) => raw.as_str(),
+            other => {
+                let serialized = other.to_string();
+                if remote_im_send_requests_done(&tool_call.fn_name, &serialized) {
+                    remote_im_done.push(tool_call);
+                } else {
+                    normal.push(tool_call);
+                }
+                continue;
+            }
+        };
+        if remote_im_send_requests_done(&tool_call.fn_name, tool_args) {
+            remote_im_done.push(tool_call);
+        } else {
+            normal.push(tool_call);
+        }
+    }
+    normal.extend(remote_im_done);
+    normal
+}
+
 fn remote_im_result_action(tool_result: &str) -> Option<String> {
     serde_json::from_str::<Value>(tool_result)
         .ok()
@@ -817,6 +858,8 @@ async fn run_genai_tool_loop(
             full_assistant_text.push_str(&turn_text);
         }
 
+        let turn_tool_calls = reorder_turn_tool_calls_for_remote_im_done(turn_tool_calls);
+
         if turn_tool_calls.is_empty() {
             return Ok(ModelReply {
                 assistant_text: full_assistant_text,
@@ -1243,7 +1286,7 @@ async fn run_genai_tool_loop_non_stream(
         .await?;
         let turn_text = round.turn_text;
         let turn_reasoning = round.turn_reasoning;
-        let turn_tool_calls = round.turn_tool_calls;
+        let turn_tool_calls = reorder_turn_tool_calls_for_remote_im_done(round.turn_tool_calls);
         if let Some(value) = round.trusted_input_tokens {
             trusted_input_tokens = Some(value);
         }
@@ -1536,6 +1579,53 @@ mod tool_loop_tests {
         .to_string();
 
         assert!(should_stop_after_remote_im_send("remote_im_send", &tool_result));
+    }
+
+    #[test]
+    fn reorder_turn_tool_calls_should_move_remote_im_send_done_to_tail() {
+        let tool_calls = vec![
+            genai::chat::ToolCall {
+                call_id: "call-1".to_string(),
+                fn_name: "remote_im_send".to_string(),
+                fn_arguments: serde_json::json!({
+                    "action": "send",
+                    "status": "done"
+                }),
+                thought_signatures: None,
+            },
+            genai::chat::ToolCall {
+                call_id: "call-2".to_string(),
+                fn_name: "fetch".to_string(),
+                fn_arguments: serde_json::json!({
+                    "url": "https://example.com"
+                }),
+                thought_signatures: None,
+            },
+            genai::chat::ToolCall {
+                call_id: "call-3".to_string(),
+                fn_name: "remote_im_send".to_string(),
+                fn_arguments: serde_json::json!({
+                    "action": "send",
+                    "status": "continue"
+                }),
+                thought_signatures: None,
+            },
+        ];
+
+        let reordered = reorder_turn_tool_calls_for_remote_im_done(tool_calls);
+        let names = reordered
+            .iter()
+            .map(|item| format!("{}:{}", item.fn_name, item.call_id))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            names,
+            vec![
+                "fetch:call-2".to_string(),
+                "remote_im_send:call-3".to_string(),
+                "remote_im_send:call-1".to_string(),
+            ]
+        );
     }
 
     #[test]

@@ -1,5 +1,11 @@
 # 变更日志
 
+## 更新：个人微信媒体发送链路
+
+- 修复（weixin-oc-media-send-and-response-parse）：个人微信渠道补齐 `getuploadurl -> AES-ECB 加密上传 CDN -> sendmessage 引用媒体` 发送链路，`remote_im_send` 现在会按内容项顺序拆成“文本 -> 图片/文件 -> 文本”分别发送，贴纸与其他媒体不再只能卡死在纯文本路径
+- 修复（weixin-oc-sendmessage-empty-response-success）：个人微信 `sendmessage` 在服务端返回空对象 `{}` 但实际已送达时，不再因本地把缺失的 `ret` 误判为 `-1` 而报假失败；现已按参考实现将缺失 `ret/errcode` 视为成功默认值 `0`
+- 修复（weixin-oc-upload-field-alignment）：对齐个人微信 `getuploadurl` 返回字段名，兼容 `upload_param / upload_full_url` 与 camelCase 别名，修正媒体上传阶段误判“响应缺少 upload_param / upload_full_url”的问题；同时补充媒体发送分段与上传阶段中文日志，便于继续定位渠道侧兼容问题
+
 ## 更新：表情贴纸系统
 
 - 功能（meme-sticker-system）：新增基于 `.meme` 工作目录的贴纸系统；模型可在回复正文中直接使用 `:happy:` 这类分类语法，后端会在助理消息写入历史时按分类随机选定具体图片并落入 `providerMeta.memeSegments`，本地聊天与归档视图统一按已持久化结果渲染贴纸，远程联系人发送时则按同一份 `memeSegments` 拆成“文本 -> 图片 -> 文本”顺序发送，保证本地显示与远程实际发送一致

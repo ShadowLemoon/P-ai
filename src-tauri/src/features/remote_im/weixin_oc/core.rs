@@ -4,6 +4,12 @@ const WEIXIN_OC_DEFAULT_LONG_POLL_TIMEOUT_MS: u64 = 35_000;
 const WEIXIN_OC_DEFAULT_API_TIMEOUT_MS: u64 = 15_000;
 const WEIXIN_OC_DEFAULT_BOT_TYPE: &str = "3";
 const WEIXIN_OC_LOGIN_TTL_SECS: i64 = 5 * 60;
+const WEIXIN_OC_TEXT_ITEM_TYPE: i64 = 1;
+const WEIXIN_OC_IMAGE_ITEM_TYPE: i64 = 2;
+const WEIXIN_OC_FILE_ITEM_TYPE: i64 = 4;
+const WEIXIN_OC_VIDEO_ITEM_TYPE: i64 = 5;
+const WEIXIN_OC_IMAGE_UPLOAD_TYPE: i64 = 1;
+const WEIXIN_OC_FILE_UPLOAD_TYPE: i64 = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -79,6 +85,8 @@ struct WeixinOcCredentials {
     #[serde(default)]
     base_url: String,
     #[serde(default)]
+    cdn_base_url: String,
+    #[serde(default)]
     bot_type: String,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -108,6 +116,15 @@ impl WeixinOcCredentials {
         let base = self.base_url.trim().trim_end_matches('/');
         if base.is_empty() {
             WEIXIN_OC_DEFAULT_BASE_URL.to_string()
+        } else {
+            base.to_string()
+        }
+    }
+
+    fn normalized_cdn_base_url(&self) -> String {
+        let base = self.cdn_base_url.trim().trim_end_matches('/');
+        if base.is_empty() {
+            WEIXIN_OC_DEFAULT_CDN_BASE_URL.to_string()
         } else {
             base.to_string()
         }

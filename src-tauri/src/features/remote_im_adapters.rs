@@ -1104,30 +1104,245 @@ impl RemoteImSdk for WeixinOcSdk {
         payload: &'a Value,
     ) -> Pin<Box<dyn Future<Output = Result<String, String>> + Send + 'a>> {
         Box::pin(async move {
-            if remote_im_payload_has_non_text_items(payload) {
-                return Err("个人微信渠道首版仅支持文本发送".to_string());
+            let started = std::time::Instant::now();
+            let content_count = remote_im_payload_content_items(payload).len();
+            remote_im_log(
+                "INFO",
+                "weixin_oc.send_outbound",
+                serde_json::json!({
+                    "task_name": "weixin_oc.send_outbound",
+                    "trigger": "remote_im_send",
+                    "channel_id": channel.id,
+                    "remote_contact_id": contact.remote_contact_id,
+                    "status": "开始",
+                    "content_count": content_count,
+                    "payload_summary": remote_im_payload_media_summary(payload),
+                }),
+            );
+            let send_result = async {
+                let credentials = WeixinOcCredentials::from_value(&channel.credentials);
+                let context_token = weixin_oc_manager()
+                    .get_context_token(&channel.id, &contact.remote_contact_id)
+                    .await;
+                let client = build_weixin_oc_http_client(credentials.normalized_api_timeout_ms())?;
+                let items = remote_im_payload_content_items(payload);
+                let mut pending_text = String::new();
+                let mut last_message_id = String::new();
+
+                for item in &items {
+                    match item.get("type").and_then(Value::as_str).unwrap_or("") {
+                        "text" => {
+                            let Some(text) = item.get("text").and_then(Value::as_str) else {
+                                continue;
+                            };
+                            if text.trim().is_empty() {
+                                continue;
+                            }
+                            pending_text.push_str(text);
+                        }
+                        "image" => {
+                            if !pending_text.trim().is_empty() {
+                                remote_im_log(
+                                    "INFO",
+                                    "weixin_oc.send_outbound.segment",
+                                    serde_json::json!({
+                                        "task_name": "weixin_oc.send_outbound.segment",
+                                        "trigger": "remote_im_send",
+                                        "channel_id": channel.id,
+                                        "remote_contact_id": contact.remote_contact_id,
+                                        "status": "开始",
+                                        "segment_type": "text",
+                                        "text_len": pending_text.chars().count(),
+                                    }),
+                                );
+                                weixin_oc_send_text_message(
+                                    credentials.clone(),
+                                    &contact.remote_contact_id,
+                                    pending_text.as_str(),
+                                    context_token.as_deref(),
+                                )
+                                .await?;
+                                pending_text.clear();
+                            }
+                            let image_name = remote_im_content_item_name(item, "image.png");
+                            let image_mime = remote_im_content_item_mime(item, "image/png");
+                            let image_raw = remote_im_content_item_bytes(item).await?;
+                            let is_gif = image_mime.trim().eq_ignore_ascii_case("image/gif")
+                                || std::path::Path::new(image_name.as_str())
+                                    .extension()
+                                    .and_then(|value| value.to_str())
+                                    .map(|value| value.trim().eq_ignore_ascii_case("gif"))
+                                    .unwrap_or(false);
+                            let (upload_media_type, item_type) = if is_gif {
+                                (WEIXIN_OC_FILE_UPLOAD_TYPE, WEIXIN_OC_FILE_ITEM_TYPE)
+                            } else {
+                                (WEIXIN_OC_IMAGE_UPLOAD_TYPE, WEIXIN_OC_IMAGE_ITEM_TYPE)
+                            };
+                            remote_im_log(
+                                "INFO",
+                                "weixin_oc.send_outbound.segment",
+                                serde_json::json!({
+                                    "task_name": "weixin_oc.send_outbound.segment",
+                                    "trigger": "remote_im_send",
+                                    "channel_id": channel.id,
+                                    "remote_contact_id": contact.remote_contact_id,
+                                    "status": "开始",
+                                    "segment_type": if item_type == WEIXIN_OC_FILE_ITEM_TYPE { "gif_as_file" } else { "image" },
+                                    "image_name": image_name,
+                                    "image_mime": image_mime,
+                                    "raw_size": image_raw.len(),
+                                }),
+                            );
+                            let media_item = weixin_oc_prepare_outbound_media_item(
+                                &client,
+                                &credentials,
+                                &contact.remote_contact_id,
+                                upload_media_type,
+                                item_type,
+                                &image_name,
+                                &image_raw,
+                            )
+                            .await?;
+                            last_message_id = weixin_oc_send_message_items(
+                                credentials.clone(),
+                                &contact.remote_contact_id,
+                                vec![media_item],
+                                context_token.as_deref(),
+                            )
+                            .await?;
+                        }
+                        "file" => {
+                            if !pending_text.trim().is_empty() {
+                                remote_im_log(
+                                    "INFO",
+                                    "weixin_oc.send_outbound.segment",
+                                    serde_json::json!({
+                                        "task_name": "weixin_oc.send_outbound.segment",
+                                        "trigger": "remote_im_send",
+                                        "channel_id": channel.id,
+                                        "remote_contact_id": contact.remote_contact_id,
+                                        "status": "开始",
+                                        "segment_type": "text",
+                                        "text_len": pending_text.chars().count(),
+                                    }),
+                                );
+                                weixin_oc_send_text_message(
+                                    credentials.clone(),
+                                    &contact.remote_contact_id,
+                                    pending_text.as_str(),
+                                    context_token.as_deref(),
+                                )
+                                .await?;
+                                pending_text.clear();
+                            }
+                            let file_name = remote_im_content_item_name(item, "attachment.bin");
+                            let file_raw = remote_im_content_item_bytes(item).await?;
+                            remote_im_log(
+                                "INFO",
+                                "weixin_oc.send_outbound.segment",
+                                serde_json::json!({
+                                    "task_name": "weixin_oc.send_outbound.segment",
+                                    "trigger": "remote_im_send",
+                                    "channel_id": channel.id,
+                                    "remote_contact_id": contact.remote_contact_id,
+                                    "status": "开始",
+                                    "segment_type": "file",
+                                    "file_name": file_name,
+                                    "raw_size": file_raw.len(),
+                                }),
+                            );
+                            let media_item = weixin_oc_prepare_outbound_media_item(
+                                &client,
+                                &credentials,
+                                &contact.remote_contact_id,
+                                WEIXIN_OC_FILE_UPLOAD_TYPE,
+                                WEIXIN_OC_FILE_ITEM_TYPE,
+                                &file_name,
+                                &file_raw,
+                            )
+                            .await?;
+                            last_message_id = weixin_oc_send_message_items(
+                                credentials.clone(),
+                                &contact.remote_contact_id,
+                                vec![media_item],
+                                context_token.as_deref(),
+                            )
+                            .await?;
+                        }
+                        _ => {}
+                    }
+                }
+
+                if !pending_text.trim().is_empty() {
+                    remote_im_log(
+                        "INFO",
+                        "weixin_oc.send_outbound.segment",
+                        serde_json::json!({
+                            "task_name": "weixin_oc.send_outbound.segment",
+                            "trigger": "remote_im_send",
+                            "channel_id": channel.id,
+                            "remote_contact_id": contact.remote_contact_id,
+                            "status": "开始",
+                            "segment_type": "text",
+                            "text_len": pending_text.chars().count(),
+                        }),
+                    );
+                    last_message_id = weixin_oc_send_text_message(
+                        credentials.clone(),
+                        &contact.remote_contact_id,
+                        pending_text.as_str(),
+                        context_token.as_deref(),
+                    )
+                    .await?;
+                }
+
+                if last_message_id.trim().is_empty() {
+                    return Err("个人微信渠道发送内容为空".to_string());
+                }
+                Ok(last_message_id)
             }
-            let text = remote_im_payload_text(payload);
-            let trimmed = text.trim();
-            if trimmed.is_empty() {
-                return Err("个人微信渠道发送内容为空".to_string());
-            }
-            let credentials = WeixinOcCredentials::from_value(&channel.credentials);
-            let context_token = weixin_oc_manager()
-                .get_context_token(&channel.id, &contact.remote_contact_id)
-                .await;
-            let message_id = weixin_oc_send_text_message(
-                credentials,
-                &contact.remote_contact_id,
-                trimmed,
-                context_token.as_deref(),
-            )
-            .await?;
-            // 回复发送成功后停止 typing
+            .await;
+
             weixin_oc_manager()
                 .stop_typing(&channel.id, &contact.remote_contact_id)
                 .await;
-            Ok(message_id)
+
+            match send_result {
+                Ok(message_id) => {
+                    remote_im_log(
+                        "INFO",
+                        "weixin_oc.send_outbound",
+                        serde_json::json!({
+                            "task_name": "weixin_oc.send_outbound",
+                            "trigger": "remote_im_send",
+                            "channel_id": channel.id,
+                            "remote_contact_id": contact.remote_contact_id,
+                            "status": "完成",
+                            "message_id": message_id,
+                            "content_count": content_count,
+                            "duration_ms": started.elapsed().as_millis(),
+                        }),
+                    );
+                    Ok(message_id)
+                }
+                Err(err) => {
+                    remote_im_log(
+                        "ERROR",
+                        "weixin_oc.send_outbound",
+                        serde_json::json!({
+                            "task_name": "weixin_oc.send_outbound",
+                            "trigger": "remote_im_send",
+                            "channel_id": channel.id,
+                            "remote_contact_id": contact.remote_contact_id,
+                            "status": "失败",
+                            "content_count": content_count,
+                            "duration_ms": started.elapsed().as_millis(),
+                            "error": err,
+                        }),
+                    );
+                    Err(err)
+                }
+            }
         })
     }
 }

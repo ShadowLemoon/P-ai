@@ -70,7 +70,7 @@ async fn handle_weixin_oc_inbound_message(
     let text = weixin_oc_message_text(&item_list);
     let creds = WeixinOcCredentials::from_value(&channel.credentials);
     let client = build_weixin_oc_http_client(creds.normalized_api_timeout_ms())?;
-    let media = weixin_oc_collect_media(state, &client, &item_list).await?;
+    let media = weixin_oc_collect_media(state, &client, &creds, &item_list).await?;
     let data = state_read_app_data_cached(state)?;
     let display_name = weixin_oc_contact_display_name(&data, channel, from_user_id);
     let message_id = msg
@@ -326,8 +326,23 @@ pub(crate) async fn weixin_oc_send_text_message(
     text: &str,
     context_token: Option<&str>,
 ) -> Result<String, String> {
+    let item_list = vec![serde_json::json!({
+        "type": WEIXIN_OC_TEXT_ITEM_TYPE,
+        "text_item": {
+            "text": text
+        }
+    })];
+    weixin_oc_send_message_items(credentials, to_user_id, item_list, context_token).await
+}
+
+pub(crate) async fn weixin_oc_send_message_items(
+    credentials: WeixinOcCredentials,
+    to_user_id: &str,
+    item_list: Vec<Value>,
+    context_token: Option<&str>,
+) -> Result<String, String> {
     let client = build_weixin_oc_http_client(credentials.normalized_api_timeout_ms())?;
-    let client_id = Uuid::new_v4().to_string();
+    let client_id = Uuid::new_v4().simple().to_string();
     let body = serde_json::json!({
         "base_info": {
             "channel_version": "easy_call_ai"
@@ -339,14 +354,7 @@ pub(crate) async fn weixin_oc_send_text_message(
             "message_type": 2,
             "message_state": 2,
             "context_token": context_token.map(str::trim).filter(|value| !value.is_empty()),
-            "item_list": [
-                {
-                    "type": 1,
-                    "text_item": {
-                        "text": text
-                    }
-                }
-            ]
+            "item_list": item_list
         }
     });
     let body_text = serde_json::to_string(&body)
@@ -366,6 +374,28 @@ pub(crate) async fn weixin_oc_send_text_message(
     if !status_code.is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(format!("请求 sendmessage 失败: status={} body={}", status_code, body));
+    }
+    let resp_body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|err| format!("解析 sendmessage 响应失败: {err}"))?;
+    let ret = resp_body
+        .get("ret")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    let errcode = resp_body
+        .get("errcode")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(0);
+    if ret != 0 || errcode != 0 {
+        let errmsg = resp_body
+            .get("errmsg")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("");
+        return Err(format!(
+            "请求 sendmessage 失败: ret={} errcode={} errmsg={} resp={}",
+            ret, errcode, errmsg, resp_body
+        ));
     }
     Ok(client_id)
 }

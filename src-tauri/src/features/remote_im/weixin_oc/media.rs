@@ -5,12 +5,65 @@ fn build_weixin_oc_http_client(timeout_ms: u64) -> Result<reqwest::Client, Strin
         .map_err(|err| format!("创建个人微信 HTTP 客户端失败: {err}"))
 }
 
-fn weixin_oc_cdn_download_url(encrypted_query_param: &str) -> String {
+fn weixin_oc_cdn_download_url(cdn_base_url: &str, encrypted_query_param: &str) -> String {
     format!(
         "{}/download?encrypted_query_param={}",
-        WEIXIN_OC_DEFAULT_CDN_BASE_URL.trim_end_matches('/'),
+        cdn_base_url.trim_end_matches('/'),
         urlencoding::encode(encrypted_query_param.trim())
     )
+}
+
+fn weixin_oc_cdn_upload_url(cdn_base_url: &str, upload_param: &str, file_key: &str) -> String {
+    format!(
+        "{}/upload?encrypted_query_param={}&filekey={}",
+        cdn_base_url.trim_end_matches('/'),
+        urlencoding::encode(upload_param.trim()),
+        urlencoding::encode(file_key.trim())
+    )
+}
+
+fn weixin_oc_pkcs7_pad(data: &[u8]) -> Vec<u8> {
+    let pad_len = 16 - (data.len() % 16);
+    let pad_len = if pad_len == 0 { 16 } else { pad_len };
+    let mut out = Vec::with_capacity(data.len() + pad_len);
+    out.extend_from_slice(data);
+    out.extend(std::iter::repeat_n(pad_len as u8, pad_len));
+    out
+}
+
+fn weixin_oc_encrypt_media_ecb(raw: &[u8], key: &[u8]) -> Result<Vec<u8>, String> {
+    use aes::cipher::{generic_array::GenericArray, BlockEncrypt, KeyInit};
+
+    if key.len() != 16 {
+        return Err(format!("媒体 AES 密钥长度不正确: {}", key.len()));
+    }
+    let cipher = aes::Aes128::new_from_slice(key)
+        .map_err(|err| format!("初始化媒体 AES 加密器失败: {err}"))?;
+    let mut encrypted = weixin_oc_pkcs7_pad(raw);
+    for chunk in encrypted.chunks_exact_mut(16) {
+        let block = GenericArray::from_mut_slice(chunk);
+        cipher.encrypt_block(block);
+    }
+    Ok(encrypted)
+}
+
+fn weixin_oc_aes_padded_size(size: usize) -> usize {
+    let remainder = size % 16;
+    if remainder == 0 {
+        size + 16
+    } else {
+        size + (16 - remainder)
+    }
+}
+
+fn weixin_oc_encode_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(HEX[(byte >> 4) as usize] as char);
+        out.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+    out
 }
 
 fn weixin_oc_pkcs7_unpad(data: &[u8]) -> Vec<u8> {
@@ -107,11 +160,12 @@ fn weixin_oc_decrypt_media_ecb(encrypted: &[u8], key: &[u8]) -> Result<Vec<u8>, 
 
 async fn weixin_oc_download_image_bytes(
     client: &reqwest::Client,
+    cdn_base_url: &str,
     encrypted_query_param: &str,
     aes_key_value: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let resp = client
-        .get(weixin_oc_cdn_download_url(encrypted_query_param))
+        .get(weixin_oc_cdn_download_url(cdn_base_url, encrypted_query_param))
         .send()
         .await
         .map_err(|err| format!("下载个人微信图片失败: {err}"))?;
@@ -175,11 +229,13 @@ fn weixin_oc_build_attachment_meta(
 async fn weixin_oc_collect_media(
     state: &AppState,
     client: &reqwest::Client,
+    credentials: &WeixinOcCredentials,
     item_list: &[WeixinOcMessageItem],
 ) -> Result<WeixinOcCollectedMedia, String> {
     let mut images = Vec::<BinaryPart>::new();
     let mut audios = Vec::<BinaryPart>::new();
     let mut attachments = Vec::<AttachmentMetaInput>::new();
+    let cdn_base_url = credentials.normalized_cdn_base_url();
     for item in item_list {
         let item_type = item.item_type.unwrap_or(0);
         let (media, file_name, fallback_mime, aes_key_override) = match item_type {
@@ -271,6 +327,7 @@ async fn weixin_oc_collect_media(
         });
         let raw = weixin_oc_download_image_bytes(
             client,
+            &cdn_base_url,
             encrypted_query_param,
             aes_key_value.as_deref(),
         )
@@ -303,6 +360,229 @@ async fn weixin_oc_collect_media(
         images,
         audios,
         attachments,
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct WeixinOcGetUploadUrlResp {
+    #[serde(default)]
+    ret: i64,
+    #[serde(default)]
+    errcode: i64,
+    #[serde(default)]
+    errmsg: String,
+    #[serde(default)]
+    #[serde(alias = "uploadParam")]
+    upload_param: String,
+    #[serde(default)]
+    #[serde(alias = "uploadFullUrl")]
+    upload_full_url: String,
+}
+
+fn weixin_oc_media_aes_key_hex() -> String {
+    weixin_oc_encode_hex(Uuid::new_v4().as_bytes())
+}
+
+fn weixin_oc_random_hex_id() -> String {
+    Uuid::new_v4().simple().to_string()
+}
+
+async fn weixin_oc_request_upload_url(
+    client: &reqwest::Client,
+    credentials: &WeixinOcCredentials,
+    to_user_id: &str,
+    file_key: &str,
+    raw: &[u8],
+    upload_media_type: i64,
+    aes_key_hex: &str,
+) -> Result<WeixinOcGetUploadUrlResp, String> {
+    let ciphertext_size = weixin_oc_aes_padded_size(raw.len());
+    let body = serde_json::json!({
+        "filekey": file_key,
+        "media_type": upload_media_type,
+        "to_user_id": to_user_id,
+        "rawsize": raw.len(),
+        "rawfilemd5": format!("{:x}", md5::compute(raw)),
+        "filesize": ciphertext_size,
+        "no_need_thumb": true,
+        "aeskey": aes_key_hex,
+        "base_info": {
+            "channel_version": "easy_call_ai"
+        }
+    });
+    let body_text = serde_json::to_string(&body)
+        .map_err(|err| format!("序列化 getuploadurl 请求失败: {err}"))?;
+    let headers = weixin_oc_request_headers(&body_text, Some(credentials.token.as_str()))?;
+    let resp = client
+        .post(format!(
+            "{}/ilink/bot/getuploadurl",
+            credentials.normalized_base_url().trim_end_matches('/')
+        ))
+        .headers(headers)
+        .body(body_text)
+        .send()
+        .await
+        .map_err(|err| format!("请求 getuploadurl 失败: {err}"))?;
+    let status = resp.status();
+    let text = resp
+        .text()
+        .await
+        .map_err(|err| format!("读取 getuploadurl 响应失败: {err}"))?;
+    if !status.is_success() {
+        return Err(format!(
+            "请求 getuploadurl 失败: status={} body={}",
+            status, text
+        ));
+    }
+    let parsed = serde_json::from_str::<WeixinOcGetUploadUrlResp>(&text)
+        .map_err(|err| format!("解析 getuploadurl 响应失败: {err}, body={text}"))?;
+    if parsed.ret != 0 || parsed.errcode != 0 {
+        return Err(format!(
+            "请求 getuploadurl 失败: ret={} errcode={} errmsg={}",
+            parsed.ret, parsed.errcode, parsed.errmsg
+        ));
+    }
+    if parsed.upload_param.trim().is_empty() && parsed.upload_full_url.trim().is_empty() {
+        return Err("请求 getuploadurl 失败: 返回中缺少 upload_param / upload_full_url".to_string());
+    }
+    runtime_log_info(format!(
+        "[个人微信媒体发送] getuploadurl 完成: to_user_id={}, media_type={}, raw_size={}, upload_param_len={}, upload_full_url_present={}",
+        to_user_id.trim(),
+        upload_media_type,
+        raw.len(),
+        parsed.upload_param.len(),
+        !parsed.upload_full_url.trim().is_empty()
+    ));
+    Ok(parsed)
+}
+
+async fn weixin_oc_upload_to_cdn(
+    client: &reqwest::Client,
+    credentials: &WeixinOcCredentials,
+    upload_param: &str,
+    upload_full_url: &str,
+    file_key: &str,
+    aes_key_hex: &str,
+    raw: &[u8],
+) -> Result<String, String> {
+    let key = weixin_oc_decode_hex(aes_key_hex)?;
+    let encrypted = weixin_oc_encrypt_media_ecb(raw, &key)?;
+    let upload_url = if !upload_full_url.trim().is_empty() {
+        upload_full_url.trim().to_string()
+    } else {
+        weixin_oc_cdn_upload_url(
+            credentials.normalized_cdn_base_url().as_str(),
+            upload_param,
+            file_key,
+        )
+    };
+    let resp = client
+        .post(upload_url)
+        .header(reqwest::header::CONTENT_TYPE, "application/octet-stream")
+        .body(encrypted)
+        .send()
+        .await
+        .map_err(|err| format!("上传个人微信媒体到 CDN 失败: {err}"))?;
+    let status = resp.status();
+    let encrypted_query_param = resp
+        .headers()
+        .get("x-encrypted-param")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .unwrap_or("")
+        .to_string();
+    let body = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        return Err(format!(
+            "上传个人微信媒体到 CDN 失败: status={} body={}",
+            status, body
+        ));
+    }
+    if encrypted_query_param.is_empty() {
+        return Err(format!(
+            "上传个人微信媒体到 CDN 失败: 响应缺少 x-encrypted-param, body={body}"
+        ));
+    }
+    runtime_log_info(format!(
+        "[个人微信媒体发送] CDN 上传 完成: file_key={}, cipher_size={}, encrypted_query_param_len={}",
+        file_key.trim(),
+        weixin_oc_aes_padded_size(raw.len()),
+        encrypted_query_param.len()
+    ));
+    Ok(encrypted_query_param)
+}
+
+async fn weixin_oc_prepare_outbound_media_item(
+    client: &reqwest::Client,
+    credentials: &WeixinOcCredentials,
+    to_user_id: &str,
+    upload_media_type: i64,
+    item_type: i64,
+    file_name: &str,
+    raw: &[u8],
+) -> Result<Value, String> {
+    runtime_log_info(format!(
+        "[个人微信媒体发送] 开始准备媒体: to_user_id={}, item_type={}, upload_media_type={}, file_name={}, raw_size={}",
+        to_user_id.trim(),
+        item_type,
+        upload_media_type,
+        file_name.trim(),
+        raw.len()
+    ));
+    let file_key = weixin_oc_random_hex_id();
+    let aes_key_hex = weixin_oc_media_aes_key_hex();
+    let upload = weixin_oc_request_upload_url(
+        client,
+        credentials,
+        to_user_id,
+        &file_key,
+        raw,
+        upload_media_type,
+        &aes_key_hex,
+    )
+    .await?;
+    let encrypted_query_param = weixin_oc_upload_to_cdn(
+        client,
+        credentials,
+        upload.upload_param.as_str(),
+        upload.upload_full_url.as_str(),
+        &file_key,
+        &aes_key_hex,
+        raw,
+    )
+    .await?;
+    let media_payload = serde_json::json!({
+        "encrypt_query_param": encrypted_query_param,
+        "aes_key": B64.encode(aes_key_hex.as_bytes()),
+        "encrypt_type": 1,
+    });
+    let ciphertext_size = weixin_oc_aes_padded_size(raw.len());
+    Ok(match item_type {
+        WEIXIN_OC_IMAGE_ITEM_TYPE => serde_json::json!({
+            "type": WEIXIN_OC_IMAGE_ITEM_TYPE,
+            "image_item": {
+                "media": media_payload,
+                "mid_size": ciphertext_size,
+            }
+        }),
+        WEIXIN_OC_FILE_ITEM_TYPE => serde_json::json!({
+            "type": WEIXIN_OC_FILE_ITEM_TYPE,
+            "file_item": {
+                "media": media_payload,
+                "file_name": file_name,
+                "len": raw.len().to_string(),
+            }
+        }),
+        WEIXIN_OC_VIDEO_ITEM_TYPE => serde_json::json!({
+            "type": WEIXIN_OC_VIDEO_ITEM_TYPE,
+            "video_item": {
+                "media": media_payload,
+                "video_size": ciphertext_size,
+            }
+        }),
+        _ => {
+            return Err(format!("个人微信媒体类型不支持: item_type={item_type}"));
+        }
     })
 }
 

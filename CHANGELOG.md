@@ -1,5 +1,9 @@
 # 变更日志
 
+## 更新：聊天流式草稿不再触发历史气泡重播动画
+
+- 修复（chat-history-bubble-enter-animation-regression）：聊天区消息气泡的入场动画不再无条件挂在所有消息节点上；现在只对乐观用户草稿与助理流式草稿启用入场动画，避免助理流式草稿出现时历史消息因补流 patch 重新挂载而整屏再次闪动
+
 ## 更新：撤回会话时恢复 Todo 状态
 
 - 修复（rewind-conversation-restore-todos）：会话撤回不再只截断消息；现在会从剩余消息里回溯最近一次 `todo` 工具调用并恢复对应 Todo 状态，若找不到历史 Todo 则清空当前 Todo；同时补发 `conversation-todos-updated` 与会话概览更新事件，确保前端撤回后立刻看到正确的 Todo 面板状态

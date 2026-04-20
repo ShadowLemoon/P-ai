@@ -4,7 +4,8 @@
     :data-message-role="isOwnMessage(block) ? 'user' : block.role"
     :data-active-turn-user="activeTurnUser ? 'true' : undefined"
     :class="[
-      'chat group/user-turn mt-3 rounded-2xl px-3 py-2 transition-colors ecall-message-enter',
+      'chat group/user-turn mt-3 rounded-2xl px-3 py-2 transition-colors',
+      shouldAnimateEnter(block) ? 'ecall-message-enter' : '',
       isOwnMessage(block) ? 'chat-end' : 'chat-start',
       selectionModeEnabled && selected ? 'ecall-message-selected bg-neutral/10 ring-1 ring-neutral/20 shadow-sm' : '',
     ]"
@@ -612,6 +613,12 @@ function memeSegmentDataUrl(segment: MemeMessageSegment): string {
 
 function showStreamingUi(block: ChatMessageBlock): boolean {
   return !!block.isStreaming && !isOwnMessage(block);
+}
+
+function shouldAnimateEnter(block: ChatMessageBlock): boolean {
+  if (block.isStreaming) return true;
+  const providerMeta = (block.providerMeta || {}) as Record<string, unknown>;
+  return !!providerMeta._optimistic;
 }
 
 function toolCallsForBlock(block: ChatMessageBlock): Array<{ name: string; argsText: string; status?: "doing" | "done" }> {

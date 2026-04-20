@@ -1,5 +1,12 @@
 # 变更日志
 
+## 更新：归档窗口 UI 收口与预览标题修正
+
+- 优化（archives-window-ui-polish）：重排归档窗口布局为“顶部控制栏 + 左侧列表栏 + 右侧内容栏”，顶部模式切换改为 `tabs-border`，移除右侧冗余标题栏，列表时间字号收小，联系人列表收成双行显示，整体间距与结构更接近真正的侧边栏内容窗口
+- 修复（archive-preview-title-skip-system-compaction）：归档列表与未归档会话列表生成预览标题时，跳过由系统人格写入且 `role=user` 的“上下文整理”伪用户消息，重新回到真正的用户第一句话，避免列表标题错误显示为 `[上下文整理]`
+- 优化（memory-text-wrap-polish）：顺手统一记忆页与记忆导入预览中的长文本换行样式，避免英文长词和路径在卡片内撑破布局
+- 修复（archives-user-speaker-label）：归档窗口中的用户消息说话人标签不再显示 `user/用户`，改为复用当前用户人格名称
+
 ## 更新：会话持久化改为定向写入与索引增量更新
 
 - 优化（conversation-persistence-targeted-write-paths）：除全量归档导入外，移除各类读接口、联系人配置更新、任务分发、委托回退、归档整理与未归档会话操作中对 `persist_app_data_conversation_runtime_delta(...)` 的误用；这些路径现在分别改为单会话写入、定向会话写入或仅运行态写入，不再为局部变更触发整份会话列表序列化比较

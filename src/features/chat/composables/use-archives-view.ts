@@ -32,6 +32,11 @@ type ImportArchivesResult = {
   selectedArchiveId?: string | null;
 };
 
+type DeleteUnarchivedConversationResult = {
+  deletedConversationId: string;
+  activeConversationId: string;
+};
+
 type UseArchivesViewOptions = {
   t: TrFn;
   setStatus: (text: string) => void;
@@ -267,21 +272,24 @@ export function useArchivesView(options: UseArchivesViewOptions) {
     }
   }
 
-  async function deleteUnarchivedConversation(conversationId: string) {
-    if (!conversationId) return;
+  async function deleteUnarchivedConversation(conversationId: string): Promise<DeleteUnarchivedConversationResult | null> {
+    if (!conversationId) return null;
     try {
       console.info("[ARCHIVES] delete current unarchived main conversation", { conversationId });
-      await invokeTauri("delete_unarchived_conversation", {
+      const result = await invokeTauri<DeleteUnarchivedConversationResult>("delete_unarchived_conversation", {
         input: { conversationId },
       });
       options.setStatus(options.t("status.unarchivedConversationDeleted"));
+      const nextConversationId = String(result?.activeConversationId || "").trim();
       if (selectedUnarchivedConversationId.value === conversationId) {
-        selectedUnarchivedConversationId.value = "";
+        selectedUnarchivedConversationId.value = nextConversationId;
         unarchivedMessages.value = [];
       }
       await loadArchives();
+      return result;
     } catch (e) {
       options.setStatusError("status.deleteUnarchivedConversationFailed", e);
+      return null;
     }
   }
 

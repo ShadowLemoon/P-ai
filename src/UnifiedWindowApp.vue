@@ -681,7 +681,7 @@ const {
   selectUnarchivedConversation,
   selectDelegateConversation,
   selectRemoteImContactConversation,
-  deleteUnarchivedConversation: deleteUnarchivedConversationFromArchives,
+  deleteUnarchivedConversation: deleteUnarchivedConversationFromArchivesRaw,
   deleteRemoteImContactConversation,
   deleteArchive,
   exportArchive,
@@ -1933,6 +1933,36 @@ const {
   forceArchiveNow,
   deleteUnarchivedConversationFromArchives,
 }));
+
+async function deleteUnarchivedConversationFromArchives(conversationId: string) {
+  const normalizedConversationId = String(conversationId || "").trim();
+  if (!normalizedConversationId) return;
+  const currentConversationId = String(currentChatConversationId.value || "").trim();
+  const deletingCurrentConversation = currentConversationId === normalizedConversationId;
+  if (deletingCurrentConversation) {
+    const optimisticNextConversationId = pickForegroundConversationId(
+      unarchivedConversations.value.filter((item) => String(item.conversationId || "").trim() !== normalizedConversationId),
+    );
+    if (optimisticNextConversationId) {
+      try {
+        conversationForegroundSyncing.value = true;
+        const snapshot = await requestConversationLightSnapshot(optimisticNextConversationId);
+        applyConversationSnapshot({
+          ...snapshot,
+          unarchivedConversations: unarchivedConversations.value,
+        });
+      } finally {
+        conversationForegroundSyncing.value = false;
+      }
+    } else {
+      clearForegroundConversation("delete_unarchived_conversation_optimistic_empty");
+    }
+  }
+  const result = await deleteUnarchivedConversationFromArchivesRaw(normalizedConversationId);
+  if (!deletingCurrentConversation) return;
+  if (String(currentChatConversationId.value || "").trim()) return;
+  await recoverForegroundConversationFromOverview("delete_unarchived_conversation", String(result?.activeConversationId || "").trim() || null);
+}
 
 async function refreshChatUnarchivedConversations() {
   if (conversationForegroundSyncing.value) return;

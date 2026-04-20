@@ -1,5 +1,9 @@
 # 变更日志
 
+## 发布：v0.9.18
+
+- 发布（release-0.9.18）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.18`，纳入本轮已完成的“Shell 工作区提示词修正、助理私人目录命名统一、聊天气泡入场动画收口、撤回 Todo 恢复”等稳定性修复
+
 ## 更新：Shell 工作区提示词与目录命名统一
 
 - 修复（shell-workspace-prompt-alignment）：系统提示词中的 `<shell workspace>` 不再只显示系统级目录；现在会按当前会话直接列出助理私人目录、Shell 默认启动/执行目录以及当前允许的全部工作目录，避免前端已保存的主目录和附加目录在系统提示词预览里缺失

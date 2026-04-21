@@ -3,6 +3,7 @@
 ## 发布：v0.9.21
 
 - 发布（release-0.9.21）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.21`，纳入本轮已完成的“配置窗口内联更新日志卡片、远程 changelog 代理读取修正、多语言补齐与流式跨工具分段相关脏逻辑清理”等更新
+- 修复（chat-stream-text-boundary-delta-after-tool-turn）：后端工具循环在进入后续正文轮次时，会在该轮正文首个流式文本包前额外补发一个 `\n` delta，让聊天窗口流式阶段也能对齐正式消息的文本边界；避免工具后的下一段正文继续黏在上一段末尾，同时不引入前端猜边界或额外渲染分支
 
 ## 更新：配置窗口内联更新日志卡片
 

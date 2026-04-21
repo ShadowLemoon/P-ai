@@ -130,6 +130,26 @@ fn append_tool_loop_transient_history_to_prepared(
     normalize_prepared_history_messages_in_place(prepared);
 }
 
+fn send_text_delta_event(
+    on_delta: &tauri::ipc::Channel<AssistantDeltaEvent>,
+    text: &str,
+) {
+    if text.is_empty() {
+        return;
+    }
+    let _ = on_delta.send(AssistantDeltaEvent {
+        delta: text.to_string(),
+        kind: None,
+        request_id: None,
+        phase_id: None,
+        reason: None,
+        tool_name: None,
+        tool_status: None,
+        tool_args: None,
+        message: None,
+    });
+}
+
 fn tool_loop_active_conversation_snapshot(
     state: &AppState,
     conversation_id: &str,
@@ -733,6 +753,7 @@ async fn run_genai_tool_loop(
     let mut auto_compaction_applied = false;
     let mut tool_repeat_guard = ToolRepeatGuard::default();
     for round_index in 0..INTERNAL_MAX_TOOL_LOOP_ROUNDS {
+        let mut emit_text_boundary_before_next_chunk = !full_assistant_text.trim().is_empty();
         if round_index > 0 && !auto_compaction_applied {
             auto_compaction_applied = maybe_apply_auto_compaction_before_tool_continue_genai(
                 tool_abort_state,
@@ -775,17 +796,11 @@ async fn run_genai_tool_loop(
             match chunk {
                 Ok(genai::chat::ChatStreamEvent::Start) => {}
                 Ok(genai::chat::ChatStreamEvent::Chunk(text)) => {
-                    let _ = on_delta.send(AssistantDeltaEvent {
-                        delta: text.content.clone(),
-                        kind: None,
-                        request_id: None,
-                        phase_id: None,
-                        reason: None,
-                        tool_name: None,
-                        tool_status: None,
-                        tool_args: None,
-                        message: None,
-                    });
+                    if emit_text_boundary_before_next_chunk && !text.content.is_empty() {
+                        send_text_delta_event(on_delta, "\n");
+                        emit_text_boundary_before_next_chunk = false;
+                    }
+                    send_text_delta_event(on_delta, &text.content);
                     turn_text.push_str(&text.content);
                 }
                 Ok(genai::chat::ChatStreamEvent::ReasoningChunk(reasoning)) => {
@@ -823,17 +838,11 @@ async fn run_genai_tool_loop(
                         {
                             let joined = captured_texts.join("\n");
                             turn_text = joined.clone();
-                            let _ = on_delta.send(AssistantDeltaEvent {
-                                delta: joined,
-                                kind: None,
-                                request_id: None,
-                                phase_id: None,
-                                reason: None,
-                                tool_name: None,
-                                tool_status: None,
-                                tool_args: None,
-                                message: None,
-                            });
+                            if emit_text_boundary_before_next_chunk && !joined.is_empty() {
+                                send_text_delta_event(on_delta, "\n");
+                                emit_text_boundary_before_next_chunk = false;
+                            }
+                            send_text_delta_event(on_delta, &joined);
                         }
                     }
                     if turn_reasoning.is_empty() {
@@ -1151,6 +1160,7 @@ async fn execute_genai_non_stream_round(
     request: genai::chat::ChatRequest,
     options: &genai::chat::ChatOptions,
     on_delta: &tauri::ipc::Channel<AssistantDeltaEvent>,
+    prefix_text_boundary: bool,
 ) -> Result<GenaiToolLoopRoundOutput, String> {
     let response = client
         .exec_chat(service_target.clone(), request, Some(options))
@@ -1184,17 +1194,10 @@ async fn execute_genai_non_stream_round(
         });
     }
     if !turn_text.is_empty() {
-        let _ = on_delta.send(AssistantDeltaEvent {
-            delta: turn_text.clone(),
-            kind: None,
-            request_id: None,
-            phase_id: None,
-            reason: None,
-            tool_name: None,
-            tool_status: None,
-            tool_args: None,
-            message: None,
-        });
+        if prefix_text_boundary {
+            send_text_delta_event(on_delta, "\n");
+        }
+        send_text_delta_event(on_delta, &turn_text);
     }
 
     Ok(GenaiToolLoopRoundOutput {
@@ -1292,6 +1295,7 @@ async fn run_genai_tool_loop_non_stream(
             request,
             &options,
             on_delta,
+            !full_assistant_text.trim().is_empty(),
         )
         .await?;
         let turn_text = round.turn_text;

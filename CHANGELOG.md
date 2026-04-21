@@ -1,5 +1,9 @@
 # 变更日志
 
+## 发布：v0.9.19
+
+- 发布（release-0.9.19）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.19`，纳入本轮已完成的“页面缩放热键开放、配置页缩放布局修复、对话窗口切换模型改为替换首项、内置主题配色替换”等更新
+
 ## 更新：替换若干内置主题配色
 
 - 优化（theme-palette-refresh）：替换内置 `dark`、`winter`、`autumn`、`night`、`lofi` 主题的 DaisyUI 配色参数与圆角/边框风格，使深浅主题的视觉方向更统一，并为后续继续批量替换主题保留同名入口

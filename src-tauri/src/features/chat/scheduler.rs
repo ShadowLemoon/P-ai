@@ -1501,20 +1501,14 @@ async fn activate_main_assistant(
                         "stream_start",
                     );
                     runtime_log_info(format!(
-                        "[聊天流式重绑] 首个可见流式包改走普通事件 conversation_id={} kind={} delta_len={}",
+                        "[聊天流式重绑] 首个可见流式包触发重绑事件 conversation_id={} kind={} delta_len={}",
                         conversation_id_for_emit.trim(),
                         event.kind.as_deref().unwrap_or("delta"),
                         event.delta.chars().count(),
                     ));
-                    emit_assistant_delta_app_event(
-                        &state_for_delta,
-                        &conversation_id_for_emit,
-                        &event,
-                    );
                     if let Some(flag) = stream_start_rebind_guard.as_mut() {
                         **flag = true;
                     }
-                    return Ok(());
                 }
                 if should_emit_assistant_delta_via_app_event_only(&event) {
                     if event.kind.as_deref() == Some("stream_rebind_required") {

@@ -1,5 +1,10 @@
 # 变更日志
 
+## 更新：流式首包重绑与工具消息聚合顺序修正
+
+- 修复（chat-stream-start-rebind-without-touching-main-dispatch）：首个可见流式包现在只会额外触发一次 `stream_start` 重绑事件，不再额外复制首包 delta，也不再中断原本的正常调度链，避免 `todo` 等工具调用后的首包分发被重复投递或提前截断
+- 修复（chat-tool-block-before-final-text）：带工具调用历史的助理消息在聊天窗口中改为固定聚合顺序“思维链 -> 工具 -> 正文”，同时移除正文被工具块互斥吞掉的旧模板结构，确保这类消息既能看到工具过程，也能稳定看到最终正文
+
 ## 发布：v0.9.19
 
 - 发布（release-0.9.19）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.19`，纳入本轮已完成的“页面缩放热键开放、配置页缩放布局修复、对话窗口切换模型改为替换首项、内置主题配色替换”等更新

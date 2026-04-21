@@ -221,7 +221,7 @@
           </div>
         </details>
       </div>
-      <div v-else-if="hasRenderableMemeSegments(block)" :class="block.taskTrigger ? 'mt-3' : ''">
+      <div v-if="hasRenderableMemeSegments(block)" :class="block.taskTrigger ? 'mt-3' : ''">
         <div ref="markdownContainerRef" class="ecall-meme-segment-flow">
           <template v-for="(segment, index) in block.memeSegments || []" :key="`${block.id}-meme-${index}`">
             <div

@@ -505,6 +505,14 @@ async fn ensure_codex_runtime_auth_fresh(
     if !codex_is_token_expired(expires_at_ms) {
         return Ok(auth.clone());
     }
+    codex_refresh_runtime_auth_with_trigger(auth, "token_expired").await
+}
+
+async fn codex_refresh_runtime_auth_with_trigger(
+    auth: &CodexRuntimeAuth,
+    trigger: &str,
+) -> Result<CodexRuntimeAuth, String> {
+    let expires_at_ms = auth.expires_at_ms.unwrap_or_default();
     let Some(refresh_token) = auth
         .refresh_token
         .as_deref()
@@ -526,7 +534,7 @@ async fn ensure_codex_runtime_auth_fresh(
     .map_err(|err| {
         codex_auth_log_info(
             "token_refresh",
-            "token_expired",
+            trigger,
             &auth.provider_id,
             "error",
             refresh_started.elapsed().as_millis(),
@@ -542,7 +550,7 @@ async fn ensure_codex_runtime_auth_fresh(
     }
     codex_auth_log_info(
         "token_refresh",
-        "token_expired",
+        trigger,
         &auth.provider_id,
         "authenticated",
         refresh_started.elapsed().as_millis(),

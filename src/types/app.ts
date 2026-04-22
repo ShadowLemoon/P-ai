@@ -26,6 +26,34 @@ export type CodexAuthStatus = {
   expiresAt: string;
 };
 
+export type CodexRateLimitWindow = {
+  usedPercent: number;
+  windowDurationMins?: number | null;
+  resetsAt?: number | null;
+};
+
+export type CodexCreditsSnapshot = {
+  hasCredits: boolean;
+  unlimited: boolean;
+  balance?: string | null;
+};
+
+export type CodexRateLimitSnapshot = {
+  limitId: string;
+  limitName: string;
+  primary?: CodexRateLimitWindow | null;
+  secondary?: CodexRateLimitWindow | null;
+  credits?: CodexCreditsSnapshot | null;
+  planType: string;
+  rateLimitReachedType: string;
+};
+
+export type CodexRateLimitQueryResult = {
+  usageUrl: string;
+  preferredSnapshot?: CodexRateLimitSnapshot | null;
+  snapshots: CodexRateLimitSnapshot[];
+};
+
 export type ApiToolItem = {
   id: string;
   command: string;

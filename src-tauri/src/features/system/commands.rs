@@ -6,6 +6,7 @@ include!("commands/tool_review.rs");
 
 // ==================== Codex OAuth 命令 ====================
 include!("commands/codex_auth.rs");
+include!("commands/codex_usage.rs");
 
 // ==================== 提示词组装层 ====================
 include!("commands/prompt_assembly.rs");

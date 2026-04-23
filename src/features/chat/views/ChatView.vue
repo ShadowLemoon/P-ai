@@ -32,12 +32,14 @@
           ref="dynamicScrollerRef"
           class="ecall-chat-scroll-container relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto p-3 scrollbar-gutter-stable"
           :class="chatting || frozen || conversationBusy ? 'pointer-events-auto' : ''"
+          :style="hideScrollerUntilBottomAnchored ? { visibility: 'hidden' } : undefined"
           :data-chat-interaction-locked="chatting || frozen || conversationBusy ? 'true' : undefined"
           :items="chatRenderItems"
           key-field="id"
           :min-item-size="virtualMinItemSize"
           :buffer="840"
           :shift="true"
+          @visible="handleDynamicScrollerVisible"
         >
         <template #before>
           <div
@@ -737,6 +739,8 @@ const olderHistoryRequestPending = ref(false);
 const LOAD_OLDER_HISTORY_THRESHOLD_PX = 96;
 const dynamicScrollerRef = ref<DynamicScrollerInstance | null>(null);
 const observedVirtualItemElements = new Map<string, HTMLElement>();
+const hideScrollerUntilBottomAnchored = ref(false);
+let pendingBottomSeed = false;
 const virtualMinItemSize = computed(() => {
   const sample = chatRenderItems.value.slice(0, 12);
   if (sample.length <= 0) return 120;
@@ -746,6 +750,7 @@ const virtualMinItemSize = computed(() => {
 let boundScrollElement: HTMLElement | null = null;
 let pendingScrollerRefreshFrame = 0;
 let pinToBottomPending = false;
+let pendingPinToBottomFrame = 0;
 
 const {
   scrollContainer,
@@ -771,6 +776,7 @@ const {
   conversationScrollToBottomRequest: toRef(props, "conversationScrollToBottomRequest"),
   onReachedBottom: () => emit("reachedBottom"),
   focusComposerInput: (options) => composerPanelRef.value?.focusInput(options),
+  requestBottomAnchor: () => pinToBottomOnNextLayout(),
 });
 
 function resolveScrollerElement(): HTMLElement | null {
@@ -794,6 +800,9 @@ function attachDynamicScrollerElement() {
   boundScrollElement = nextElement;
   scrollContainer.value = nextElement;
   if (nextElement) {
+    if (pendingBottomSeed) {
+      nextElement.scrollTop = Number.MAX_SAFE_INTEGER;
+    }
     nextElement.addEventListener("scroll", onConversationScroll, { passive: true });
     onScroll();
   }
@@ -810,10 +819,33 @@ function scheduleDynamicScrollerRefresh() {
       refreshObservedVirtualItemElements();
       scroller.forceUpdate();
       if (pinToBottomPending) {
-        pinToBottomPending = false;
-        scroller.scrollToBottom();
-        onScroll();
+        scheduleDeferredPinToBottom();
+      } else if (hideScrollerUntilBottomAnchored.value) {
+        hideScrollerUntilBottomAnchored.value = false;
       }
+    });
+  });
+}
+
+function scheduleDeferredPinToBottom() {
+  if (pendingPinToBottomFrame) return;
+  pendingPinToBottomFrame = requestAnimationFrame(() => {
+    pendingPinToBottomFrame = 0;
+    const scroller = dynamicScrollerRef.value;
+    if (!scroller || !pinToBottomPending) return;
+    requestAnimationFrame(() => {
+      if (!dynamicScrollerRef.value || !pinToBottomPending) return;
+      const lastIndex = chatRenderItems.value.length - 1;
+      if (lastIndex >= 0) {
+        dynamicScrollerRef.value.scrollToItem(lastIndex, { align: "end" });
+      }
+      pinToBottomPending = false;
+      dynamicScrollerRef.value.scrollToBottom();
+      pendingBottomSeed = false;
+      requestAnimationFrame(() => {
+        hideScrollerUntilBottomAnchored.value = false;
+        onScroll();
+      });
     });
   });
 }
@@ -821,6 +853,13 @@ function scheduleDynamicScrollerRefresh() {
 function pinToBottomOnNextLayout() {
   pinToBottomPending = true;
   scheduleDynamicScrollerRefresh();
+}
+
+function handleDynamicScrollerVisible() {
+  attachDynamicScrollerElement();
+  if (pinToBottomPending) {
+    scheduleDynamicScrollerRefresh();
+  }
 }
 
 function syncViewportMetrics() {
@@ -901,6 +940,8 @@ watch(
   () => String(props.activeConversationId || "").trim(),
   () => {
     exitMessageSelectionMode();
+    hideScrollerUntilBottomAnchored.value = true;
+    pendingBottomSeed = true;
     pinToBottomOnNextLayout();
     pendingOlderHistoryRestore.value = null;
     olderHistoryRequestPending.value = false;
@@ -1390,6 +1431,10 @@ onBeforeUnmount(() => {
   if (pendingScrollerRefreshFrame) {
     cancelAnimationFrame(pendingScrollerRefreshFrame);
     pendingScrollerRefreshFrame = 0;
+  }
+  if (pendingPinToBottomFrame) {
+    cancelAnimationFrame(pendingPinToBottomFrame);
+    pendingPinToBottomFrame = 0;
   }
   observedVirtualItemElements.clear();
   stopAudioPlayback();

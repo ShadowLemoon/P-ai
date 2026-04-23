@@ -12,6 +12,11 @@
 - 重构（conversation-prompt-service-phase-1）：引入会话提示词服务第一阶段骨架，先收口提示词 owner 与只读 snapshot，不替换 `Conversation.messages` 作为持久化真源；系统提示词最终合成与对话消息投影入口开始统一经过服务层，并新增缓存命中稳定性与 `prompt_revision` 边界测试，确保 `todo/task` 与 `memory_recall` 不会误触发系统提示词 revision
 - 重构（conversation-prompt-service-phase-2）：继续收口提示词服务 owner，系统侧块生成统一改为由服务内部发起，并把主聊天、`SummaryContext`、工具安全审查、工具审查提交、vision 描述这几条高频真实业务入口的 latest user / prepared prompt 生成动作收进服务内部；外部主链只再传原始条件与场景意图，不再手搓系统块或 latest user 文本
 
+## 发布：v0.9.38
+
+- 优化（chat-dynamic-scroller-migration）：聊天虚拟滚动底座切换到 `vue-virtual-scroller` 默认 `DynamicScroller / DynamicScrollerItem` 方案，移除自研虚拟列表 composable 与 TanStack 虚拟滚动依赖，统一由库接管动态高度测量、item 池化与滚动区渲染；同时将会话切换与“滚到底”锚定收口到 scroller 自身暴露的方法，修正 `ChatView` 模板层级，避免 `0.9.37` 中出现的长会话滚动异常
+- 发布（release-0.9.38）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.38`，纳入本轮已完成的“聊天虚拟滚动底座迁移、滚动恢复可用与布局层级修正”等更新
+
 ## 发布：v0.9.37
 
 - 优化（chat-virtual-list-scroll-stability-and-render-keys）：聊天虚拟滚动收口为稳定 item key 渲染，去掉基于渲染区间的整段 subtree 重建；无 id 消息补稳定前端 renderId，向上滚动时仅对完全位于视口上方的高度修正做滚动补偿，并为加载更早历史补充锚点恢复，减少长会话中的闪烁、跳动与滚动抢夺

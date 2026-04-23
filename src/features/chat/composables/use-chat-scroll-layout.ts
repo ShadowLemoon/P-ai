@@ -11,6 +11,7 @@ type UseChatScrollLayoutOptions = {
   conversationScrollToBottomRequest: Ref<number>;
   onReachedBottom: () => void;
   focusComposerInput: (options?: FocusOptions) => void;
+  requestBottomAnchor?: () => void;
 };
 
 export function useChatScrollLayout(options: UseChatScrollLayoutOptions) {
@@ -50,6 +51,14 @@ export function useChatScrollLayout(options: UseChatScrollLayoutOptions) {
 
   function jumpToBottom() {
     scrollToBottom("smooth");
+  }
+
+  function requestBottomAnchor() {
+    if (options.requestBottomAnchor) {
+      options.requestBottomAnchor();
+      return;
+    }
+    scrollToBottom("auto");
   }
 
   function syncConversationLayoutMode() {
@@ -217,7 +226,7 @@ export function useChatScrollLayout(options: UseChatScrollLayoutOptions) {
         updateActiveTurnLayout();
         syncActiveTurnLayoutObserver();
         updateJumpToBottomOffset();
-        scrollToBottom("auto");
+        requestBottomAnchor();
         const el = scrollContainer.value;
         if (el) {
           lastBottomState.value = isNearBottom(el);
@@ -246,7 +255,7 @@ export function useChatScrollLayout(options: UseChatScrollLayoutOptions) {
         updateJumpToBottomOffset();
         if (forceBottomAnchorOnNextMessageLayout) {
           requestAnimationFrame(() => {
-            scrollToBottom("auto");
+            requestBottomAnchor();
             forceBottomAnchorOnNextMessageLayout = false;
           });
         } else if (!options.lastMessageIsOwn.value) {
@@ -301,7 +310,7 @@ export function useChatScrollLayout(options: UseChatScrollLayoutOptions) {
       forceBottomAnchorOnNextMessageLayout = true;
       nextTick(() => {
         requestAnimationFrame(() => {
-          scrollToBottom("auto");
+          requestBottomAnchor();
           const el = scrollContainer.value;
           if (el) {
             lastBottomState.value = isNearBottom(el);

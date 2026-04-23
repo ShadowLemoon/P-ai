@@ -26,6 +26,27 @@ struct ModelCallExecutionResult {
     log_parts: ModelCallLogParts,
 }
 
+struct ProviderSerialGuard {
+    provider_id: String,
+    model_name: String,
+    acquired_at: std::time::Instant,
+    _guard: tokio::sync::OwnedMutexGuard<()>,
+}
+
+impl Drop for ProviderSerialGuard {
+    fn drop(&mut self) {
+        let held_ms = self
+            .acquired_at
+            .elapsed()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64;
+        runtime_log_info(format!(
+            "[推理串行] 完成并释放供应商串行门: provider_id={}, model={}, held_ms={}",
+            self.provider_id, self.model_name, held_ms
+        ));
+    }
+}
+
 fn push_model_call_log_parts(state: Option<&AppState>, execution: &ModelCallExecutionResult) {
     push_llm_round_log(
         state,
@@ -164,6 +185,54 @@ fn provider_system_message_user_fallback(state: Option<&AppState>, base_url: &st
     provider_system_message_user_fallback_cached(state, base_url)
 }
 
+async fn maybe_acquire_provider_serial_guard(
+    state: Option<&AppState>,
+    resolved_api: &ResolvedApiConfig,
+    model_name: &str,
+) -> Result<Option<ProviderSerialGuard>, String> {
+    if resolved_api.allow_concurrent_requests {
+        return Ok(None);
+    }
+    let Some(app_state) = state else {
+        return Ok(None);
+    };
+    let Some(provider_id) = resolved_api
+        .provider_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(None);
+    };
+
+    runtime_log_info(format!(
+        "[推理串行] 开始等待供应商串行门: provider_id={}, model={}",
+        provider_id, model_name
+    ));
+    let gate = {
+        let mut gates = app_state.provider_request_gates.lock().await;
+        gates.entry(provider_id.to_string())
+            .or_insert_with(|| std::sync::Arc::new(tokio::sync::Mutex::new(())))
+            .clone()
+    };
+    let wait_started = std::time::Instant::now();
+    let guard = gate.lock_owned().await;
+    let waited_ms = wait_started
+        .elapsed()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64;
+    runtime_log_info(format!(
+        "[推理串行] 已进入供应商串行门: provider_id={}, model={}, waited_ms={}",
+        provider_id, model_name, waited_ms
+    ));
+    Ok(Some(ProviderSerialGuard {
+        provider_id: provider_id.to_string(),
+        model_name: model_name.to_string(),
+        acquired_at: std::time::Instant::now(),
+        _guard: guard,
+    }))
+}
+
 fn provider_mark_system_message_user_fallback(
     state: Option<&AppState>,
     base_url: &str,
@@ -220,14 +289,19 @@ async fn invoke_model_by_format(
     resolved_api: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     match resolved_api.request_format {
-        RequestFormat::OpenAI => call_model_openai_stream(resolved_api, model_name, prepared).await,
-        RequestFormat::OpenAIResponses | RequestFormat::Codex => {
-            call_model_openai_responses(resolved_api, model_name, prepared, None).await
+        RequestFormat::OpenAI => {
+            call_model_openai_stream(resolved_api, model_name, prepared, app_state).await
         }
-        RequestFormat::Gemini => call_model_gemini(resolved_api, model_name, prepared).await,
-        RequestFormat::Anthropic => call_model_anthropic(resolved_api, model_name, prepared).await,
+        RequestFormat::OpenAIResponses | RequestFormat::Codex => {
+            call_model_openai_responses(resolved_api, model_name, prepared, None, app_state).await
+        }
+        RequestFormat::Gemini => call_model_gemini(resolved_api, model_name, prepared, app_state).await,
+        RequestFormat::Anthropic => {
+            call_model_anthropic(resolved_api, model_name, prepared, app_state).await
+        }
         RequestFormat::OpenAITts
         | RequestFormat::OpenAIStt
         | RequestFormat::GeminiEmbedding
@@ -243,16 +317,20 @@ async fn invoke_model_non_stream_by_format(
     resolved_api: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     match resolved_api.request_format {
-        RequestFormat::OpenAI => call_model_openai_non_stream(resolved_api, model_name, prepared).await,
+        RequestFormat::OpenAI => {
+            call_model_openai_non_stream(resolved_api, model_name, prepared, app_state).await
+        }
         RequestFormat::OpenAIResponses | RequestFormat::Codex => {
-            call_model_openai_responses_non_stream(resolved_api, model_name, prepared).await
+            call_model_openai_responses_non_stream(resolved_api, model_name, prepared, app_state)
+                .await
         }
         RequestFormat::Anthropic => {
-            call_model_anthropic_non_stream(resolved_api, model_name, prepared).await
+            call_model_anthropic_non_stream(resolved_api, model_name, prepared, app_state).await
         }
-        _ => invoke_model_by_format(resolved_api, model_name, prepared).await,
+        _ => invoke_model_by_format(resolved_api, model_name, prepared, app_state).await,
     }
 }
 
@@ -262,11 +340,12 @@ async fn invoke_model_by_format_with_timeout(
     prepared: PreparedPrompt,
     timeout_secs: u64,
     scene: &str,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let call_started = std::time::Instant::now();
     tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        invoke_model_by_format(resolved_api, model_name, prepared),
+        invoke_model_by_format(resolved_api, model_name, prepared, app_state),
     )
     .await
     .map_err(|_| {
@@ -284,11 +363,12 @@ async fn invoke_model_non_stream_by_format_with_timeout(
     prepared: PreparedPrompt,
     timeout_secs: u64,
     scene: &str,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let call_started = std::time::Instant::now();
     tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
-        invoke_model_non_stream_by_format(resolved_api, model_name, prepared),
+        invoke_model_non_stream_by_format(resolved_api, model_name, prepared, app_state),
     )
     .await
     .map_err(|_| {
@@ -342,10 +422,12 @@ async fn invoke_model_with_policy(
                 prepared.clone(),
                 timeout_secs,
                 policy.scene,
+                app_state,
             )
             .await
         } else {
-            invoke_model_non_stream_by_format(resolved_api, model_name, prepared.clone()).await
+            invoke_model_non_stream_by_format(resolved_api, model_name, prepared.clone(), app_state)
+                .await
         }
     } else {
         if let Some(timeout_secs) = policy.timeout_secs {
@@ -355,10 +437,11 @@ async fn invoke_model_with_policy(
                 prepared.clone(),
                 timeout_secs,
                 policy.scene,
+                app_state,
             )
             .await
         } else {
-            invoke_model_by_format(resolved_api, model_name, prepared.clone()).await
+            invoke_model_by_format(resolved_api, model_name, prepared.clone(), app_state).await
         }
     };
     let stream_first_attempt_succeeded = !prefer_non_stream
@@ -393,10 +476,11 @@ async fn invoke_model_with_policy(
                         fallback,
                         timeout_secs,
                         policy.scene,
+                        app_state,
                     )
                     .await
                 } else {
-                    invoke_model_by_format(resolved_api, model_name, fallback).await
+                    invoke_model_by_format(resolved_api, model_name, fallback, app_state).await
                 }
             }
         }
@@ -427,10 +511,12 @@ async fn invoke_model_with_policy(
                     prepared,
                     timeout_secs,
                     policy.scene,
+                    app_state,
                 )
                 .await
             } else {
-                invoke_model_non_stream_by_format(resolved_api, model_name, prepared).await
+                invoke_model_non_stream_by_format(resolved_api, model_name, prepared, app_state)
+                    .await
             }
         }
         Err(err) => Err(err),

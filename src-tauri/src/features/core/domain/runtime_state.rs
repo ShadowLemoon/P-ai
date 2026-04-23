@@ -70,6 +70,8 @@ struct AppState {
     provider_streaming_disabled_keys: Arc<Mutex<std::collections::HashMap<String, i64>>>,
     provider_system_message_user_fallback_keys:
         Arc<Mutex<std::collections::HashSet<String>>>,
+    provider_request_gates:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<()>>>>>,
     remote_im_contact_runtime_states:
         Arc<Mutex<std::collections::HashMap<String, RemoteImContactRuntimeState>>>,
     hidden_skill_snapshot_cache: Arc<Mutex<String>>,
@@ -286,6 +288,9 @@ impl AppState {
             provider_streaming_disabled_keys: Arc::new(Mutex::new(std::collections::HashMap::new())),
             provider_system_message_user_fallback_keys: Arc::new(Mutex::new(
                 std::collections::HashSet::new(),
+            )),
+            provider_request_gates: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
             )),
             remote_im_contact_runtime_states: Arc::new(Mutex::new(
                 std::collections::HashMap::new(),

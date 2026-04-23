@@ -912,6 +912,9 @@ mod builtin_meme_tests {
             provider_system_message_user_fallback_keys: Arc::new(Mutex::new(
                 std::collections::HashSet::new(),
             )),
+            provider_request_gates: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             remote_im_contact_runtime_states: Arc::new(Mutex::new(
                 std::collections::HashMap::new(),
             )),

@@ -135,7 +135,7 @@ async fn retry_openai_responses_with_system_message_user_fallback(
         )
         .await
     } else {
-        call_model_openai_responses(api_config, model_name, fallback, Some(on_delta)).await
+        call_model_openai_responses(api_config, model_name, fallback, Some(on_delta), app_state).await
     }
 }
 
@@ -265,11 +265,11 @@ async fn execute_openai_style_request(
         }
         _ => {
             if selected_api.request_format.is_openai_responses_family() {
-                call_model_openai_responses(api_config, model_name, prepared, Some(on_delta)).await
+                call_model_openai_responses(api_config, model_name, prepared, Some(on_delta), app_state).await
             } else if prefer_non_stream {
-                call_model_openai_non_stream(api_config, model_name, prepared).await
+                call_model_openai_non_stream(api_config, model_name, prepared, app_state).await
             } else {
-                call_model_openai_stream(api_config, model_name, prepared).await
+                call_model_openai_stream(api_config, model_name, prepared, app_state).await
             }
         }
     }
@@ -366,7 +366,7 @@ async fn call_model_openai_style(
                 &tool_assembly.unavailable_tool_notices,
             );
             if tool_assembly.tools.is_empty() {
-                call_model_gemini(api_config, model_name, prepared).await
+                call_model_gemini(api_config, model_name, prepared, app_state).await
             } else {
                 tool_manifest_for_log = Some(Value::Array(tool_assembly.tool_manifest.clone()));
                 call_model_gemini_with_tools(
@@ -384,7 +384,7 @@ async fn call_model_openai_style(
                 .await
             }
         } else {
-            call_model_gemini(api_config, model_name, prepared).await
+            call_model_gemini(api_config, model_name, prepared, app_state).await
         }
     } else if selected_api.request_format.is_anthropic() {
         if selected_api.enable_tools
@@ -398,7 +398,7 @@ async fn call_model_openai_style(
                 &tool_assembly.unavailable_tool_notices,
             );
             if tool_assembly.tools.is_empty() {
-                call_model_anthropic(api_config, model_name, prepared).await
+                call_model_anthropic(api_config, model_name, prepared, app_state).await
             } else {
                 tool_manifest_for_log = Some(Value::Array(tool_assembly.tool_manifest.clone()));
                 call_model_anthropic_with_tools(
@@ -416,7 +416,7 @@ async fn call_model_openai_style(
                 .await
             }
         } else {
-            call_model_anthropic(api_config, model_name, prepared).await
+            call_model_anthropic(api_config, model_name, prepared, app_state).await
         }
     } else if is_openai_style_request_format(selected_api.request_format) {
         if prefer_non_stream {

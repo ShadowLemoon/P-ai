@@ -409,8 +409,11 @@ async fn call_model_openai_stream_internal(
     prepared: PreparedPrompt,
     kind: OpenAiApiKind,
     on_delta: Option<&tauri::ipc::Channel<AssistantDeltaEvent>>,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let adapter_kind = match kind {
@@ -457,6 +460,7 @@ async fn call_model_openai_stream(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     call_model_openai_stream_internal(
         api_config,
@@ -464,6 +468,7 @@ async fn call_model_openai_stream(
         prepared,
         OpenAiApiKind::ChatCompletions,
         None,
+        app_state,
     )
     .await
 }
@@ -472,8 +477,11 @@ async fn call_model_openai_non_stream(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -524,8 +532,11 @@ async fn call_model_openai_responses_non_stream(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -574,8 +585,11 @@ async fn call_model_openai_responses(
     model_name: &str,
     prepared: PreparedPrompt,
     on_delta: Option<&tauri::ipc::Channel<AssistantDeltaEvent>>,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -612,9 +626,12 @@ async fn call_model_gemini(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let request = build_gemini_genai_request(&prepared)?;
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -662,8 +679,11 @@ async fn call_model_anthropic(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -701,8 +721,11 @@ async fn call_model_anthropic_non_stream(
     api_config: &ResolvedApiConfig,
     model_name: &str,
     prepared: PreparedPrompt,
+    app_state: Option<&AppState>,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard =
+        maybe_acquire_provider_serial_guard(app_state, &api_config, model_name).await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {

@@ -284,6 +284,7 @@ export function useConfigPersistence(options: UseConfigPersistenceOptions) {
           id: String((provider as { id?: unknown }).id || "").trim(),
           name: String((provider as { name?: unknown }).name || "").trim(),
           requestFormat: (String((provider as { requestFormat?: unknown }).requestFormat || "openai").trim() as AppConfig["apiProviders"][number]["requestFormat"]),
+          allowConcurrentRequests: !!(provider as { allowConcurrentRequests?: unknown }).allowConcurrentRequests,
           enableText: !!(provider as { enableText?: unknown }).enableText,
           enableImage: !!(provider as { enableImage?: unknown }).enableImage,
           enableAudio: !!(provider as { enableAudio?: unknown }).enableAudio,

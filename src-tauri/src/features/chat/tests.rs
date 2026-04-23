@@ -1954,6 +1954,9 @@
             provider_system_message_user_fallback_keys: Arc::new(Mutex::new(
                 std::collections::HashSet::new(),
             )),
+            provider_request_gates: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             remote_im_contact_runtime_states: Arc::new(Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -2567,6 +2570,7 @@
                 id: "provider-a::model-a".to_string(),
                 name: "provider-a/model-a".to_string(),
                 request_format: RequestFormat::OpenAI,
+                allow_concurrent_requests: false,
                 enable_text: true,
                 enable_image: false,
                 enable_audio: false,
@@ -2617,6 +2621,7 @@
                 id: "provider-a::model-a".to_string(),
                 name: "provider-a/model-a".to_string(),
                 request_format: RequestFormat::OpenAI,
+                allow_concurrent_requests: false,
                 enable_text: true,
                 enable_image: false,
                 enable_audio: false,

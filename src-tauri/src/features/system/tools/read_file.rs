@@ -869,6 +869,9 @@ fn test_read_file_state() -> AppState {
             provider_system_message_user_fallback_keys: Arc::new(Mutex::new(
                 std::collections::HashSet::new(),
             )),
+            provider_request_gates: Arc::new(tokio::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             remote_im_contact_runtime_states: Arc::new(Mutex::new(
                 std::collections::HashMap::new(),
             )),
@@ -960,6 +963,7 @@ fn builtin_read_file_should_return_root_image_payload_when_model_supports_image(
                 id: "vision-a".to_string(),
                 name: "vision-a".to_string(),
                 request_format: RequestFormat::OpenAI,
+                allow_concurrent_requests: false,
                 enable_text: true,
                 enable_image: true,
                 enable_audio: false,

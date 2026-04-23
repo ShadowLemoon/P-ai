@@ -123,6 +123,7 @@ fn consume_api_key_for_request(resolved_api: &ResolvedApiConfig) -> String {
         id: resolved_api.provider_id.clone().unwrap_or_default(),
         name: String::new(),
         request_format: resolved_api.request_format,
+        allow_concurrent_requests: resolved_api.allow_concurrent_requests,
         enable_text: true,
         enable_image: false,
         enable_audio: false,
@@ -168,6 +169,7 @@ fn migrate_legacy_api_configs_into_providers(config: &mut AppConfig) {
                 id: legacy.id.clone(),
                 name: legacy.name.clone(),
                 request_format: legacy.request_format,
+                allow_concurrent_requests: legacy.allow_concurrent_requests,
                 enable_text: legacy.enable_text,
                 enable_image: legacy.enable_image,
                 enable_audio: legacy.enable_audio,
@@ -227,6 +229,7 @@ fn is_default_placeholder_provider(provider: &ApiProviderConfig) -> bool {
     provider.id == "default-provider-openai"
         && provider.name == "Default OpenAI"
         && matches!(provider.request_format, RequestFormat::OpenAI)
+        && !provider.allow_concurrent_requests
         && provider.enable_text
         && !provider.enable_image
         && !provider.enable_audio
@@ -285,6 +288,7 @@ fn expand_api_configs_from_providers(config: &mut AppConfig) {
                 id: api_endpoint_id(&provider.id, &model.id),
                 name: format!("{}/{}", provider.name.trim(), model.model.trim()),
                 request_format: provider.request_format,
+                allow_concurrent_requests: provider.allow_concurrent_requests,
                 enable_text: provider.enable_text,
                 enable_image: model.enable_image,
                 enable_audio: provider.enable_audio,
@@ -1342,6 +1346,7 @@ fn resolve_api_config(
                 provider_api_keys: Vec::new(),
                 provider_key_cursor: 0,
                 request_format: RequestFormat::OpenAI,
+                allow_concurrent_requests: false,
                 base_url: debug_cfg.base_url.trim().to_string(),
                 api_key: debug_cfg.api_key.trim().to_string(),
                 model: debug_cfg.model.trim().to_string(),
@@ -1415,6 +1420,9 @@ fn resolve_api_config(
             .map(|provider| provider.key_cursor as usize)
             .unwrap_or(0),
         request_format: selected.request_format,
+        allow_concurrent_requests: selected_provider
+            .map(|provider| provider.allow_concurrent_requests)
+            .unwrap_or(selected.allow_concurrent_requests),
         base_url: selected.base_url.trim().to_string(),
         api_key: selected_api_key,
         model: selected.model.trim().to_string(),

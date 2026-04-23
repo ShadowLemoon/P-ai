@@ -31,6 +31,7 @@ struct ResolvedApiConfig {
     provider_api_keys: Vec<String>,
     provider_key_cursor: usize,
     request_format: RequestFormat,
+    allow_concurrent_requests: bool,
     base_url: String,
     api_key: String,
     model: String,

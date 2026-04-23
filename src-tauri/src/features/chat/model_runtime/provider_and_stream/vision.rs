@@ -18,9 +18,9 @@ async fn describe_image_with_vision_api(
     let reply = match vision_resolved.request_format {
         RequestFormat::OpenAI => {
             if prefer_non_stream {
-                call_model_openai_non_stream(vision_resolved, &vision_api.model, prepared).await?
+                call_model_openai_non_stream(vision_resolved, &vision_api.model, prepared, Some(state)).await?
             } else {
-                match call_model_openai_stream(vision_resolved, &vision_api.model, prepared.clone()).await {
+                match call_model_openai_stream(vision_resolved, &vision_api.model, prepared.clone(), Some(state)).await {
                     Ok(reply) => {
                         if let Err(clear_err) = provider_clear_streaming_disabled(
                             Some(state),
@@ -60,6 +60,7 @@ async fn describe_image_with_vision_api(
                             vision_resolved,
                             &vision_api.model,
                             prepared,
+                            Some(state),
                         )
                         .await?
                     }
@@ -73,14 +74,15 @@ async fn describe_image_with_vision_api(
                 &vision_api.model,
                 prepared,
                 None,
+                Some(state),
             )
             .await?
         }
         RequestFormat::Gemini => {
-            call_model_gemini(vision_resolved, &vision_api.model, prepared).await?
+            call_model_gemini(vision_resolved, &vision_api.model, prepared, Some(state)).await?
         }
         RequestFormat::Anthropic => {
-            call_model_anthropic(vision_resolved, &vision_api.model, prepared).await?
+            call_model_anthropic(vision_resolved, &vision_api.model, prepared, Some(state)).await?
         }
         RequestFormat::OpenAITts
         | RequestFormat::OpenAIStt

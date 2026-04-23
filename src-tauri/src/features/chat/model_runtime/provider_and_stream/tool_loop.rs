@@ -713,6 +713,12 @@ async fn run_genai_tool_loop(
     chat_session_key: &str,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard = maybe_acquire_provider_serial_guard(
+        tool_abort_state,
+        &api_config,
+        model_name,
+    )
+    .await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {
@@ -1226,6 +1232,12 @@ async fn run_genai_tool_loop_non_stream(
     chat_session_key: &str,
 ) -> Result<ModelReply, String> {
     let api_config = resolve_request_api_config(api_config).await?;
+    let _provider_serial_guard = maybe_acquire_provider_serial_guard(
+        tool_abort_state,
+        &api_config,
+        model_name,
+    )
+    .await?;
     let request_api_key = consume_api_key_for_request(&api_config);
     let client = genai::Client::builder().build();
     let service_target = genai::ServiceTarget {

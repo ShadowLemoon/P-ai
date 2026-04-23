@@ -66,6 +66,7 @@ export type ApiConfigItem = {
   id: string;
   name: string;
   requestFormat: ApiRequestFormat;
+  allowConcurrentRequests?: boolean;
   enableText: boolean;
   enableImage: boolean;
   enableAudio: boolean;
@@ -101,6 +102,7 @@ export type ApiProviderConfigItem = {
   id: string;
   name: string;
   requestFormat: ApiRequestFormat;
+  allowConcurrentRequests?: boolean;
   enableText: boolean;
   enableImage: boolean;
   enableAudio: boolean;

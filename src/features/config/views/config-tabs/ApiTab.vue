@@ -62,6 +62,14 @@
               </label>
             </div>
 
+            <label class="flex items-start justify-between gap-3 rounded-box border border-base-300 bg-base-200/70 px-3 py-3">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm font-medium">{{ t("config.api.allowConcurrentRequests") }}</span>
+                <span class="text-xs opacity-65">{{ t("config.api.allowConcurrentRequestsHint") }}</span>
+              </div>
+              <input v-model="selectedProvider.allowConcurrentRequests" type="checkbox" class="toggle toggle-sm mt-0.5" />
+            </label>
+
             <div v-if="!selectedProviderIsCodex" class="flex flex-col gap-1">
               <div class="flex items-center gap-2">
                 <span class="text-sm font-medium">{{ t("config.api.baseUrl") }}</span>
@@ -537,6 +545,7 @@ function cloneProvider(provider: ApiProviderConfigItem): ApiProviderConfigItem {
     id: String(provider.id || "").trim(),
     name: String(provider.name || "").trim(),
     requestFormat: provider.requestFormat,
+    allowConcurrentRequests: !!provider.allowConcurrentRequests,
     enableText: !!provider.enableText,
     enableImage: !!provider.enableImage,
     enableAudio: !!provider.enableAudio,
@@ -581,6 +590,7 @@ function normalizeProviderForCompare(provider: ApiProviderConfigItem) {
     id: String(provider.id || "").trim(),
     name: String(provider.name || "").trim(),
     requestFormat: provider.requestFormat,
+    allowConcurrentRequests: !!provider.allowConcurrentRequests,
     enableText: !!provider.enableText,
     enableImage: !!provider.enableImage,
     enableAudio: !!provider.enableAudio,
@@ -679,6 +689,7 @@ function createProvider(seed: string, capability: ApiCapability = activeCapabili
     id: `api-provider-${seed}`,
     name: `API Provider ${providerList.value.length + 1}`,
     requestFormat,
+    allowConcurrentRequests: false,
     enableText: capability === "text",
     enableImage: false,
     enableAudio: capability === "voice",

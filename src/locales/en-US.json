@@ -92,6 +92,8 @@
       "removeConfig": "Remove Current API Config",
       "configName": "Config Name",
       "requestFormat": "Protocol",
+      "allowConcurrentRequests": "Allow Concurrent Requests",
+      "allowConcurrentRequestsHint": "When disabled, all models under this provider will run serially.",
       "baseUrl": "Base URL",
       "linkHelper": "Link Helper",
       "linkHelperHint": "Pick a common provider to generate a base URL template.",

@@ -76,8 +76,8 @@ describe("useChatFlow stream isolation", () => {
     ];
 
     hoisted.invokeTauriMock.mockImplementation(async (command: string) => {
-      if (command === "get_active_conversation_messages") {
-        return oldHistory;
+      if (command === "get_foreground_conversation_light_snapshot") {
+        return { messages: oldHistory };
       }
       throw new Error(`unexpected invoke command: ${command}`);
     });
@@ -91,6 +91,7 @@ describe("useChatFlow stream isolation", () => {
       assistantDepartmentAgentId: ref("agent-1"),
       chatting,
       forcingArchive,
+      compactingConversation: ref(false),
       allMessages,
       visibleMessageBlockCount: visibleTurnCount,
       perfNow: () => Date.now(),
@@ -151,13 +152,15 @@ describe("useChatFlow stream isolation", () => {
     expect(latestAssistantText.value).toBe("");
 
     expect(capturedChannel).not.toBeNull();
-    capturedChannel!.emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1}" });
+    capturedChannel!.emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1,\"activateAssistant\":true}" });
     await flushAsyncSteps();
-    expect(chatting.value).toBe(true);
+    expect(chatting.value).toBe(false);
+    expect(flow.frontendRoundPhase.value).toBe("waiting");
     expect(visibleTurnCount.value).toBe(1);
 
     capturedChannel!.emit({ delta: "N" });
     await vi.advanceTimersByTimeAsync(34);
+    expect(chatting.value).toBe(true);
     expect(latestAssistantText.value).toBe("N");
 
     expect(resolveRequest).not.toBeNull();
@@ -231,12 +234,14 @@ describe("useChatFlow stream isolation", () => {
     expect(chatting.value).toBe(false);
 
     expect(capturedChannel).not.toBeNull();
-    capturedChannel!.emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1}" });
+    capturedChannel!.emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1,\"activateAssistant\":true}" });
     await flushAsyncSteps();
-    expect(chatting.value).toBe(true);
+    expect(chatting.value).toBe(false);
+    expect(flow.frontendRoundPhase.value).toBe("waiting");
     expect(visibleTurnCount.value).toBe(1);
     capturedChannel!.emit({ delta: "ABC" });
     capturedChannel!.emit({ kind: "reasoning_inline", delta: "R1" });
+    expect(chatting.value).toBe(true);
 
     await flow.stopChat();
 
@@ -313,13 +318,15 @@ describe("useChatFlow stream isolation", () => {
     expect(chatting.value).toBe(false);
     expect(capturedChannels).toHaveLength(1);
 
-    capturedChannels[0].emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1}" });
+    capturedChannels[0].emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":1,\"activateAssistant\":true}" });
     await flushAsyncSteps();
-    expect(chatting.value).toBe(true);
+    expect(chatting.value).toBe(false);
+    expect(flow.frontendRoundPhase.value).toBe("waiting");
     expect(visibleTurnCount.value).toBe(1);
 
     capturedChannels[0].emit({ delta: "FIRST" });
     await vi.advanceTimersByTimeAsync(250);
+    expect(chatting.value).toBe(true);
     expect(latestAssistantText.value).toBe("FIRST");
 
     chatInput.value = "second question";
@@ -335,12 +342,13 @@ describe("useChatFlow stream isolation", () => {
     await vi.advanceTimersByTimeAsync(250);
     expect(latestAssistantText.value).toBe("FIRST");
 
-    capturedChannels[1].emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":2}" });
+    capturedChannels[1].emit({ kind: "history_flushed", message: "{\"conversationId\":\"conversation-1\",\"messageCount\":2,\"activateAssistant\":true}" });
     await flushAsyncSteps();
     expect(onReloadMessages).toHaveBeenCalledTimes(2);
     expect(latestAssistantText.value).toBe("");
     expect(chatting.value).toBe(true);
-    expect(visibleTurnCount.value).toBe(2);
+    expect(flow.frontendRoundPhase.value).toBe("waiting");
+    expect(visibleTurnCount.value).toBe(1);
 
     capturedChannels[1].emit({ delta: "SECOND-AFTER-FLUSH" });
     await vi.advanceTimersByTimeAsync(1200);
@@ -369,7 +377,6 @@ describe("useChatFlow stream isolation", () => {
     await secondSend;
 
     expect(latestAssistantText.value).toBe("SECOND-DONE");
-    expect(visibleTurnCount.value).toBe(3);
     expect(chatting.value).toBe(false);
   });
 
@@ -470,15 +477,17 @@ describe("useChatRuntime force archive conversation sync", () => {
           mergedMemories: 2,
         };
       }
-      if (command === "get_active_conversation_messages") {
+      if (command === "get_foreground_conversation_light_snapshot") {
         const input = (payload as { input?: { conversationId?: string | null } } | undefined)?.input;
-        return [
-          textMessage(
-            "a1",
-            "assistant",
-            `conversation:${String(input?.conversationId || "")}`,
-          ),
-        ];
+        return {
+          messages: [
+            textMessage(
+              "a1",
+              "assistant",
+              `conversation:${String(input?.conversationId || "")}`,
+            ),
+          ],
+        };
       }
       throw new Error(`unexpected invoke command: ${command}`);
     });
@@ -493,6 +502,7 @@ describe("useChatRuntime force archive conversation sync", () => {
       currentConversationId,
       chatting: ref(false),
       forcingArchive: ref(false),
+      compactingConversation: ref(false),
       allMessages,
       visibleMessageBlockCount: visibleTurnCount,
       perfNow: () => Date.now(),

@@ -1410,13 +1410,16 @@
         assert_eq!(
             outcome,
             RemoteImAutoSendExecutionOutcome::Sent {
-                action: "send".to_string()
+                action: "reply_async".to_string()
             }
         );
 
         let decision =
             read_remote_im_decision_for_message(&state, &conversation_id, &assistant_message_id);
-        assert_eq!(decision.get("action").and_then(Value::as_str), Some("send"));
+        assert_eq!(
+            decision.get("action").and_then(Value::as_str),
+            Some("reply_async")
+        );
         assert_eq!(
             decision.get("processingMode").and_then(Value::as_str),
             Some("continuous")
@@ -2220,7 +2223,7 @@
         let summaries = collect_unarchived_conversation_summaries(&state, &AppConfig::default(), &data);
 
         assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].workspace_label, "默认工作空间");
+        assert_eq!(summaries[0].workspace_label, "llm-workspace");
         assert_eq!(summaries[0].preview_messages.len(), 2);
         assert_eq!(summaries[0].preview_messages[0].message_id, "msg-2");
         assert_eq!(summaries[0].preview_messages[0].text_preview, "第二条");

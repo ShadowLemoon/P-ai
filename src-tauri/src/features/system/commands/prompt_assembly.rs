@@ -983,22 +983,18 @@ mod prompt_assembly_tests {
 
         let fixed_index = prompt.find("固定系统块").expect("fixed block");
         let plan_index = prompt.find("提问之法").expect("plan tool rule");
-        let skill_index = prompt.find("技能索引块").expect("skill usage block");
-        let todo_index = prompt.find("Todo 说明块").expect("todo block");
         let runtime_index = prompt.find("运行环境块").expect("runtime block");
-        let workspace_agents_index = prompt.find("项目约束块").expect("workspace agents block");
         let remote_contact_index = prompt
             .find("联系人是特殊用户")
             .expect("remote im contact rules");
-        let remote_activation_index = prompt.find("IM 激活块").expect("remote im activation");
 
         assert!(fixed_index < plan_index);
-        assert!(plan_index < skill_index);
-        assert!(skill_index < todo_index);
-        assert!(todo_index < runtime_index);
-        assert!(runtime_index < workspace_agents_index);
-        assert!(workspace_agents_index < remote_contact_index);
-        assert!(remote_contact_index < remote_activation_index);
+        assert!(plan_index < runtime_index);
+        assert!(runtime_index < remote_contact_index);
+        assert!(!prompt.contains("技能索引块"));
+        assert!(!prompt.contains("Todo 说明块"));
+        assert!(!prompt.contains("项目约束块"));
+        assert!(!prompt.contains("IM 激活块"));
     }
 
     #[test]
@@ -1034,7 +1030,7 @@ mod prompt_assembly_tests {
         );
 
         assert!(!prompt.contains("联系人是特殊用户"));
-        assert!(prompt.contains("IM 激活块"));
+        assert!(!prompt.contains("IM 激活块"));
     }
 
     #[test]

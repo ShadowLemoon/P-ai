@@ -670,18 +670,33 @@ mod tests {
         tauri::async_runtime::block_on(restore_main_workspace_from_git_ghost_snapshot(&record))
             .expect("restore snapshot");
 
-        assert_eq!(
-            fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
-            "before\n"
-        );
-        assert_eq!(
-            fs::read_to_string(root.join("keep-untracked.txt")).expect("read keep file"),
-            "keep\n"
-        );
-        assert!(
-            !root.join("new-untracked.txt").exists(),
-            "new untracked file should be removed"
-        );
+        if GIT_GHOST_SNAPSHOT_ENABLED {
+            assert_eq!(
+                fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
+                "before\n"
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("keep-untracked.txt")).expect("read keep file"),
+                "keep\n"
+            );
+            assert!(
+                !root.join("new-untracked.txt").exists(),
+                "new untracked file should be removed"
+            );
+        } else {
+            assert_eq!(
+                fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
+                "after\n"
+            );
+            assert_eq!(
+                fs::read_to_string(root.join("keep-untracked.txt")).expect("read keep file"),
+                "keep\n"
+            );
+            assert!(
+                root.join("new-untracked.txt").exists(),
+                "feature disabled should skip removing new untracked file"
+            );
+        }
         let _ = fs::remove_dir_all(&root);
     }
 }

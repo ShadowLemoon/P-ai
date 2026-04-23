@@ -240,7 +240,7 @@
       :open-supervision-task-dialog="openSupervisionTaskDialog"
       :close-supervision-task-dialog="closeSupervisionTaskDialog"
       :save-supervision-task="saveSupervisionTask"
-      :on-reached-chat-bottom="trimForegroundMessagesToRecentLimit"
+      :on-reached-chat-bottom="() => undefined"
       :on-recall-turn="handleRecallTurn"
       :on-regenerate-turn="handleRegenerateTurn"
       :confirm-plan="handleConfirmPlan"
@@ -419,9 +419,7 @@ const props = withDefaults(defineProps<{ fixedViewMode?: "chat" | "archives" | "
 });
 
 const DRAFT_ASSISTANT_ID_PREFIX = "__draft_assistant__:";
-const FOREGROUND_RECENT_MESSAGE_LIMIT = 10;
-const FOREGROUND_MESSAGE_TRIM_THRESHOLD = 20;
-const BACKGROUND_CONVERSATION_CACHE_LIMIT = FOREGROUND_RECENT_MESSAGE_LIMIT;
+const BACKGROUND_CONVERSATION_CACHE_LIMIT = 10;
 const OLDER_HISTORY_PAGE_SIZE = 10;
 type BackgroundConversationBadgeState = "completed" | "failed";
 type ForegroundPaintTrace = {
@@ -1596,25 +1594,6 @@ function syncUserAliasFromPersona() {
   if (userAlias.value !== next) {
     userAlias.value = next;
   }
-}
-
-function trimForegroundMessagesToRecentLimit() {
-  if (chatting.value) return;
-  if (allMessages.value.length <= FOREGROUND_MESSAGE_TRIM_THRESHOLD) return;
-  allMessages.value = allMessages.value.slice(-FOREGROUND_RECENT_MESSAGE_LIMIT);
-  hasMoreBackendHistory.value = true;
-  foregroundTailLatestReady.value = true;
-  const currentConversationId = String(currentChatConversationId.value || "").trim();
-  if (currentConversationId) {
-    cacheConversationMessages(currentConversationId, allMessages.value);
-  }
-  console.warn("[聊天追踪][前台会话] 已裁剪到最近消息", {
-    windowLabel: tauriWindowLabel.value,
-    currentConversationId,
-    trimThreshold: FOREGROUND_MESSAGE_TRIM_THRESHOLD,
-    recentLimit: FOREGROUND_RECENT_MESSAGE_LIMIT,
-    finalMessageCount: allMessages.value.length,
-  });
 }
 
 function isLocalOwnUserMessage(message?: ChatMessage | null): boolean {

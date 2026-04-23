@@ -95,110 +95,109 @@
         </div>
 
         <div ref="virtualListContainer" class="ecall-chat-virtual-list relative min-w-0 flex flex-col">
-          <template v-for="segment in virtualRenderSegments" :key="segment.key">
+          <template v-for="entry in virtualRenderEntries" :key="entry.key">
             <div
-              v-if="segment.spacerBefore > 0"
+              v-if="entry.kind === 'spacer'"
               class="ecall-chat-virtual-spacer"
-              :style="{ height: `${segment.spacerBefore}px` }"
+              :style="{ height: `${entry.height}px` }"
             ></div>
 
-            <template v-for="item in segment.items" :key="item.id">
+            <div
+              v-else
+              :ref="element => handleVirtualRenderItemRef(entry.item.id, element)"
+              class="ecall-chat-virtual-item"
+            >
               <div
-                :ref="element => handleVirtualRenderItemRef(item.id, element)"
-                class="ecall-chat-virtual-item"
+                v-if="entry.item.kind === 'compaction'"
+                class="mt-4 flex items-center gap-3 text-[11px] text-base-content/45"
+              >
+                <div class="h-px flex-1 bg-base-300/80"></div>
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs shrink-0 gap-1.5 px-2 text-base-content/60 hover:text-base-content"
+                  :title="t('chat.viewSummary')"
+                  @click="openConversationSummary"
+                >
+                  <History class="h-3.5 w-3.5" />
+                  <span>{{ t("chat.viewSummary") }}</span>
+                </button>
+                <div class="h-px flex-1 bg-base-300/80"></div>
+              </div>
+
+              <ChatMessageItem
+                v-else-if="entry.item.kind === 'message'"
+                v-memo="messageMemoKey(entry.item.block, entry.item.renderId, entry.item.blockIndex)"
+                :block="entry.item.block"
+                :selection-key="entry.item.renderId"
+                :selection-mode-enabled="messageSelectionModeEnabled"
+                :selected="selectedMessageRenderIdSet.has(entry.item.renderId)"
+                :chatting="chatting"
+                :busy="conversationBusy"
+                :frozen="frozen"
+                :user-alias="userAlias"
+                :user-avatar-url="userAvatarUrl"
+                :persona-name-map="personaNameMap"
+                :persona-avatar-url-map="personaAvatarUrlMap"
+                :stream-tool-calls="visibleStreamToolCalls"
+                :markdown-is-dark="markdownIsDark"
+                :playing-audio-id="playingAudioId"
+                :active-turn-user="entry.item.renderId === activeTurnUserId"
+                :can-regenerate="canRegenerateBlock(entry.item.block, entry.item.blockIndex)"
+                :can-confirm-plan="canConfirmPlan(entry.item.block)"
+                @recall-turn="$emit('recallTurn', $event)"
+                @regenerate-turn="$emit('regenerateTurn', $event)"
+                @confirm-plan="$emit('confirmPlan', $event)"
+                @enter-selection-mode="enterMessageSelectionMode"
+                @toggle-message-selected="toggleMessageSelected"
+                @copy-message="copyMessage"
+                @open-image-preview="openImagePreview"
+                @toggle-audio-playback="toggleAudioPlayback($event.id, $event.audio)"
+                @assistant-link-click="handleAssistantLinkClick"
+              />
+
+              <div
+                v-else
+                class="ecall-turn-group"
+                :data-active-turn-group="entry.item.groupId === activeTurnGroupId ? 'true' : undefined"
               >
                 <div
-                  v-if="item.kind === 'compaction'"
-                  class="mt-4 flex items-center gap-3 text-[11px] text-base-content/45"
+                  class="ecall-turn-stack"
+                  :style="entry.item.groupId === activeTurnGroupId ? { minHeight: `${activeTurnGroupMinHeight}px` } : undefined"
                 >
-                  <div class="h-px flex-1 bg-base-300/80"></div>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs shrink-0 gap-1.5 px-2 text-base-content/60 hover:text-base-content"
-                    :title="t('chat.viewSummary')"
-                    @click="openConversationSummary"
-                  >
-                    <History class="h-3.5 w-3.5" />
-                    <span>{{ t("chat.viewSummary") }}</span>
-                  </button>
-                  <div class="h-px flex-1 bg-base-300/80"></div>
-                </div>
-
-                <ChatMessageItem
-                  v-else-if="item.kind === 'message'"
-                  v-memo="messageMemoKey(item.block, item.renderId, item.blockIndex)"
-                  :block="item.block"
-                  :selection-key="item.renderId"
-                  :selection-mode-enabled="messageSelectionModeEnabled"
-                  :selected="selectedMessageRenderIdSet.has(item.renderId)"
-                  :chatting="chatting"
-                  :busy="conversationBusy"
-                  :frozen="frozen"
-                  :user-alias="userAlias"
-                  :user-avatar-url="userAvatarUrl"
-                  :persona-name-map="personaNameMap"
-                  :persona-avatar-url-map="personaAvatarUrlMap"
-                  :stream-tool-calls="visibleStreamToolCalls"
-                  :markdown-is-dark="markdownIsDark"
-                  :playing-audio-id="playingAudioId"
-                  :active-turn-user="item.renderId === activeTurnUserId"
-                  :can-regenerate="canRegenerateBlock(item.block, item.blockIndex)"
-                  :can-confirm-plan="canConfirmPlan(item.block)"
-                  @recall-turn="$emit('recallTurn', $event)"
-                  @regenerate-turn="$emit('regenerateTurn', $event)"
-                  @confirm-plan="$emit('confirmPlan', $event)"
-                  @enter-selection-mode="enterMessageSelectionMode"
-                  @toggle-message-selected="toggleMessageSelected"
-                  @copy-message="copyMessage"
-                  @open-image-preview="openImagePreview"
-                  @toggle-audio-playback="toggleAudioPlayback($event.id, $event.audio)"
-                  @assistant-link-click="handleAssistantLinkClick"
-                />
-
-                <div
-                  v-else
-                  class="ecall-turn-group"
-                  :data-active-turn-group="item.groupId === activeTurnGroupId ? 'true' : undefined"
-                >
-                  <div
-                    class="ecall-turn-stack"
-                    :style="item.groupId === activeTurnGroupId ? { minHeight: `${activeTurnGroupMinHeight}px` } : undefined"
-                  >
-                    <template v-for="groupItem in item.items" :key="groupItem.renderId">
-                      <ChatMessageItem
-                        v-memo="messageMemoKey(groupItem.block, groupItem.renderId, groupItem.blockIndex)"
-                        :block="groupItem.block"
-                        :selection-key="groupItem.renderId"
-                        :selection-mode-enabled="messageSelectionModeEnabled"
-                        :selected="selectedMessageRenderIdSet.has(groupItem.renderId)"
-                        :chatting="chatting"
-                        :busy="conversationBusy"
-                        :frozen="frozen"
-                        :user-alias="userAlias"
-                        :user-avatar-url="userAvatarUrl"
-                        :persona-name-map="personaNameMap"
-                        :persona-avatar-url-map="personaAvatarUrlMap"
-                        :stream-tool-calls="visibleStreamToolCalls"
-                        :markdown-is-dark="markdownIsDark"
-                        :playing-audio-id="playingAudioId"
-                        :active-turn-user="groupItem.renderId === activeTurnUserId"
-                        :can-regenerate="canRegenerateBlock(groupItem.block, groupItem.blockIndex)"
-                        :can-confirm-plan="canConfirmPlan(groupItem.block)"
-                        @recall-turn="$emit('recallTurn', $event)"
-                        @regenerate-turn="$emit('regenerateTurn', $event)"
-                        @confirm-plan="$emit('confirmPlan', $event)"
-                        @enter-selection-mode="enterMessageSelectionMode"
-                        @toggle-message-selected="toggleMessageSelected"
-                        @copy-message="copyMessage"
-                        @open-image-preview="openImagePreview"
-                        @toggle-audio-playback="toggleAudioPlayback($event.id, $event.audio)"
-                        @assistant-link-click="handleAssistantLinkClick"
-                      />
-                    </template>
-                  </div>
+                  <template v-for="groupItem in entry.item.items" :key="groupItem.renderId">
+                    <ChatMessageItem
+                      v-memo="messageMemoKey(groupItem.block, groupItem.renderId, groupItem.blockIndex)"
+                      :block="groupItem.block"
+                      :selection-key="groupItem.renderId"
+                      :selection-mode-enabled="messageSelectionModeEnabled"
+                      :selected="selectedMessageRenderIdSet.has(groupItem.renderId)"
+                      :chatting="chatting"
+                      :busy="conversationBusy"
+                      :frozen="frozen"
+                      :user-alias="userAlias"
+                      :user-avatar-url="userAvatarUrl"
+                      :persona-name-map="personaNameMap"
+                      :persona-avatar-url-map="personaAvatarUrlMap"
+                      :stream-tool-calls="visibleStreamToolCalls"
+                      :markdown-is-dark="markdownIsDark"
+                      :playing-audio-id="playingAudioId"
+                      :active-turn-user="groupItem.renderId === activeTurnUserId"
+                      :can-regenerate="canRegenerateBlock(groupItem.block, groupItem.blockIndex)"
+                      :can-confirm-plan="canConfirmPlan(groupItem.block)"
+                      @recall-turn="$emit('recallTurn', $event)"
+                      @regenerate-turn="$emit('regenerateTurn', $event)"
+                      @confirm-plan="$emit('confirmPlan', $event)"
+                      @enter-selection-mode="enterMessageSelectionMode"
+                      @toggle-message-selected="toggleMessageSelected"
+                      @copy-message="copyMessage"
+                      @open-image-preview="openImagePreview"
+                      @toggle-audio-playback="toggleAudioPlayback($event.id, $event.audio)"
+                      @assistant-link-click="handleAssistantLinkClick"
+                    />
+                  </template>
                 </div>
               </div>
-            </template>
+            </div>
           </template>
 
           <div
@@ -753,7 +752,7 @@ const virtualTailKeepAliveIds = computed(() => {
 
 const {
   listContainer: virtualListContainer,
-  renderSegments: virtualRenderSegments,
+  renderEntries: virtualRenderEntries,
   bottomSpacerHeight: virtualBottomSpacerHeight,
   bindItemElement: bindVirtualRenderItemElement,
   handleScroll: handleVirtualScroll,
@@ -769,8 +768,8 @@ const {
 });
 
 function onConversationScroll() {
-  onScroll();
   handleVirtualScroll();
+  onScroll();
   maybeRequestOlderHistory();
 }
 

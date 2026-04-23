@@ -16,6 +16,10 @@ export type VirtualRenderSegment<T extends VirtualListItem> = {
   items: VirtualLayoutItem<T>[];
 };
 
+export type VirtualRenderEntry<T extends VirtualListItem> =
+  | { kind: "spacer"; key: string; height: number }
+  | { kind: "item"; key: string; item: VirtualLayoutItem<T> };
+
 type UseChatVirtualListOptions<T extends VirtualListItem> = {
   items: ComputedRef<T[]> | Ref<T[]>;
   scrollContainer: Ref<HTMLElement | null>;
@@ -37,11 +41,9 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
   const itemHeightCache = ref<Record<string, number>>({});
 
   const observedElements = new Map<string, HTMLElement>();
-  const pendingViewportScrollAdjustments = new Map<string, { previousHeight: number; normalizedHeight: number }>();
   let itemResizeObserver: ResizeObserver | null = null;
   let viewportResizeObserver: ResizeObserver | null = null;
   let pinToBottomPending = false;
-  let pendingViewportScrollAdjustmentFrame = 0;
 
   const overscanPx = Math.max(0, Math.round(options.overscanPx ?? DEFAULT_OVERSCAN_PX));
   const keepAlivePadding = Math.max(0, Math.round(options.keepAlivePadding ?? DEFAULT_KEEP_ALIVE_PADDING));
@@ -104,25 +106,6 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
 
   function clampIndex(index: number): number {
     return Math.min(Math.max(0, index), layoutItems.value.length - 1);
-  }
-
-  function flushPendingViewportScrollAdjustments() {
-    pendingViewportScrollAdjustmentFrame = 0;
-    const scrollEl = options.scrollContainer.value;
-    if (!scrollEl || pendingViewportScrollAdjustments.size <= 0) {
-      pendingViewportScrollAdjustments.clear();
-      updateViewportMetrics();
-      return;
-    }
-    let totalDelta = 0;
-    for (const { previousHeight, normalizedHeight } of pendingViewportScrollAdjustments.values()) {
-      totalDelta += normalizedHeight - previousHeight;
-    }
-    pendingViewportScrollAdjustments.clear();
-    if (totalDelta !== 0) {
-      scrollEl.scrollTop += totalDelta;
-    }
-    updateViewportMetrics();
   }
 
   function findRangeBoundary(targetPx: number): number {
@@ -198,6 +181,27 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
     });
   });
 
+  const renderEntries = computed<VirtualRenderEntry<T>[]>(() => {
+    const entries: VirtualRenderEntry<T>[] = [];
+    for (const segment of renderSegments.value) {
+      if (segment.spacerBefore > 0) {
+        entries.push({
+          kind: "spacer",
+          key: `spacer-${segment.key}`,
+          height: segment.spacerBefore,
+        });
+      }
+      for (const item of segment.items) {
+        entries.push({
+          kind: "item",
+          key: item.id,
+          item,
+        });
+      }
+    }
+    return entries;
+  });
+
   const bottomSpacerHeight = computed(() => {
     const lastSegment = renderSegments.value[renderSegments.value.length - 1];
     const renderedBottom = lastSegment?.items[lastSegment.items.length - 1]?.bottom ?? 0;
@@ -209,28 +213,10 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
     const sourceItem = itemById.value.get(itemId);
     const previousHeight = itemHeightCache.value[itemId] ?? (sourceItem ? options.estimateHeight(sourceItem) : normalizedHeight);
     if (Math.abs(previousHeight - normalizedHeight) <= 1) return;
-    const itemIndex = layoutIndexById.value.get(itemId);
-    const itemTop = itemIndex === undefined ? 0 : layoutItems.value[itemIndex]?.top ?? 0;
-    const scrollEl = options.scrollContainer.value;
-    const shouldPreserveViewport =
-      !!scrollEl
-      && !pinnedToBottom.value
-      && itemTop < relativeScrollTop.value - 1;
     itemHeightCache.value = {
       ...itemHeightCache.value,
       [itemId]: normalizedHeight,
     };
-    if (shouldPreserveViewport && scrollEl) {
-      pendingViewportScrollAdjustments.set(itemId, {
-        previousHeight: pendingViewportScrollAdjustments.get(itemId)?.previousHeight ?? previousHeight,
-        normalizedHeight,
-      });
-      if (!pendingViewportScrollAdjustmentFrame) {
-        pendingViewportScrollAdjustmentFrame = requestAnimationFrame(() => {
-          flushPendingViewportScrollAdjustments();
-        });
-      }
-    }
   }
 
   function measureElement(itemId: string, element: HTMLElement) {
@@ -291,7 +277,7 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
   watch(totalHeight, () => {
     const scrollEl = options.scrollContainer.value;
     if (!scrollEl) return;
-    if (!pinToBottomPending && !pinnedToBottom.value) {
+    if (!pinToBottomPending) {
       scheduleViewportSync();
       return;
     }
@@ -327,11 +313,6 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
   });
 
   onBeforeUnmount(() => {
-    if (pendingViewportScrollAdjustmentFrame) {
-      cancelAnimationFrame(pendingViewportScrollAdjustmentFrame);
-      pendingViewportScrollAdjustmentFrame = 0;
-    }
-    pendingViewportScrollAdjustments.clear();
     if (itemResizeObserver) {
       itemResizeObserver.disconnect();
       itemResizeObserver = null;
@@ -346,6 +327,7 @@ export function useChatVirtualList<T extends VirtualListItem>(options: UseChatVi
   return {
     listContainer,
     renderSegments,
+    renderEntries,
     bottomSpacerHeight,
     bindItemElement,
     handleScroll,

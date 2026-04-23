@@ -50,6 +50,9 @@ importers:
       vue-i18n:
         specifier: ^11.3.2
         version: 11.3.2(vue@3.5.32(typescript@6.0.3))
+      vue-virtual-scroller:
+        specifier: ^3.0.0
+        version: 3.0.0(vue@3.5.32(typescript@6.0.3))
     devDependencies:
       '@intlify/devtools-types':
         specifier: ^11.2.8
@@ -1596,6 +1599,9 @@ packages:
   micromark-util-types@2.0.2:
     resolution: {integrity: sha512-Yw0ECSpJoViF1qTU4DC6NwtC4aWGt1EkzaQB8KPPyCRR8z9TWeV0HbEFGTO+ZY1wB22zmxnJqhPyTpOVCpeHTA==}
 
+  mitt@2.1.0:
+    resolution: {integrity: sha512-ILj2TpLiysu2wkBbWjAmww7TkZb65aiQO+DkVdUTBpBXq+MHYiETENkKFMtsJZX1Lf4pe4QOrTSjIfUwN5lRdg==}
+
   mlly@1.8.2:
     resolution: {integrity: sha512-d+ObxMQFmbt10sretNDytwt85VrbkhhUA/JBGm1MPaWJ65Cl4wOgLaB1NYvJSZ0Ef03MMEU/0xpPMXUIQ29UfA==}
 
@@ -1977,6 +1983,11 @@ packages:
     hasBin: true
     peerDependencies:
       typescript: '>=5.0.0'
+
+  vue-virtual-scroller@3.0.0:
+    resolution: {integrity: sha512-k42ZDpeWD3An7MWYrOw8Xry1X52oxFH5ZknIeR5sbOJSDuUPNgUgSb/8lzPfoRXIBBpjozTLNvdQPbYkgbvXew==}
+    peerDependencies:
+      vue: ^3.3.0
 
   vue@3.5.32:
     resolution: {integrity: sha512-vM4z4Q9tTafVfMAK7IVzmxg34rSzTFMyIe0UUEijUCkn9+23lj0WRfA83dg7eQZIUlgOSGrkViIaCfqSAUXsMw==}
@@ -3405,6 +3416,8 @@ snapshots:
 
   micromark-util-types@2.0.2: {}
 
+  mitt@2.1.0: {}
+
   mlly@1.8.2:
     dependencies:
       acorn: 8.16.0
@@ -3766,6 +3779,11 @@ snapshots:
       '@volar/typescript': 2.4.28
       '@vue/language-core': 3.2.6
       typescript: 6.0.3
+
+  vue-virtual-scroller@3.0.0(vue@3.5.32(typescript@6.0.3)):
+    dependencies:
+      mitt: 2.1.0
+      vue: 3.5.32(typescript@6.0.3)
 
   vue@3.5.32(typescript@6.0.3):
     dependencies:

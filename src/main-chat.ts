@@ -2,6 +2,7 @@ import { createApp } from "vue";
 import ChatApp from "./apps/chat/ChatApp.vue";
 import "./style.css";
 import "katex/dist/katex.min.css";
+import "vue-virtual-scroller/dist/vue-virtual-scroller.css";
 import { i18n } from "./i18n";
 
 window.addEventListener("error", (event) => {

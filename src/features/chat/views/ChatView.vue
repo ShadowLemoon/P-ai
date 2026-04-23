@@ -19,96 +19,101 @@
 
     <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
       <div class="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      <div
-        v-if="mediaDragActive && !chatting && !frozen && !conversationBusy"
-        class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-base-100/70 backdrop-blur-[1px]"
-      >
-        <div class="rounded-box border border-primary/40 bg-base-100 px-4 py-2 text-sm font-medium text-primary">
-          {{ t("chat.dropImageOrPdf") }}
-        </div>
-      </div>
-
-      <div
-        ref="scrollContainer"
-        class="ecall-chat-scroll-container relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto p-3 scrollbar-gutter-stable"
-        :data-chat-interaction-locked="chatting || frozen || conversationBusy ? 'true' : undefined"
-        @scroll="onConversationScroll"
-      >
         <div
-          v-if="loadingOlderHistory"
-          class="pointer-events-none sticky top-0 z-10 flex justify-center pb-2"
+          v-if="mediaDragActive && !chatting && !frozen && !conversationBusy"
+          class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center bg-base-100/70 backdrop-blur-[1px]"
         >
-          <div class="badge badge-ghost gap-2 border-base-300 bg-base-100/90 px-3 py-3 shadow-sm">
-            <span class="loading loading-spinner loading-xs"></span>
-            <span>{{ t("chat.loadingOlderMessages") }}</span>
+          <div class="rounded-box border border-primary/40 bg-base-100 px-4 py-2 text-sm font-medium text-primary">
+            {{ t("chat.dropImageOrPdf") }}
           </div>
         </div>
 
-        <div v-if="hasActiveOrPendingTodo" class="pointer-events-none sticky top-0 z-20 flex justify-center pt-1">
+        <DynamicScroller
+          ref="dynamicScrollerRef"
+          class="ecall-chat-scroll-container relative flex flex-1 min-h-0 flex-col overflow-x-hidden overflow-y-auto p-3 scrollbar-gutter-stable"
+          :class="chatting || frozen || conversationBusy ? 'pointer-events-auto' : ''"
+          :data-chat-interaction-locked="chatting || frozen || conversationBusy ? 'true' : undefined"
+          :items="chatRenderItems"
+          key-field="id"
+          :min-item-size="virtualMinItemSize"
+          :buffer="840"
+          :shift="true"
+        >
+        <template #before>
           <div
-            class="dropdown dropdown-bottom pointer-events-auto"
-            :aria-label="t('config.task.fields.todo')"
-            @click.stop
-            @mousedown.stop
+            v-if="loadingOlderHistory"
+            class="pointer-events-none sticky top-0 z-10 flex justify-center pb-2"
           >
-            <label
-              tabindex="0"
-              class="btn btn-sm max-w-[min(88vw,30rem)] flex-nowrap justify-start gap-2 overflow-hidden rounded-full border-base-300 bg-base-300 text-base-content hover:border-base-300 hover:bg-base-200 normal-case"
-            >
-              <ListTodo class="h-4 w-4 shrink-0 opacity-70" />
-              <span class="min-w-0 flex-1 truncate text-left">{{ activeConversationTodo }}</span>
-              <span
-                v-if="normalizedConversationTodos.length > 1"
-                class="badge badge-ghost badge-sm shrink-0"
-              >+{{ normalizedConversationTodos.length - 1 }}</span>
-            </label>
+            <div class="badge badge-ghost gap-2 border-base-300 bg-base-100/90 px-3 py-3 shadow-sm">
+              <span class="loading loading-spinner loading-xs"></span>
+              <span>{{ t("chat.loadingOlderMessages") }}</span>
+            </div>
+          </div>
+
+          <div v-if="hasActiveOrPendingTodo" class="pointer-events-none sticky top-0 z-20 flex justify-center pt-1">
             <div
-              v-if="normalizedConversationTodos.length > 1"
-              tabindex="0"
-              class="dropdown-content card card-compact mt-2 w-max max-w-[min(88vw,30rem)] border border-base-300 bg-base-100 shadow-xl"
+              class="dropdown dropdown-bottom pointer-events-auto"
+              :aria-label="t('config.task.fields.todo')"
+              @click.stop
+              @mousedown.stop
             >
-              <div class="card-body p-3">
-                <ul class="flex flex-col gap-3">
-                  <li
-                    v-for="(item, index) in normalizedConversationTodos"
-                    :key="`${item.status}-${index}-${item.content}`"
-                    class="flex items-start gap-3"
-                    :title="item.content"
-                  >
-                    <span
-                      class="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
-                      :class="todoIndexClass(item.status)"
-                    >{{ index + 1 }}</span>
-                    <span
-                      class="min-w-0 wrap-break-word pt-0.5 text-sm leading-6"
-                      :class="item.status === 'completed'
-                        ? 'text-base-content/55 line-through'
-                        : item.status === 'in_progress'
-                          ? 'text-base-content font-semibold'
-                          : 'text-base-content'"
-                    >{{ item.content }}</span>
-                  </li>
-                </ul>
+              <label
+                tabindex="0"
+                class="btn btn-sm max-w-[min(88vw,30rem)] flex-nowrap justify-start gap-2 overflow-hidden rounded-full border-base-300 bg-base-300 text-base-content hover:border-base-300 hover:bg-base-200 normal-case"
+              >
+                <ListTodo class="h-4 w-4 shrink-0 opacity-70" />
+                <span class="min-w-0 flex-1 truncate text-left">{{ activeConversationTodo }}</span>
+                <span
+                  v-if="normalizedConversationTodos.length > 1"
+                  class="badge badge-ghost badge-sm shrink-0"
+                >+{{ normalizedConversationTodos.length - 1 }}</span>
+              </label>
+              <div
+                v-if="normalizedConversationTodos.length > 1"
+                tabindex="0"
+                class="dropdown-content card card-compact mt-2 w-max max-w-[min(88vw,30rem)] border border-base-300 bg-base-100 shadow-xl"
+              >
+                <div class="card-body p-3">
+                  <ul class="flex flex-col gap-3">
+                    <li
+                      v-for="(item, index) in normalizedConversationTodos"
+                      :key="`${item.status}-${index}-${item.content}`"
+                      class="flex items-start gap-3"
+                      :title="item.content"
+                    >
+                      <span
+                        class="inline-flex h-7 min-w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+                        :class="todoIndexClass(item.status)"
+                      >{{ index + 1 }}</span>
+                      <span
+                        class="min-w-0 wrap-break-word pt-0.5 text-sm leading-6"
+                        :class="item.status === 'completed'
+                          ? 'text-base-content/55 line-through'
+                          : item.status === 'in_progress'
+                            ? 'text-base-content font-semibold'
+                            : 'text-base-content'"
+                      >{{ item.content }}</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
 
-        <div ref="virtualListContainer" class="ecall-chat-virtual-list relative min-w-0 flex flex-col">
-          <template v-for="entry in virtualRenderEntries" :key="entry.key">
+        <template #default="{ item, index, active }">
+          <DynamicScrollerItem
+            :item="item"
+            :active="active"
+            :index="index"
+            :size-dependencies="virtualItemSizeDependencies(item)"
+          >
             <div
-              v-if="entry.kind === 'spacer'"
-              class="ecall-chat-virtual-spacer"
-              :style="{ height: `${entry.height}px` }"
-            ></div>
-
-            <div
-              v-else
-              :ref="element => handleVirtualRenderItemRef(entry.item.id, element)"
               class="ecall-chat-virtual-item"
+              :ref="element => handleVirtualRenderItemRef(item.id, element)"
             >
               <div
-                v-if="entry.item.kind === 'compaction'"
+                v-if="item.kind === 'compaction'"
                 class="mt-4 flex items-center gap-3 text-[11px] text-base-content/45"
               >
                 <div class="h-px flex-1 bg-base-300/80"></div>
@@ -125,12 +130,12 @@
               </div>
 
               <ChatMessageItem
-                v-else-if="entry.item.kind === 'message'"
-                v-memo="messageMemoKey(entry.item.block, entry.item.renderId, entry.item.blockIndex)"
-                :block="entry.item.block"
-                :selection-key="entry.item.renderId"
+                v-else-if="item.kind === 'message'"
+                v-memo="messageMemoKey(item.block, item.renderId, item.blockIndex)"
+                :block="item.block"
+                :selection-key="item.renderId"
                 :selection-mode-enabled="messageSelectionModeEnabled"
-                :selected="selectedMessageRenderIdSet.has(entry.item.renderId)"
+                :selected="selectedMessageRenderIdSet.has(item.renderId)"
                 :chatting="chatting"
                 :busy="conversationBusy"
                 :frozen="frozen"
@@ -141,9 +146,9 @@
                 :stream-tool-calls="visibleStreamToolCalls"
                 :markdown-is-dark="markdownIsDark"
                 :playing-audio-id="playingAudioId"
-                :active-turn-user="entry.item.renderId === activeTurnUserId"
-                :can-regenerate="canRegenerateBlock(entry.item.block, entry.item.blockIndex)"
-                :can-confirm-plan="canConfirmPlan(entry.item.block)"
+                :active-turn-user="item.renderId === activeTurnUserId"
+                :can-regenerate="canRegenerateBlock(item.block, item.blockIndex)"
+                :can-confirm-plan="canConfirmPlan(item.block)"
                 @recall-turn="$emit('recallTurn', $event)"
                 @regenerate-turn="$emit('regenerateTurn', $event)"
                 @confirm-plan="$emit('confirmPlan', $event)"
@@ -158,13 +163,13 @@
               <div
                 v-else
                 class="ecall-turn-group"
-                :data-active-turn-group="entry.item.groupId === activeTurnGroupId ? 'true' : undefined"
+                :data-active-turn-group="item.groupId === activeTurnGroupId ? 'true' : undefined"
               >
                 <div
                   class="ecall-turn-stack"
-                  :style="entry.item.groupId === activeTurnGroupId ? { minHeight: `${activeTurnGroupMinHeight}px` } : undefined"
+                  :style="item.groupId === activeTurnGroupId ? { minHeight: `${activeTurnGroupMinHeight}px` } : undefined"
                 >
-                  <template v-for="groupItem in entry.item.items" :key="groupItem.renderId">
+                  <template v-for="groupItem in item.items" :key="groupItem.renderId">
                     <ChatMessageItem
                       v-memo="messageMemoKey(groupItem.block, groupItem.renderId, groupItem.blockIndex)"
                       :block="groupItem.block"
@@ -198,14 +203,9 @@
                 </div>
               </div>
             </div>
-          </template>
-
-          <div
-            v-if="virtualBottomSpacerHeight > 0"
-            class="ecall-chat-virtual-spacer"
-            :style="{ height: `${virtualBottomSpacerHeight}px` }"
-          ></div>
-        </div>
+          </DynamicScrollerItem>
+        </template>
+        </DynamicScroller>
 
         <div ref="toolbarContainer" class="pt-1 pb-2">
           <ChatWorkspaceToolbar
@@ -238,148 +238,147 @@
             @toggle-tool-review="toggleToolReviewPanel"
           />
         </div>
-      </div>
-
-      <div
-        v-show="showJumpToBottom"
-        class="pointer-events-none absolute bottom-3 right-5 z-30 flex justify-end"
-        :style="jumpToBottomStyle"
-      >
-        <button
-          class="btn btn-sm btn-circle btn-primary pointer-events-auto shadow-lg"
-          :title="t('chat.jumpToBottom')"
-          @click="handleJumpToBottom"
-        >
-          <ChevronsDown class="h-4 w-4" />
-        </button>
-      </div>
-
-      <div ref="composerContainer" class="relative shrink-0 border-t border-base-300 bg-base-100 p-2">
         <div
-          v-if="chatStatusBanner"
-          class="pointer-events-none absolute inset-x-0 top-0 z-10 -translate-y-full"
+          v-show="showJumpToBottom"
+          class="pointer-events-none absolute bottom-3 right-5 z-30 flex justify-end"
+          :style="jumpToBottomStyle"
         >
-          <div
-            class="relative flex items-center justify-center rounded-box px-4 py-1.5 text-center text-[12px] backdrop-blur-md"
-            :class="chatStatusBanner.tone === 'error'
-              ? 'bg-error/12 text-error'
-              : chatStatusBanner.text === t('chat.statusCompactingContext')
-                ? 'bg-info/12 text-info'
-                : 'bg-base-200/75 text-base-content'"
+          <button
+            class="btn btn-sm btn-circle btn-primary pointer-events-auto shadow-lg"
+            :title="t('chat.jumpToBottom')"
+            @click="handleJumpToBottom"
           >
-            <span
-              class="relative z-1"
-              :class="chatStatusBanner.tone === 'error'
-                ? ''
-                : 'text-base-content/80 ecall-shimmer-text ecall-reasoning-shimmer'"
-              :data-shimmer-text="chatStatusBanner.tone === 'error' ? '' : chatStatusBanner.text"
-            >{{ chatStatusBanner.text }}</span>
-          </div>
+            <ChevronsDown class="h-4 w-4" />
+          </button>
         </div>
-        <ChatComposerPanel
-          ref="composerPanelRef"
-          :selection-mode-enabled="messageSelectionModeEnabled"
-          :selected-message-count="selectedMessageBlocks.length"
-          :chat-input="chatInput"
-          :instruction-presets="instructionPresets"
-          :mention-options="mentionOptions"
-          :selected-mentions="selectedMentions"
-          :chat-input-placeholder="chatInputPlaceholder"
-          :clipboard-images="clipboardImages"
-          :queued-attachment-notices="queuedAttachmentNotices"
-          :link-open-error-text="linkOpenErrorText"
-          :chat-error-text="chatErrorText"
-          :transcribing="transcribing"
-          :can-record="canRecord"
-          :recording="recording"
-          :recording-ms="recordingMs"
-          :record-hotkey="recordHotkey"
-          :selected-chat-model-id="selectedChatModelId"
-          :chat-model-options="chatModelOptions"
-          :plan-mode-enabled="planModeEnabled"
-          :frontend-round-phase="frontendRoundPhase"
-          :chat-usage-percent="chatUsagePercent"
-          :force-archive-tip="forceArchiveTip"
-          :chatting="chatting"
-          :busy="conversationBusy"
-          :frozen="frozen"
-          :show-side-conversation-list="showSideConversationList"
-          :active-conversation-id="activeConversationId"
-          :unarchived-conversation-items="unarchivedConversationItems"
-          :user-alias="userAlias"
-          :user-avatar-url="userAvatarUrl"
-          :persona-name-map="personaNameMap"
-          :persona-avatar-url-map="personaAvatarUrlMap"
-          :create-conversation-department-options="createConversationDepartmentOptions"
-          :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
-          @update:chat-input="$emit('update:chatInput', $event)"
-          @add-mention="$emit('addMention', $event)"
-          @remove-mention="$emit('removeMention', $event)"
-          @remove-clipboard-image="$emit('removeClipboardImage', $event)"
-          @remove-queued-attachment-notice="$emit('removeQueuedAttachmentNotice', $event)"
-          @start-recording="$emit('startRecording')"
-          @stop-recording="$emit('stopRecording')"
-          @pick-attachments="$emit('pickAttachments')"
-          @update:selected-chat-model-id="$emit('update:selectedChatModelId', $event)"
-          @update:plan-mode-enabled="$emit('update:planModeEnabled', $event)"
-          @send-chat="$emit('sendChat')"
-          @stop-chat="$emit('stopChat')"
-          @exit-selection-mode="exitMessageSelectionMode"
-          @selection-action-copy="copySelectedMessages"
-          @selection-action-branch="emitSelectionAction('branch')"
-          @selection-action-forward="emitSelectionAction('forward', $event)"
-          @selection-action-share="emitSelectionAction('share')"
-          @force-archive="$emit('forceArchive')"
-          @switch-conversation="$emit('switchConversation', $event)"
-          @create-conversation="$emit('createConversation', $event)"
+
+        <div ref="composerContainer" class="relative shrink-0 border-t border-base-300 bg-base-100 p-2">
+          <div
+            v-if="chatStatusBanner"
+            class="pointer-events-none absolute inset-x-0 top-0 z-10 -translate-y-full"
+          >
+            <div
+              class="relative flex items-center justify-center rounded-box px-4 py-1.5 text-center text-[12px] backdrop-blur-md"
+              :class="chatStatusBanner.tone === 'error'
+                ? 'bg-error/12 text-error'
+                : chatStatusBanner.text === t('chat.statusCompactingContext')
+                  ? 'bg-info/12 text-info'
+                  : 'bg-base-200/75 text-base-content'"
+            >
+              <span
+                class="relative z-1"
+                :class="chatStatusBanner.tone === 'error'
+                  ? ''
+                  : 'text-base-content/80 ecall-shimmer-text ecall-reasoning-shimmer'"
+                :data-shimmer-text="chatStatusBanner.tone === 'error' ? '' : chatStatusBanner.text"
+              >{{ chatStatusBanner.text }}</span>
+            </div>
+          </div>
+          <ChatComposerPanel
+            ref="composerPanelRef"
+            :selection-mode-enabled="messageSelectionModeEnabled"
+            :selected-message-count="selectedMessageBlocks.length"
+            :chat-input="chatInput"
+            :instruction-presets="instructionPresets"
+            :mention-options="mentionOptions"
+            :selected-mentions="selectedMentions"
+            :chat-input-placeholder="chatInputPlaceholder"
+            :clipboard-images="clipboardImages"
+            :queued-attachment-notices="queuedAttachmentNotices"
+            :link-open-error-text="linkOpenErrorText"
+            :chat-error-text="chatErrorText"
+            :transcribing="transcribing"
+            :can-record="canRecord"
+            :recording="recording"
+            :recording-ms="recordingMs"
+            :record-hotkey="recordHotkey"
+            :selected-chat-model-id="selectedChatModelId"
+            :chat-model-options="chatModelOptions"
+            :plan-mode-enabled="planModeEnabled"
+            :frontend-round-phase="frontendRoundPhase"
+            :chat-usage-percent="chatUsagePercent"
+            :force-archive-tip="forceArchiveTip"
+            :chatting="chatting"
+            :busy="conversationBusy"
+            :frozen="frozen"
+            :show-side-conversation-list="showSideConversationList"
+            :active-conversation-id="activeConversationId"
+            :unarchived-conversation-items="unarchivedConversationItems"
+            :user-alias="userAlias"
+            :user-avatar-url="userAvatarUrl"
+            :persona-name-map="personaNameMap"
+            :persona-avatar-url-map="personaAvatarUrlMap"
+            :create-conversation-department-options="createConversationDepartmentOptions"
+            :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
+            @update:chat-input="$emit('update:chatInput', $event)"
+            @add-mention="$emit('addMention', $event)"
+            @remove-mention="$emit('removeMention', $event)"
+            @remove-clipboard-image="$emit('removeClipboardImage', $event)"
+            @remove-queued-attachment-notice="$emit('removeQueuedAttachmentNotice', $event)"
+            @start-recording="$emit('startRecording')"
+            @stop-recording="$emit('stopRecording')"
+            @pick-attachments="$emit('pickAttachments')"
+            @update:selected-chat-model-id="$emit('update:selectedChatModelId', $event)"
+            @update:plan-mode-enabled="$emit('update:planModeEnabled', $event)"
+            @send-chat="$emit('sendChat')"
+            @stop-chat="$emit('stopChat')"
+            @exit-selection-mode="exitMessageSelectionMode"
+            @selection-action-copy="copySelectedMessages"
+            @selection-action-branch="emitSelectionAction('branch')"
+            @selection-action-forward="emitSelectionAction('forward', $event)"
+            @selection-action-share="emitSelectionAction('share')"
+            @force-archive="$emit('forceArchive')"
+            @switch-conversation="$emit('switchConversation', $event)"
+            @create-conversation="$emit('createConversation', $event)"
+          />
+        </div>
+
+        <ChatImagePreviewDialog
+          :open="imagePreviewOpen"
+          :data-url="imagePreviewDataUrl"
+          :zoom="imagePreviewZoom"
+          :min-zoom="IMAGE_PREVIEW_MIN_ZOOM"
+          :max-zoom="IMAGE_PREVIEW_MAX_ZOOM"
+          :offset-x="previewOffsetX"
+          :offset-y="previewOffsetY"
+          :dragging="previewDragging"
+          @close="closeImagePreview"
+          @zoom-in="zoomInPreview"
+          @zoom-out="zoomOutPreview"
+          @reset="resetPreviewZoom"
+          @wheel="onPreviewWheel"
+          @pointer-down="onPreviewPointerDown"
+          @pointer-move="onPreviewPointerMove"
+          @pointer-up="onPreviewPointerUp"
+        />
+
+        <ChatSupervisionTaskDialog
+          :open="supervisionDialogOpen"
+          :saving="supervisionTaskSaving"
+          :error-text="supervisionTaskError"
+          :active-task="activeSupervisionTask"
+          :recent-history="recentSupervisionTaskHistory"
+          @close="$emit('closeSupervisionTask')"
+          @save="$emit('saveSupervisionTask', $event)"
         />
       </div>
 
-      <ChatImagePreviewDialog
-        :open="imagePreviewOpen"
-        :data-url="imagePreviewDataUrl"
-        :zoom="imagePreviewZoom"
-        :min-zoom="IMAGE_PREVIEW_MIN_ZOOM"
-        :max-zoom="IMAGE_PREVIEW_MAX_ZOOM"
-        :offset-x="previewOffsetX"
-        :offset-y="previewOffsetY"
-        :dragging="previewDragging"
-        @close="closeImagePreview"
-        @zoom-in="zoomInPreview"
-        @zoom-out="zoomOutPreview"
-        @reset="resetPreviewZoom"
-        @wheel="onPreviewWheel"
-        @pointer-down="onPreviewPointerDown"
-        @pointer-move="onPreviewPointerMove"
-        @pointer-up="onPreviewPointerUp"
-      />
-
-      <ChatSupervisionTaskDialog
-        :open="supervisionDialogOpen"
-        :saving="supervisionTaskSaving"
-        :error-text="supervisionTaskError"
-        :active-task="activeSupervisionTask"
-        :recent-history="recentSupervisionTaskHistory"
-        @close="$emit('closeSupervisionTask')"
-        @save="$emit('saveSupervisionTask', $event)"
-      />
-      </div>
-        <ToolReviewSidebar
-          v-if="toolReviewPanelOpen"
-          class="w-104 max-w-[42vw] shrink-0 border-l border-base-300 bg-base-100 pt-2"
-          :batches="toolReviewBatches"
-          :current-batch-key="toolReviewCurrentBatchKey"
+      <ToolReviewSidebar
+        v-if="toolReviewPanelOpen"
+        class="w-104 max-w-[42vw] shrink-0 border-l border-base-300 bg-base-100 pt-2"
+        :batches="toolReviewBatches"
+        :current-batch-key="toolReviewCurrentBatchKey"
         :detail-map="toolReviewDetailMap"
         :detail-loading-call-id="toolReviewDetailLoadingCallId"
-          :reviewing-call-id="toolReviewReviewingCallId"
-          :batch-reviewing-key="toolReviewBatchReviewingKey"
-          :submitting-batch-key="toolReviewSubmittingBatchKey"
-          :error-text="toolReviewErrorText"
-          :report-error-text="toolReviewReportErrorText"
-          :markdown-is-dark="markdownIsDark"
-          @select-batch="setToolReviewCurrentBatchKey"
-          @load-item-detail="loadToolReviewItemDetail"
-          @review-item="runToolReviewForCall"
+        :reviewing-call-id="toolReviewReviewingCallId"
+        :batch-reviewing-key="toolReviewBatchReviewingKey"
+        :submitting-batch-key="toolReviewSubmittingBatchKey"
+        :error-text="toolReviewErrorText"
+        :report-error-text="toolReviewReportErrorText"
+        :markdown-is-dark="markdownIsDark"
+        @select-batch="setToolReviewCurrentBatchKey"
+        @load-item-detail="loadToolReviewItemDetail"
+        @review-item="runToolReviewForCall"
         @review-batch="runToolReviewForBatch"
         @submit-batch="submitToolReviewBatch"
       />
@@ -388,7 +387,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, toRef, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch } from "vue";
+import { DynamicScroller, DynamicScrollerItem, type DynamicScrollerExposed } from "vue-virtual-scroller";
 import { useI18n } from "vue-i18n";
 import { isDarkAppTheme } from "../../shell/composables/use-app-theme";
 import { ChevronsDown, History, ListTodo } from "lucide-vue-next";
@@ -406,13 +406,16 @@ import { useChatImagePreview } from "../composables/use-chat-image-preview";
 import { useChatMessageActions } from "../composables/use-chat-message-actions";
 import { useChatScrollLayout } from "../composables/use-chat-scroll-layout";
 import { useChatToolReview } from "../composables/use-chat-tool-review";
-import { useChatVirtualList } from "../composables/use-chat-virtual-list";
 import { isAbsoluteLocalPath, normalizeLocalLinkHref } from "../utils/local-link";
 
 type ChatRenderItem =
   | { kind: "compaction"; id: string; renderId: string; block: ChatMessageBlock; blockIndex: number }
   | { kind: "message"; id: string; renderId: string; block: ChatMessageBlock; blockIndex: number }
   | { kind: "group"; id: string; groupId: string; items: Array<{ renderId: string; block: ChatMessageBlock; blockIndex: number }> };
+
+type DynamicScrollerInstance = DynamicScrollerExposed<ChatRenderItem> & {
+  $el?: Element | null;
+};
 
 const MAX_GROUP_ITEM_COUNT = 2;
 
@@ -732,6 +735,17 @@ const pendingOlderHistoryRestore = ref<null | {
 }>(null);
 const olderHistoryRequestPending = ref(false);
 const LOAD_OLDER_HISTORY_THRESHOLD_PX = 96;
+const dynamicScrollerRef = ref<DynamicScrollerInstance | null>(null);
+const observedVirtualItemElements = new Map<string, HTMLElement>();
+const virtualMinItemSize = computed(() => {
+  const sample = chatRenderItems.value.slice(0, 12);
+  if (sample.length <= 0) return 120;
+  const total = sample.reduce((sum, item) => sum + Math.max(64, Math.round(estimateChatRenderItemHeight(item))), 0);
+  return Math.max(64, Math.round(total / sample.length));
+});
+let boundScrollElement: HTMLElement | null = null;
+let pendingScrollerRefreshFrame = 0;
+let pinToBottomPending = false;
 
 const {
   scrollContainer,
@@ -759,34 +773,85 @@ const {
   focusComposerInput: (options) => composerPanelRef.value?.focusInput(options),
 });
 
-const virtualTailKeepAliveIds = computed(() => {
-  const tailIds = chatRenderItems.value.slice(-4).map((item) => item.id);
-  const activeGroupItemId = activeTurnGroupId.value ? `group-${activeTurnGroupId.value}` : "";
-  if (activeGroupItemId) tailIds.push(activeGroupItemId);
-  return tailIds.filter((value, index, list) => !!value && list.indexOf(value) === index);
-});
+function resolveScrollerElement(): HTMLElement | null {
+  const candidate = dynamicScrollerRef.value?.$el;
+  return candidate instanceof HTMLElement ? candidate : null;
+}
 
-const {
-  listContainer: virtualListContainer,
-  renderEntries: virtualRenderEntries,
-  bottomSpacerHeight: virtualBottomSpacerHeight,
-  getFirstVisibleItemId,
-  getItemViewportTop,
-  bindItemElement: bindVirtualRenderItemElement,
-  handleScroll: handleVirtualScroll,
-  pinToBottomOnNextLayout,
-  syncViewportMetrics,
-} = useChatVirtualList({
-  items: chatRenderItems,
-  scrollContainer,
-  estimateHeight: estimateChatRenderItemHeight,
-  keepAliveIds: virtualTailKeepAliveIds,
-  overscanPx: 840,
-  keepAlivePadding: 1,
-});
+function refreshObservedVirtualItemElements() {
+  const validIds = new Set(chatRenderItems.value.map((item) => item.id));
+  for (const [itemId] of observedVirtualItemElements.entries()) {
+    if (!validIds.has(itemId)) observedVirtualItemElements.delete(itemId);
+  }
+}
+
+function attachDynamicScrollerElement() {
+  const nextElement = resolveScrollerElement();
+  if (boundScrollElement === nextElement) return;
+  if (boundScrollElement) {
+    boundScrollElement.removeEventListener("scroll", onConversationScroll);
+  }
+  boundScrollElement = nextElement;
+  scrollContainer.value = nextElement;
+  if (nextElement) {
+    nextElement.addEventListener("scroll", onConversationScroll, { passive: true });
+    onScroll();
+  }
+}
+
+function scheduleDynamicScrollerRefresh() {
+  if (pendingScrollerRefreshFrame) return;
+  void nextTick(() => {
+    if (pendingScrollerRefreshFrame) return;
+    pendingScrollerRefreshFrame = requestAnimationFrame(() => {
+      pendingScrollerRefreshFrame = 0;
+      const scroller = dynamicScrollerRef.value;
+      if (!scroller) return;
+      refreshObservedVirtualItemElements();
+      scroller.forceUpdate();
+      if (pinToBottomPending) {
+        pinToBottomPending = false;
+        scroller.scrollToBottom();
+        onScroll();
+      }
+    });
+  });
+}
+
+function pinToBottomOnNextLayout() {
+  pinToBottomPending = true;
+  scheduleDynamicScrollerRefresh();
+}
+
+function syncViewportMetrics() {
+  scheduleDynamicScrollerRefresh();
+}
+
+function getItemViewportTop(itemId: string): number | null {
+  const element = observedVirtualItemElements.get(itemId);
+  const scrollEl = scrollContainer.value;
+  if (!element || !scrollEl) return null;
+  return element.getBoundingClientRect().top - scrollEl.getBoundingClientRect().top;
+}
+
+function getFirstVisibleItemId(): string {
+  const scrollEl = scrollContainer.value;
+  if (!scrollEl) return "";
+  const containerTop = scrollEl.getBoundingClientRect().top;
+  let candidateId = "";
+  let candidateTop = Number.POSITIVE_INFINITY;
+  for (const [itemId, element] of observedVirtualItemElements.entries()) {
+    const rect = element.getBoundingClientRect();
+    if (rect.bottom <= containerTop + 1) continue;
+    if (rect.top < candidateTop) {
+      candidateTop = rect.top;
+      candidateId = itemId;
+    }
+  }
+  return candidateId;
+}
 
 function onConversationScroll() {
-  handleVirtualScroll();
   onScroll();
   maybeRequestOlderHistory();
 }
@@ -796,7 +861,11 @@ function handleJumpToBottom() {
 }
 
 function handleVirtualRenderItemRef(itemId: string, element: unknown) {
-  bindVirtualRenderItemElement(itemId, element instanceof Element ? element : null);
+  if (!(element instanceof HTMLElement)) {
+    observedVirtualItemElements.delete(itemId);
+    return;
+  }
+  observedVirtualItemElements.set(itemId, element);
 }
 
 function maybeRequestOlderHistory() {
@@ -820,6 +889,7 @@ watch(
   showSideConversationList,
   (value) => {
     emit("sideConversationListVisibleChange", value);
+    syncViewportMetrics();
   },
   { immediate: true },
 );
@@ -849,6 +919,7 @@ watch(
 watch(
   () => props.messageBlocks.length,
   () => {
+    refreshObservedVirtualItemElements();
     syncViewportMetrics();
   },
 );
@@ -1048,6 +1119,36 @@ function estimateChatRenderItemHeight(item: ChatRenderItem): number {
     return estimateMessageBlockHeight(item.block) + 8;
   }
   return item.items.reduce((total, groupItem) => total + estimateMessageBlockHeight(groupItem.block) + 8, 0) + 8;
+}
+
+function blockSizeDependencies(block: ChatMessageBlock): unknown[] {
+  return [
+    String(block.id || ""),
+    String(block.sourceMessageId || ""),
+    String(block.text || ""),
+    String(block.reasoningInline || ""),
+    String(block.reasoningStandard || ""),
+    block.images.length,
+    block.audios.length,
+    block.attachmentFiles.length,
+    block.toolCalls.length,
+    Array.isArray(block.memeSegments) ? block.memeSegments.length : 0,
+    block.planCard?.action || "",
+    String(block.taskTrigger ? JSON.stringify(block.taskTrigger) : ""),
+  ];
+}
+
+function virtualItemSizeDependencies(item: ChatRenderItem): unknown[] {
+  if (item.kind === "compaction") {
+    return [item.id, item.kind];
+  }
+  if (item.kind === "message") {
+    return [item.id, ...blockSizeDependencies(item.block)];
+  }
+  return [
+    item.id,
+    ...item.items.flatMap((groupItem) => [groupItem.renderId, ...blockSizeDependencies(groupItem.block)]),
+  ];
 }
 
 function estimateMessageBlockHeight(block: ChatMessageBlock): number {
@@ -1282,8 +1383,35 @@ async function handleAssistantLinkClick(event: MouseEvent) {
 }
 
 onBeforeUnmount(() => {
+  if (boundScrollElement) {
+    boundScrollElement.removeEventListener("scroll", onConversationScroll);
+    boundScrollElement = null;
+  }
+  if (pendingScrollerRefreshFrame) {
+    cancelAnimationFrame(pendingScrollerRefreshFrame);
+    pendingScrollerRefreshFrame = 0;
+  }
+  observedVirtualItemElements.clear();
   stopAudioPlayback();
 });
+
+onMounted(() => {
+  void nextTick(() => {
+    attachDynamicScrollerElement();
+    syncViewportMetrics();
+  });
+});
+
+watch(
+  () => dynamicScrollerRef.value,
+  () => {
+    void nextTick(() => {
+      attachDynamicScrollerElement();
+      syncViewportMetrics();
+    });
+  },
+  { immediate: true },
+);
 
 </script>
 

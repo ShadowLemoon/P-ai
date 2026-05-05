@@ -1327,6 +1327,7 @@ fn provider_meta_message_kind(message: &ChatMessage) -> Option<String> {
         .provider_meta
         .as_ref()?
         .get("message_meta")
+        .or_else(|| message.provider_meta.as_ref()?.get("messageMeta"))
         .and_then(Value::as_object)?
         .get("kind")
         .and_then(Value::as_str)

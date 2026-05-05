@@ -866,7 +866,7 @@ fn terminal_prompt_trusted_roots_block(
     lines.push(format!("当前操作系统: {}", std::env::consts::OS));
     lines.push(format!("当前 shell: {}", terminal_shell_runtime_label(&runtime_shell)));
     if terminal_conversation_shell_autonomous_mode(conversation) {
-        lines.push("当前会话已开启“给予本会话最大权限”：终端与补丁工具可访问任意目录，并跳过目录权限、智能审查与人工审批。".to_string());
+        lines.push("当前会话已开启“给予本会话最大权限”：终端与补丁工具可访问任意目录，并跳过目录权限、智能评估与人工审批。".to_string());
     }
     if let Some(system) = &system_workspace {
         lines.push(format!(

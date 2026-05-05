@@ -176,9 +176,6 @@ fn build_preview_messages_from_chat_messages(
     let mut selected = messages
         .iter()
         .filter(|message| {
-            if is_tool_review_report_message(message) {
-                return false;
-            }
             matches!(
                 message.role.trim().to_ascii_lowercase().as_str(),
                 "user" | "assistant" | "tool"
@@ -292,11 +289,7 @@ fn build_unarchived_conversation_summary(
         },
         updated_at: conversation.updated_at.clone(),
         last_message_at,
-        message_count: conversation
-            .messages
-            .iter()
-            .filter(|message| !is_tool_review_report_message(message))
-            .count(),
+        message_count: conversation.messages.len(),
         unread_count: conversation_unread_count_for_overview(conversation),
         agent_id: conversation.agent_id.clone(),
         department_id,

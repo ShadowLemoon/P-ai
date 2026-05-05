@@ -70,9 +70,6 @@ export function useChatMessageBlocks(options: UseChatMessageBlocksOptions) {
     const providerMeta = (message.providerMeta || {}) as Record<string, unknown>;
     const messageMeta = ((providerMeta.message_meta || providerMeta.messageMeta || {}) as Record<string, unknown>);
     const messageKind = String(messageMeta.kind || providerMeta.messageKind || "").trim();
-    if (messageKind === "tool_review_report") {
-      return [];
-    }
     if (messageKind === "plan_confirm_continue") {
       return [{
         id: message.id,

@@ -2,9 +2,9 @@
   <aside v-bind="rootAttrs" class="flex h-full min-h-0 flex-col overflow-x-hidden">
     <div class="px-4 pb-2">
       <div role="tablist" class="tabs tabs-border">
-        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'reports' }" @click="activeTab = 'reports'">审查报告</button>
-        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'tools' }" @click="activeTab = 'tools'">工具解释</button>
-        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'delegates' }" @click="activeTab = 'delegates'">委托</button>
+        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'reports' }" @click="activeTab = 'reports'">{{ t("chat.toolReview.resultsTab") }}</button>
+        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'tools' }" @click="activeTab = 'tools'">{{ t("chat.toolReview.toolsTab") }}</button>
+        <button type="button" role="tab" class="tab" :class="{ 'tab-active': activeTab === 'delegates' }" @click="activeTab = 'delegates'">{{ t("chat.toolReview.delegatesTab") }}</button>
       </div>
     </div>
     <div class="flex min-h-0 flex-1 flex-col overflow-x-hidden">
@@ -108,12 +108,12 @@
             @click="reviewTargetDialogOpen = true"
           >
             <span v-if="submitting" class="loading loading-spinner loading-xs"></span>
-            新建审查任务
+            {{ t("chat.toolReview.generateReviewReport") }}
           </button>
         </div>
         <div v-if="props.reports.length === 0" class="flex min-h-0 flex-1 flex-col overflow-y-auto py-2">
           <div class="px-4 py-2 text-sm text-base-content/65">
-            暂无审查报告
+            {{ t("chat.toolReview.reportUnavailable") }}
           </div>
         </div>
         <div v-else class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto py-2">
@@ -150,7 +150,7 @@
                       @click.prevent.stop="openReportDetail(report.id)"
                     >查看详情</button>
                     <button
-                      v-if="report.status === 'failed'"
+                      v-if="canRetryReport(report)"
                       type="button"
                       class="btn btn-sm gap-1.5 border-base-300 bg-base-100 font-normal hover:bg-base-100"
                       :disabled="submitting"
@@ -289,7 +289,7 @@
         <pre
           v-else-if="currentReport?.status === 'success'"
           class="whitespace-pre-wrap wrap-break-word rounded-box border border-base-300 bg-base-200 px-3 py-3 text-sm leading-7 text-base-content/80"
-        >{{ currentReport.reportText || "暂无审查内容" }}</pre>
+        >{{ currentReport.reportText || "暂无代码审查内容" }}</pre>
         <MarkdownRender
           v-else
           class="ecall-markdown-content tool-review-report-markdown max-w-none"
@@ -334,7 +334,7 @@
       </div>
       <div class="px-5 pt-4">
         <div class="mb-4 grid gap-1.5">
-          <div class="text-xs font-medium text-base-content/60">审查部门</div>
+          <div class="text-xs font-medium text-base-content/60">{{ t("chat.toolReview.departmentLabel") }}</div>
           <select v-model="selectedReviewDepartmentId" class="select select-bordered select-sm w-full">
             <option v-for="department in props.departmentOptions" :key="department.id" :value="department.id">
               {{ departmentOptionLabel(department) }}
@@ -342,7 +342,6 @@
           </select>
         </div>
         <div role="tablist" class="tabs tabs-border">
-          <button type="button" role="tab" class="tab" :class="{ 'tab-active': reviewTargetTab === 'batch' }" @click="setReviewTargetTab('batch')">{{ t("chat.toolReview.menuCurrentBatchReview") }}</button>
           <button type="button" role="tab" class="tab" :class="{ 'tab-active': reviewTargetTab === 'commit' }" @click="setReviewTargetTab('commit')">{{ t("chat.toolReview.scopeCommit") }}</button>
           <button type="button" role="tab" class="tab" :class="{ 'tab-active': reviewTargetTab === 'main' }" @click="setReviewTargetTab('main')">{{ t("chat.toolReview.scopeMain") }}</button>
           <button type="button" role="tab" class="tab" :class="{ 'tab-active': reviewTargetTab === 'uncommitted' }" @click="setReviewTargetTab('uncommitted')">{{ t("chat.toolReview.scopeUncommitted") }}</button>
@@ -350,22 +349,7 @@
         </div>
       </div>
       <div class="px-5 py-4">
-        <div v-if="reviewTargetTab === 'batch'" class="max-h-[55vh] overflow-y-auto rounded-box border border-base-300">
-          <button
-            v-for="(batch, index) in batchSelectionItems"
-            :key="batch.batchKey"
-            type="button"
-            class="flex w-full items-start gap-3 border-b border-base-300 px-4 py-3 text-left last:border-b-0 hover:bg-base-200"
-            @click="toggleBatchSelection(batch.batchKey)"
-          >
-            <input type="checkbox" class="checkbox checkbox-sm mt-1" :checked="selectedBatchKeys.includes(batch.batchKey)" tabindex="-1">
-            <div class="min-w-0 flex-1 text-sm text-base-content">
-              {{ formatBatchSelectionTitle(batch, index) }}
-            </div>
-          </button>
-        </div>
-
-        <div v-else-if="reviewTargetTab === 'commit'" class="rounded-box border border-base-300">
+        <div v-if="reviewTargetTab === 'commit'" class="rounded-box border border-base-300">
           <div class="sticky top-0 z-10 flex items-center justify-between border-b border-base-300 bg-base-100 px-4 py-3 text-sm">
             <button type="button" class="btn btn-sm" :disabled="commitOptionsLoading || commitPage <= 1" @click="requestCommitPage(commitPage - 1)">上一页</button>
             <span class="text-base-content/70">第 {{ commitPage }} 页 / 共 {{ commitTotalPages }} 页 · {{ commitTotal }}</span>
@@ -476,8 +460,6 @@ const emit = defineEmits<{
   (e: "loadItemDetail", callId: string): void;
   (e: "reviewItem", callId: string): void;
   (e: "reviewBatch", batchKey: string): void;
-  (e: "submitBatch", batchNumber: number): void;
-  (e: "submitBatchSelection", input: { batchKeys: string[]; departmentId: string }): void;
   (e: "pickCommitReview", page: number): void;
   (e: "reviewCode", input: { scope: ToolReviewCodeReviewScope; target?: string; departmentId: string }): void;
   (e: "retryReport", report: ToolReviewReportRecord): void;
@@ -490,18 +472,16 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const reportDialogOpen = ref(false);
 const reviewTargetDialogOpen = ref(false);
-const pendingReportDialogBatchKey = ref("");
 const activeTab = ref<"tools" | "reports" | "delegates">("reports");
 const localCurrentReportId = ref("");
 const rootAttrs = useAttrs();
 const commitOptions = ref<ToolReviewCommitOption[]>([]);
 const commitOptionsLoading = ref(false);
 const selectedCommitHashes = ref<string[]>([]);
-const selectedBatchKeys = ref<string[]>([]);
 const customTargetText = ref("");
 const selectedFindingIds = ref<string[]>([]);
 const selectedReviewDepartmentId = ref("");
-const reviewTargetTab = ref<"batch" | "commit" | "main" | "uncommitted" | "custom">("batch");
+const reviewTargetTab = ref<"commit" | "main" | "uncommitted" | "custom">("main");
 const commitPage = ref(1);
 const commitPageSize = ref(30);
 const commitTotal = ref(0);
@@ -599,10 +579,6 @@ const reviewGroups = computed<ToolReviewGroup[]>(() => {
 
 const currentBatchUnreviewedCount = computed(() =>
   currentBatch.value?.items.filter((item) => !item.hasReview).length ?? 0
-);
-
-const batchSelectionItems = computed(() =>
-  [...props.batches].reverse()
 );
 
 const validReviewDepartmentId = computed(() => {
@@ -944,8 +920,18 @@ watch(() => props.currentBatchKey, () => {
 });
 
 watch(
-  () => currentReport.value?.id || "",
-  () => {
+  () => ({
+    reportId: currentReport.value?.id || "",
+    reportStatus: currentReport.value?.status || "",
+    findingIds: currentReportFindings.value.map((item) => item.id).join("|"),
+  }),
+  (next, previous) => {
+    const reportChanged = next.reportId !== (previous?.reportId || "");
+    const statusChanged = next.reportStatus !== (previous?.reportStatus || "");
+    const findingsChanged = next.findingIds !== (previous?.findingIds || "");
+    if (!reportChanged && !statusChanged && !findingsChanged) {
+      return;
+    }
     selectedFindingIds.value = currentReportFindings.value.map((item) => item.id);
   },
   { immediate: true },
@@ -955,13 +941,6 @@ watch(
   () => props.reports.map((item) => `${item.id}:${item.status}:${item.updatedAt}`).join("|"),
   () => {
     reportPage.value = Math.min(reportPage.value, reportTotalPages.value);
-    const pendingTarget = String(pendingReportDialogBatchKey.value || "").trim();
-    if (!pendingTarget) return;
-    const matched = props.reports.find((item) => item.id === pendingTarget || (item.target || "").trim() === pendingTarget);
-    if (!matched || matched.status === "pending") return;
-    pendingReportDialogBatchKey.value = "";
-    localCurrentReportId.value = matched.id;
-    reportDialogOpen.value = true;
   }
 );
 
@@ -991,12 +970,6 @@ function handleReportAction() {
   reviewTargetDialogOpen.value = true;
 }
 
-function requestBatchReport(batchNumber: number) {
-  if (!Number.isFinite(batchNumber) || batchNumber <= 0) return;
-  pendingReportDialogBatchKey.value = `第 ${batchNumber} 批`;
-  emit("submitBatch", batchNumber);
-}
-
 function setCommitOptions(items: ToolReviewCommitOption[] = [], loading = false, total = 0, page = 1, pageSize = 30) {
   commitOptions.value = items;
   commitOptionsLoading.value = loading;
@@ -1008,11 +981,10 @@ function setCommitOptions(items: ToolReviewCommitOption[] = [], loading = false,
 function closeReviewTargetDialog() {
   reviewTargetDialogOpen.value = false;
   selectedCommitHashes.value = [];
-  selectedBatchKeys.value = [];
   customTargetText.value = "";
 }
 
-function setReviewTargetTab(tab: "batch" | "commit" | "main" | "uncommitted" | "custom") {
+function setReviewTargetTab(tab: "commit" | "main" | "uncommitted" | "custom") {
   reviewTargetTab.value = tab;
   if (tab === "commit" && !commitOptionsLoading.value && commitOptions.value.length === 0) {
     commitOptionsLoading.value = true;
@@ -1030,31 +1002,10 @@ function requestCommitPage(page: number) {
 
 const canConfirmReviewTarget = computed(() => {
   if (!validReviewDepartmentId.value) return false;
-  if (reviewTargetTab.value === "batch") return selectedBatchKeys.value.length > 0;
   if (reviewTargetTab.value === "commit") return selectedCommitHashes.value.length > 0;
   if (reviewTargetTab.value === "custom") return !!customTargetText.value.trim();
   return true;
 });
-
-function toggleBatchSelection(batchKey: string) {
-  const normalizedBatchKey = String(batchKey || "").trim();
-  if (!normalizedBatchKey) return;
-  selectedBatchKeys.value = selectedBatchKeys.value.includes(normalizedBatchKey)
-    ? selectedBatchKeys.value.filter((item) => item !== normalizedBatchKey)
-    : [...selectedBatchKeys.value, normalizedBatchKey];
-}
-
-function summarizeBatchUserMessage(text: string) {
-  const normalized = String(text || "").trim().replace(/\s+/g, " ");
-  if (!normalized) return "";
-  return normalized.length > 20 ? `${normalized.slice(0, 20)}...` : normalized;
-}
-
-function formatBatchSelectionTitle(batch: ToolReviewBatchSummary, index: number) {
-  const summary = summarizeBatchUserMessage(batch.userMessageText);
-  const pageText = `第 ${index + 1} 批`;
-  return `${pageText} · ${batch.itemCount} · ${summary || t('chat.toolReview.empty')}`;
-}
 
 function toggleCommitSelection(hash: string) {
   const normalizedHash = String(hash || "").trim();
@@ -1067,12 +1018,6 @@ function toggleCommitSelection(hash: string) {
 function confirmReviewTargetSelection() {
   const departmentId = validReviewDepartmentId.value;
   if (!departmentId) return;
-  if (reviewTargetTab.value === "batch") {
-    if (selectedBatchKeys.value.length === 0) return;
-    emit("submitBatchSelection", { batchKeys: selectedBatchKeys.value, departmentId });
-    closeReviewTargetDialog();
-    return;
-  }
   if (reviewTargetTab.value === "commit") {
     if (selectedCommitHashes.value.length === 0) return;
     emit("reviewCode", { scope: "commit", target: selectedCommitHashes.value.join("\n"), departmentId });
@@ -1114,6 +1059,12 @@ function openReportDetail(reportId: string) {
 
 function retryFailedReport(report: ToolReviewReportRecord) {
   emit("retryReport", report);
+}
+
+function canRetryReport(report: ToolReviewReportRecord) {
+  if (report.status !== "failed") return false;
+  const scope = String(report.scope || "").trim();
+  return scope === "commit" || scope === "main" || scope === "uncommitted" || scope === "custom";
 }
 
 function deleteReport(report: ToolReviewReportRecord) {
@@ -1165,7 +1116,6 @@ function reportStatusBadgeClass(status: string) {
 }
 
 function formatReportScope(scope: string) {
-  if (scope === "batch") return "批次";
   if (scope === "commit") return "commit";
   if (scope === "main") return "主分支差异";
   if (scope === "uncommitted") return "未提交改动";
@@ -1196,8 +1146,8 @@ function reportExpandedText(report: ToolReviewReportRecord) {
   if (report.status === "pending") return "生成中";
   if (report.status === "failed") return report.errorText || "生成失败";
   const parsed = parseToolReviewJson(report.reportText);
-  if (parsed) return stringField(parsed.raw.overall_explanation) || report.reportText || "暂无审查内容";
-  return reportMarkdownField(report, "判定说明") || report.reportText || "暂无审查内容";
+  if (parsed) return stringField(parsed.raw.overall_explanation) || report.reportText || "暂无代码审查内容";
+  return reportMarkdownField(report, "判定说明") || report.reportText || "暂无代码审查内容";
 }
 </script>
 

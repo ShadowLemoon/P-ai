@@ -300,10 +300,7 @@ impl ConversationService {
                             .messages
                             .iter()
                             .rev()
-                            .find(|message| {
-                                message.role == "assistant"
-                                    && !is_tool_review_report_message(message)
-                            })
+                            .find(|message| message.role == "assistant")
                             .cloned();
                         if let Some(message) = latest_user.as_mut() {
                             materialize_message_parts_from_media_refs(
@@ -321,11 +318,7 @@ impl ConversationService {
                             conversation_id: conversation.id.clone(),
                             latest_user,
                             latest_assistant,
-                            active_message_count: conversation
-                                .messages
-                                .iter()
-                                .filter(|message| !is_tool_review_report_message(message))
-                                .count(),
+                            active_message_count: conversation.messages.len(),
                         }
                     })
             };

@@ -1009,9 +1009,9 @@ async fn builtin_apply_patch(
                         "modelName": review.model_name,
                     }));
                     if !review.allow {
-                        let mut lines = vec!["智能审查建议先由你确认后再执行。".to_string()];
+                        let mut lines = vec!["智能评估建议先由你确认后再执行。".to_string()];
                         if !review.review_opinion.is_empty() {
-                            lines.push(format!("审查意见: {}", review.review_opinion));
+                            lines.push(format!("评估意见: {}", review.review_opinion));
                         }
                         if !state
                             .delegate_active_ids
@@ -1023,14 +1023,14 @@ async fn builtin_apply_patch(
                                 "ok": false,
                                 "approved": false,
                                 "blockedReason": "delegate_denied_ai_reviewed_patch",
-                                "message": "子代理工具调用被自动拒绝（智能审查不通过）。",
+                                "message": "子代理工具调用被自动拒绝（智能评估不通过）。",
                                 "toolReview": smart_review_history.clone(),
                                 "cwd": terminal_path_for_user(&cwd),
                             }));
                         }
                         let approved = match terminal_request_user_approval(
                             state,
-                            "工具智能审查",
+                            "工具智能评估",
                             &lines.join("\n"),
                             &normalized_session,
                             "ai_tool_review",
@@ -1056,7 +1056,7 @@ async fn builtin_apply_patch(
                                 "ok": false,
                                 "approved": false,
                                 "blockedReason": "user_denied_ai_reviewed_patch",
-                                "message": "用户拒绝了智能审查后的补丁执行。",
+                                "message": "用户拒绝了智能评估后的补丁执行。",
                                 "toolReview": smart_review_history.clone(),
                                 "cwd": terminal_path_for_user(&cwd),
                             }));
@@ -1069,7 +1069,7 @@ async fn builtin_apply_patch(
                     model_name,
                 }) => {
                     let review_note =
-                        "当前工具审查模型返回了不符合约定的结果，请直接查看原始返回内容后决定是否执行。";
+                        "当前工具评估模型返回了不符合约定的结果，请直接查看原始返回内容后决定是否执行。";
                     smart_review_history = Some(serde_json::json!({
                         "kind": "raw_json",
                         "allow": false,
@@ -1087,14 +1087,14 @@ async fn builtin_apply_patch(
                             "ok": false,
                             "approved": false,
                             "blockedReason": "delegate_denied_ai_review_raw_patch",
-                            "message": "子代理工具调用被自动拒绝（智能审查返回了不符合约定的结果）。",
+                            "message": "子代理工具调用被自动拒绝（智能评估返回了不符合约定的结果）。",
                             "toolReview": smart_review_history.clone(),
                             "cwd": terminal_path_for_user(&cwd),
                         }));
                     }
                     let approved = match terminal_request_user_approval(
                         state,
-                        "工具智能审查",
+                        "工具智能评估",
                         review_note,
                         &normalized_session,
                         "ai_tool_review_raw_json",
@@ -1120,7 +1120,7 @@ async fn builtin_apply_patch(
                             "ok": false,
                             "approved": false,
                             "blockedReason": "user_denied_ai_review_raw_patch",
-                            "message": "用户拒绝了查看原始审查结果后的补丁执行。",
+                            "message": "用户拒绝了查看原始评估结果后的补丁执行。",
                             "toolReview": smart_review_history.clone(),
                             "cwd": terminal_path_for_user(&cwd),
                         }));
@@ -1133,7 +1133,7 @@ async fn builtin_apply_patch(
                         normalized_session, err
                     ));
                     smart_review_unavailable_notice =
-                        Some("当前审查模型不可用，已降级为本地规则审查。".to_string());
+                        Some("当前评估模型不可用，已降级为本地规则评估。".to_string());
                 }
             }
         }

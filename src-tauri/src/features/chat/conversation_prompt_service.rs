@@ -94,9 +94,6 @@ fn flatten_system_prompt_blocks(blocks: &[String]) -> String {
 }
 
 fn abstract_message_projection_semantic_kind(message: &ChatMessage, agent_id: &str) -> String {
-    if is_tool_review_report_message(message) {
-        return "tool_review_report".to_string();
-    }
     if is_context_compaction_message(message, &message.role) {
         let kind = message
             .provider_meta
@@ -1105,25 +1102,6 @@ impl ConversationPromptService {
             preamble: tool_safety_review_system_prompt(language),
             history_messages: Vec::new(),
             latest_user_text: build_tool_safety_review_user_prompt(tool_name, context),
-            latest_user_meta_text: String::new(),
-            latest_user_extra_text: String::new(),
-            latest_user_extra_blocks: Vec::new(),
-            latest_images: Vec::new(),
-            latest_audios: Vec::new(),
-        }
-    }
-
-    fn build_tool_review_submission_prepared_prompt(
-        &self,
-        ui_language: &str,
-        batch: &ToolReviewCollectedBatch,
-        recent_context: &str,
-        plan_text: &str,
-    ) -> PreparedPrompt {
-        PreparedPrompt {
-            preamble: tool_review_report_system_prompt(ui_language),
-            history_messages: Vec::new(),
-            latest_user_text: tool_review_submission_user_prompt(batch, recent_context, plan_text),
             latest_user_meta_text: String::new(),
             latest_user_extra_text: String::new(),
             latest_user_extra_blocks: Vec::new(),

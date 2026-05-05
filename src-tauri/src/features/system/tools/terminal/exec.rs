@@ -537,117 +537,117 @@ fn terminal_local_rule_reason_message(ui_language: &str, reason: &str) -> String
     match reason {
         "encoded command is blocked" => terminal_localized_text(
             ui_language,
-            "命令使用了编码执行参数，本地规则已直接拦截。这类命令难以直接确认真实执行内容，风险过高，不进入 AI 审查。",
-            "命令使用了編碼執行參數，本地規則已直接攔截。這類命令難以直接確認真實執行內容，風險過高，不進入 AI 審查。",
-            "This command uses an encoded execution argument and was blocked by local rules. The real behavior cannot be inspected directly, so the risk is too high to send to AI review.",
+            "命令使用了编码执行参数，本地规则已直接拦截。这类命令难以直接确认真实执行内容，风险过高，不进入 AI 评估。",
+            "命令使用了編碼執行參數，本地規則已直接攔截。這類命令難以直接確認真實執行內容，風險過高，不進入 AI 評估。",
+            "This command uses an encoded execution argument and was blocked by local rules. The real behavior cannot be inspected directly, so the risk is too high to send to AI assessment.",
         ),
         "Invoke-Expression/iex is blocked" => terminal_localized_text(
             ui_language,
-            "命令使用了 Invoke-Expression/iex 动态执行，本地规则已直接拦截。这类命令会放大真实执行内容的不确定性，风险过高，不进入 AI 审查。",
-            "命令使用了 Invoke-Expression/iex 動態執行，本地規則已直接攔截。這類命令會放大真實執行內容的不確定性，風險過高，不進入 AI 審查。",
-            "This command uses Invoke-Expression/iex and was blocked by local rules. Dynamic execution makes the real behavior too uncertain, so it is too risky for AI review.",
+            "命令使用了 Invoke-Expression/iex 动态执行，本地规则已直接拦截。这类命令会放大真实执行内容的不确定性，风险过高，不进入 AI 评估。",
+            "命令使用了 Invoke-Expression/iex 動態執行，本地規則已直接攔截。這類命令會放大真實執行內容的不確定性，風險過高，不進入 AI 評估。",
+            "This command uses Invoke-Expression/iex and was blocked by local rules. Dynamic execution makes the real behavior too uncertain, so it is too risky for AI assessment.",
         ),
         "spawning nested shells is blocked" => terminal_localized_text(
             ui_language,
-            "命令尝试再启动一层 shell，本地规则已直接拦截。这会绕开当前终端约束并放大风险，不进入 AI 审查。",
-            "命令嘗試再啟動一層 shell，本地規則已直接攔截。這會繞開當前終端約束並放大風險，不進入 AI 審查。",
-            "This command tries to spawn another shell and was blocked by local rules. That can bypass current terminal constraints, so it is too risky for AI review.",
+            "命令尝试再启动一层 shell，本地规则已直接拦截。这会绕开当前终端约束并放大风险，不进入 AI 评估。",
+            "命令嘗試再啟動一層 shell，本地規則已直接攔截。這會繞開當前終端約束並放大風險，不進入 AI 評估。",
+            "This command tries to spawn another shell and was blocked by local rules. That can bypass current terminal constraints, so it is too risky for AI assessment.",
         ),
         "git push --force/-f is especially dangerous and is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git push --force/-f，本地规则已按特别高危直接拦截。它可能覆盖远端历史并影响他人协作，不进入 AI 审查。",
-            "命令包含 git push --force/-f，本地規則已按特別高危直接攔截。它可能覆蓋遠端歷史並影響他人協作，不進入 AI 審查。",
-            "This command includes git push --force/-f and was blocked as especially high risk. It can overwrite remote history and affect collaborators, so it does not go to AI review.",
+            "命令包含 git push --force/-f，本地规则已按特别高危直接拦截。它可能覆盖远端历史并影响他人协作，不进入 AI 评估。",
+            "命令包含 git push --force/-f，本地規則已按特別高危直接攔截。它可能覆蓋遠端歷史並影響他人協作，不進入 AI 評估。",
+            "This command includes git push --force/-f and was blocked as especially high risk. It can overwrite remote history and affect collaborators, so it does not go to AI assessment.",
         ),
         "git pull --force/-f is especially dangerous and is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git pull --force/-f，本地规则已按特别高危直接拦截。它会强行改动本地工作区和历史状态，不进入 AI 审查。",
-            "命令包含 git pull --force/-f，本地規則已按特別高危直接攔截。它會強行改動本地工作區和歷史狀態，不進入 AI 審查。",
-            "This command includes git pull --force/-f and was blocked as especially high risk. It can forcibly rewrite the local workspace and history, so it does not go to AI review.",
+            "命令包含 git pull --force/-f，本地规则已按特别高危直接拦截。它会强行改动本地工作区和历史状态，不进入 AI 评估。",
+            "命令包含 git pull --force/-f，本地規則已按特別高危直接攔截。它會強行改動本地工作區和歷史狀態，不進入 AI 評估。",
+            "This command includes git pull --force/-f and was blocked as especially high risk. It can forcibly rewrite the local workspace and history, so it does not go to AI assessment.",
         ),
         "git push is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git push，本地规则已直接拦截。它会改动远端仓库状态，不属于可自动审查后直接执行的范围。",
-            "命令包含 git push，本地規則已直接攔截。它會改動遠端倉庫狀態，不屬於可自動審查後直接執行的範圍。",
-            "This command includes git push and was blocked by local rules. It changes remote repository state and is not eligible for automatic review and execution.",
+            "命令包含 git push，本地规则已直接拦截。它会改动远端仓库状态，不属于可自动评估后直接执行的范围。",
+            "命令包含 git push，本地規則已直接攔截。它會改動遠端倉庫狀態，不屬於可自動評估後直接執行的範圍。",
+            "This command includes git push and was blocked by local rules. It changes remote repository state and is not eligible for automatic assessment and execution.",
         ),
         "git pull is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git pull，本地规则已直接拦截。它会拉取并改动本地仓库状态，不属于可自动审查后直接执行的范围。",
-            "命令包含 git pull，本地規則已直接攔截。它會拉取並改動本地倉庫狀態，不屬於可自動審查後直接執行的範圍。",
-            "This command includes git pull and was blocked by local rules. It changes local repository state after fetching remote updates, so it is not eligible for automatic review and execution.",
+            "命令包含 git pull，本地规则已直接拦截。它会拉取并改动本地仓库状态，不属于可自动评估后直接执行的范围。",
+            "命令包含 git pull，本地規則已直接攔截。它會拉取並改動本地倉庫狀態，不屬於可自動評估後直接執行的範圍。",
+            "This command includes git pull and was blocked by local rules. It changes local repository state after fetching remote updates, so it is not eligible for automatic assessment and execution.",
         ),
         "git fetch is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git fetch，本地规则已直接拦截。它会改动本地仓库引用状态，不进入 AI 审查。",
-            "命令包含 git fetch，本地規則已直接攔截。它會改動本地倉庫引用狀態，不進入 AI 審查。",
-            "This command includes git fetch and was blocked by local rules. It changes local repository references, so it does not go to AI review.",
+            "命令包含 git fetch，本地规则已直接拦截。它会改动本地仓库引用状态，不进入 AI 评估。",
+            "命令包含 git fetch，本地規則已直接攔截。它會改動本地倉庫引用狀態，不進入 AI 評估。",
+            "This command includes git fetch and was blocked by local rules. It changes local repository references, so it does not go to AI assessment.",
         ),
         "git commit is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git commit，本地规则已直接拦截。它会生成新的仓库历史记录，不进入 AI 审查。",
-            "命令包含 git commit，本地規則已直接攔截。它會生成新的倉庫歷史記錄，不進入 AI 審查。",
-            "This command includes git commit and was blocked by local rules. It creates new repository history and does not go to AI review.",
+            "命令包含 git commit，本地规则已直接拦截。它会生成新的仓库历史记录，不进入 AI 评估。",
+            "命令包含 git commit，本地規則已直接攔截。它會生成新的倉庫歷史記錄，不進入 AI 評估。",
+            "This command includes git commit and was blocked by local rules. It creates new repository history and does not go to AI assessment.",
         ),
         "git merge is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git merge，本地规则已直接拦截。它会改动分支历史和工作区状态，不进入 AI 审查。",
-            "命令包含 git merge，本地規則已直接攔截。它會改動分支歷史和工作區狀態，不進入 AI 審查。",
-            "This command includes git merge and was blocked by local rules. It changes branch history and workspace state, so it does not go to AI review.",
+            "命令包含 git merge，本地规则已直接拦截。它会改动分支历史和工作区状态，不进入 AI 评估。",
+            "命令包含 git merge，本地規則已直接攔截。它會改動分支歷史和工作區狀態，不進入 AI 評估。",
+            "This command includes git merge and was blocked by local rules. It changes branch history and workspace state, so it does not go to AI assessment.",
         ),
         "git rebase is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git rebase，本地规则已直接拦截。它会重写历史并可能影响后续协作，不进入 AI 审查。",
-            "命令包含 git rebase，本地規則已直接攔截。它會重寫歷史並可能影響後續協作，不進入 AI 審查。",
-            "This command includes git rebase and was blocked by local rules. It rewrites history and can affect later collaboration, so it does not go to AI review.",
+            "命令包含 git rebase，本地规则已直接拦截。它会重写历史并可能影响后续协作，不进入 AI 评估。",
+            "命令包含 git rebase，本地規則已直接攔截。它會重寫歷史並可能影響後續協作，不進入 AI 評估。",
+            "This command includes git rebase and was blocked by local rules. It rewrites history and can affect later collaboration, so it does not go to AI assessment.",
         ),
         "git reset is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git reset，本地规则已直接拦截。它会改动仓库历史或工作区状态，不进入 AI 审查。",
-            "命令包含 git reset，本地規則已直接攔截。它會改動倉庫歷史或工作區狀態，不進入 AI 審查。",
-            "This command includes git reset and was blocked by local rules. It changes repository history or workspace state, so it does not go to AI review.",
+            "命令包含 git reset，本地规则已直接拦截。它会改动仓库历史或工作区状态，不进入 AI 评估。",
+            "命令包含 git reset，本地規則已直接攔截。它會改動倉庫歷史或工作區狀態，不進入 AI 評估。",
+            "This command includes git reset and was blocked by local rules. It changes repository history or workspace state, so it does not go to AI assessment.",
         ),
         "git checkout is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git checkout，本地规则已直接拦截。它可能切换分支或覆盖文件状态，不进入 AI 审查。",
-            "命令包含 git checkout，本地規則已直接攔截。它可能切換分支或覆蓋文件狀態，不進入 AI 審查。",
-            "This command includes git checkout and was blocked by local rules. It can switch branches or overwrite file state, so it does not go to AI review.",
+            "命令包含 git checkout，本地规则已直接拦截。它可能切换分支或覆盖文件状态，不进入 AI 评估。",
+            "命令包含 git checkout，本地規則已直接攔截。它可能切換分支或覆蓋文件狀態，不進入 AI 評估。",
+            "This command includes git checkout and was blocked by local rules. It can switch branches or overwrite file state, so it does not go to AI assessment.",
         ),
         "git switch is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git switch，本地规则已直接拦截。它可能切换分支并改动工作区状态，不进入 AI 审查。",
-            "命令包含 git switch，本地規則已直接攔截。它可能切換分支並改動工作區狀態，不進入 AI 審查。",
-            "This command includes git switch and was blocked by local rules. It can switch branches and change workspace state, so it does not go to AI review.",
+            "命令包含 git switch，本地规则已直接拦截。它可能切换分支并改动工作区状态，不进入 AI 评估。",
+            "命令包含 git switch，本地規則已直接攔截。它可能切換分支並改動工作區狀態，不進入 AI 評估。",
+            "This command includes git switch and was blocked by local rules. It can switch branches and change workspace state, so it does not go to AI assessment.",
         ),
         "git restore is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git restore，本地规则已直接拦截。它会覆盖本地文件状态，不进入 AI 审查。",
-            "命令包含 git restore，本地規則已直接攔截。它會覆蓋本地文件狀態，不進入 AI 審查。",
-            "This command includes git restore and was blocked by local rules. It overwrites local file state, so it does not go to AI review.",
+            "命令包含 git restore，本地规则已直接拦截。它会覆盖本地文件状态，不进入 AI 评估。",
+            "命令包含 git restore，本地規則已直接攔截。它會覆蓋本地文件狀態，不進入 AI 評估。",
+            "This command includes git restore and was blocked by local rules. It overwrites local file state, so it does not go to AI assessment.",
         ),
         "git clean is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git clean，本地规则已直接拦截。它会删除未跟踪文件，风险过高，不进入 AI 审查。",
-            "命令包含 git clean，本地規則已直接攔截。它會刪除未跟蹤文件，風險過高，不進入 AI 審查。",
-            "This command includes git clean and was blocked by local rules. It deletes untracked files and is too risky for AI review.",
+            "命令包含 git clean，本地规则已直接拦截。它会删除未跟踪文件，风险过高，不进入 AI 评估。",
+            "命令包含 git clean，本地規則已直接攔截。它會刪除未跟蹤文件，風險過高，不進入 AI 評估。",
+            "This command includes git clean and was blocked by local rules. It deletes untracked files and is too risky for AI assessment.",
         ),
         "git stash is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git stash，本地规则已直接拦截。它会改动工作区与暂存状态，不进入 AI 审查。",
-            "命令包含 git stash，本地規則已直接攔截。它會改動工作區與暫存狀態，不進入 AI 審查。",
-            "This command includes git stash and was blocked by local rules. It changes workspace and stash state, so it does not go to AI review.",
+            "命令包含 git stash，本地规则已直接拦截。它会改动工作区与暂存状态，不进入 AI 评估。",
+            "命令包含 git stash，本地規則已直接攔截。它會改動工作區與暫存狀態，不進入 AI 評估。",
+            "This command includes git stash and was blocked by local rules. It changes workspace and stash state, so it does not go to AI assessment.",
         ),
         "git apply is blocked" => terminal_localized_text(
             ui_language,
-            "命令包含 git apply，本地规则已直接拦截。它会直接把补丁写入工作区，不进入 AI 审查。",
-            "命令包含 git apply，本地規則已直接攔截。它會直接把補丁寫入工作區，不進入 AI 審查。",
-            "This command includes git apply and was blocked by local rules. It writes a patch directly into the workspace, so it does not go to AI review.",
+            "命令包含 git apply，本地规则已直接拦截。它会直接把补丁写入工作区，不进入 AI 评估。",
+            "命令包含 git apply，本地規則已直接攔截。它會直接把補丁寫入工作區，不進入 AI 評估。",
+            "This command includes git apply and was blocked by local rules. It writes a patch directly into the workspace, so it does not go to AI assessment.",
         ),
         _ => terminal_localized_text(
             ui_language,
-            "本地规则已直接拦截此命令。这类命令存在明确风险，不进入 AI 审查。",
-            "本地規則已直接攔截此命令。這類命令存在明確風險，不進入 AI 審查。",
-            "This command was blocked by local rules. It has a clearly identified risk and does not go to AI review.",
+            "本地规则已直接拦截此命令。这类命令存在明确风险，不进入 AI 评估。",
+            "本地規則已直接攔截此命令。這類命令存在明確風險，不進入 AI 評估。",
+            "This command was blocked by local rules. It has a clearly identified risk and does not go to AI assessment.",
         ),
     }
 }
@@ -790,7 +790,7 @@ fn terminal_smart_review_paths(paths: &[PathBuf]) -> Vec<String> {
 
 fn tool_safety_review_system_prompt(language: &str) -> String {
     format!(
-        "请使用{language}完成工具执行审查。\n\
+        "请使用{language}完成工具执行评估。\n\
 你负责判断当前工具执行结果是否可以直接放行，还是必须先交给用户确认。\n\
 你的目标是让不会编程的普通人也能看明白这次工具执行大概要做什么、可能影响什么、为什么建议直接执行或先确认。\n\
 请优先使用简单人话，而不是技术术语；如果看不清影响范围，就直接说明无法确认。\n\
@@ -800,12 +800,12 @@ fn tool_safety_review_system_prompt(language: &str) -> String {
 对于 shell_exec，如果无法确认命令是否存在副作用，也应返回 allow=false，不要猜测放行。\n\
 只返回一个 JSON 对象，不要输出 Markdown、代码块或额外解释。\n\
 JSON 只能包含这些字段：allow, review_opinion。\n\
-其中：allow 表示是否放行，review_opinion 表示给普通用户看的审查意见。"
+其中：allow 表示是否放行，review_opinion 表示给普通用户看的评估意见。"
     )
 }
 
 fn build_tool_safety_review_user_prompt(tool_name: &str, context: &Value) -> String {
-    format!("当前待审查工具：{tool_name}\n请审查以下内容：\n{context}")
+    format!("当前待评估工具：{tool_name}\n请评估以下内容：\n{context}")
 }
 
 fn current_tool_review_api_config_id(state: &AppState) -> Result<Option<String>, String> {
@@ -976,9 +976,9 @@ async fn builtin_shell_exec(
                 "blockedReason": "local_rule_blocked",
                 "message": terminal_localized_text(
                     &ui_language,
-                    "本地规则已直接拦截此命令，存在明确风险，不进入 AI 审查。",
-                    "本地規則已直接攔截此命令，存在明確風險，不進入 AI 審查。",
-                    "This command was blocked by local rules because it has a clearly identified risk and does not go to AI review.",
+                    "本地规则已直接拦截此命令，存在明确风险，不进入 AI 评估。",
+                    "本地規則已直接攔截此命令，存在明確風險，不進入 AI 評估。",
+                    "This command was blocked by local rules because it has a clearly identified risk and does not go to AI assessment.",
                 ),
                 "toolReview": review,
                 "command": cmd,
@@ -1269,7 +1269,7 @@ async fn builtin_shell_exec(
                     model_name,
                 }) => {
                     let review_note =
-                        "当前工具审查模型返回了不符合约定的结果，请直接查看原始返回内容后决定是否执行。";
+                        "当前工具评估模型返回了不符合约定的结果，请直接查看原始返回内容后决定是否执行。";
                     smart_review_history = Some(serde_json::json!({
                         "kind": "raw_json",
                         "allow": false,
@@ -1287,7 +1287,7 @@ async fn builtin_shell_exec(
                             "ok": false,
                             "approved": false,
                             "blockedReason": "delegate_denied_ai_review_raw_json_command",
-                            "message": "子代理工具调用被自动拒绝（智能审查返回了不符合约定的结果）。",
+                            "message": "子代理工具调用被自动拒绝（智能评估返回了不符合约定的结果）。",
                             "toolReview": smart_review_history.clone(),
                             "rootPath": session_root_text,
                             "workspacePath": workspace_path_text,
@@ -1296,7 +1296,7 @@ async fn builtin_shell_exec(
                     }
                     let approved = match terminal_request_user_approval(
                         state,
-                        "工具智能审查",
+                        "工具智能评估",
                         review_note,
                         &normalized_session,
                         "ai_tool_review_raw_json",
@@ -1325,7 +1325,7 @@ async fn builtin_shell_exec(
                             "ok": false,
                             "approved": false,
                             "blockedReason": "user_denied_ai_review_raw_json_command",
-                            "message": "用户拒绝了查看原始审查结果后的终端命令。",
+                            "message": "用户拒绝了查看原始评估结果后的终端命令。",
                             "toolReview": smart_review_history.clone(),
                             "rootPath": session_root_text,
                             "workspacePath": workspace_path_text,
@@ -1341,7 +1341,7 @@ async fn builtin_shell_exec(
                         normalized_session, cmd, err
                     ));
                     smart_review_unavailable_notice = Some(
-                        "当前审查模型不可用，已跳过自动审查，请直接确认是否允许执行。".to_string()
+                        "当前评估模型不可用，已跳过自动评估，请直接确认是否允许执行。".to_string()
                     );
                     None
                 }
@@ -1359,9 +1359,9 @@ async fn builtin_shell_exec(
             "modelName": review.model_name,
         }));
         if !review.allow {
-            let mut lines = vec!["智能审查建议先由你确认后再执行。".to_string()];
+            let mut lines = vec!["智能评估建议先由你确认后再执行。".to_string()];
             if !review.review_opinion.is_empty() {
-                lines.push(format!("审查意见: {}", review.review_opinion));
+                lines.push(format!("评估意见: {}", review.review_opinion));
             }
             if !state
                 .delegate_active_ids
@@ -1373,7 +1373,7 @@ async fn builtin_shell_exec(
                     "ok": false,
                     "approved": false,
                     "blockedReason": "delegate_denied_ai_reviewed_command",
-                    "message": "子代理工具调用被自动拒绝（智能审查不通过）。",
+                    "message": "子代理工具调用被自动拒绝（智能评估不通过）。",
                     "toolReview": smart_review_history.clone(),
                     "rootPath": session_root_text,
                     "workspacePath": workspace_path_text,
@@ -1382,7 +1382,7 @@ async fn builtin_shell_exec(
             }
             let approved = match terminal_request_user_approval(
                 state,
-                "工具智能审查",
+                "工具智能评估",
                 &lines.join("\n"),
                 &normalized_session,
                 "ai_tool_review",
@@ -1411,7 +1411,7 @@ async fn builtin_shell_exec(
                     "ok": false,
                     "approved": false,
                     "blockedReason": "user_denied_ai_reviewed_command",
-                    "message": "用户拒绝了智能审查后的终端命令。",
+                    "message": "用户拒绝了智能评估后的终端命令。",
                     "toolReview": smart_review_history.clone(),
                     "rootPath": session_root_text,
                     "workspacePath": workspace_path_text,

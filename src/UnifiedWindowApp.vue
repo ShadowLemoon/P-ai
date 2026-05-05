@@ -1350,8 +1350,8 @@ const { removeQueuedAttachmentNotice, pickChatAttachments } = useChatAttachmentP
 
 async function attachToolReviewReport(reportText: string) {
   try {
-    await queueTextAttachment("tool-review-report.md", reportText, "text/markdown");
-    status.value = "已附加审查报告";
+    await queueTextAttachment("code-review-report.md", reportText, "text/markdown");
+    status.value = "已附加代码审查报告";
   } catch (error) {
     setStatusError("status.pasteImageReadFailed", error);
   }

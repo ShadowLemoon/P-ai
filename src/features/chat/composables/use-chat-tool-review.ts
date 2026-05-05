@@ -91,7 +91,6 @@ type SubmitToolReviewCodeInput = {
   scope: ToolReviewCodeReviewScope;
   target?: string;
   departmentId?: string;
-  apiConfigId?: string;
 };
 
 type DeleteToolReviewReportInput = {
@@ -108,7 +107,6 @@ type ListToolReviewCommitOptionsOutput = {
 
 type UseChatToolReviewOptions = {
   activeConversationId: Ref<string>;
-  selectedChatModelId: Ref<string>;
   messageBlocks: ComputedRef<ChatMessageBlock[]>;
   refreshTick: Ref<number>;
   t: (key: string, params?: Record<string, unknown>) => string;
@@ -228,7 +226,6 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
           scope,
           target: String(input.target || "").trim() || undefined,
           departmentId: String(input.departmentId || "").trim() || undefined,
-          apiConfigId: String(input.apiConfigId || options.selectedChatModelId.value || "").trim() || undefined,
         },
       });
       toolReviewCurrentReportId.value = String(result?.report?.id || "").trim();
@@ -418,43 +415,6 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
     }
   }
 
-  async function submitToolReviewBatch(
-    batchNumber?: number,
-    departmentId?: string,
-  ): Promise<ToolReviewReportRecord | null> {
-    const normalizedBatchNumber = Number(batchNumber || 0);
-    const conversationId = String(options.activeConversationId.value || "").trim();
-    if (!Number.isFinite(normalizedBatchNumber) || normalizedBatchNumber <= 0 || !conversationId) return null;
-    toolReviewSubmittingBatchKey.value = `batch:${normalizedBatchNumber}`;
-    toolReviewReportErrorText.value = "";
-    try {
-      console.info("[工具审查][前端] 调用 submit_tool_review_batch", {
-        conversationId,
-        batchNumber: normalizedBatchNumber,
-        departmentId: String(departmentId || "").trim(),
-      });
-      const result = await invokeTauri<SubmitToolReviewTaskOutput>("submit_tool_review_batch", {
-        input: {
-          conversationId,
-          batchNumber: normalizedBatchNumber,
-          departmentId: String(departmentId || "").trim() || undefined,
-          apiConfigId: String(options.selectedChatModelId.value || "").trim() || undefined,
-        },
-      });
-      toolReviewCurrentReportId.value = String(result?.report?.id || "").trim();
-      toolReviewReportErrorText.value = "";
-      toolReviewErrorText.value = "";
-      return result?.report || null;
-    } catch (error) {
-      toolReviewReportErrorText.value = options.t("chat.toolReview.loadFailed", { err: formatToolReviewError(error) });
-      return null;
-    } finally {
-      if (toolReviewSubmittingBatchKey.value === `batch:${normalizedBatchNumber}`) {
-        toolReviewSubmittingBatchKey.value = "";
-      }
-    }
-  }
-
   function toggleToolReviewPanel() {
     if (!toolReviewButtonEnabled.value) {
       toolReviewPanelOpen.value = false;
@@ -521,7 +481,6 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
     loadToolReviewItemDetail,
     runToolReviewForCall,
     runToolReviewForBatch,
-    submitToolReviewBatch,
     submitToolReviewCode,
     deleteToolReviewReport,
     listToolReviewCommitOptions,

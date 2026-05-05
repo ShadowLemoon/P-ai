@@ -638,7 +638,6 @@ fn main() {
             get_tool_review_item_detail,
             run_tool_review_for_call,
             run_tool_review_for_batch,
-            submit_tool_review_batch,
             submit_tool_review_code,
             request_conversation_messages_after_async,
             rewind_conversation_from_message,

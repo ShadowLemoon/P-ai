@@ -716,11 +716,10 @@ pub(super) fn read_ready_message_store_index_summary(
     let visible_messages = messages
         .iter()
         .filter(|message| {
-            !message_store_message_is_tool_review_report(message)
-                && matches!(
-                    message.role.trim().to_ascii_lowercase().as_str(),
-                    "user" | "assistant" | "tool"
-                )
+            matches!(
+                message.role.trim().to_ascii_lowercase().as_str(),
+                "user" | "assistant" | "tool"
+            )
         })
         .collect::<Vec<_>>();
     let first_user_text_preview = messages
@@ -786,15 +785,9 @@ pub(super) fn read_ready_message_store_chat_snapshot(
     let latest_assistant = messages
         .iter()
         .rev()
-        .find(|message| {
-            message.role.trim().eq_ignore_ascii_case("assistant")
-                && !message_store_message_is_tool_review_report(message)
-        })
+        .find(|message| message.role.trim().eq_ignore_ascii_case("assistant"))
         .cloned();
-    let active_message_count = messages
-        .iter()
-        .filter(|message| !message_store_message_is_tool_review_report(message))
-        .count();
+    let active_message_count = messages.len();
     Ok(Some(MessageStoreChatSnapshot {
         latest_user,
         latest_assistant,
@@ -1558,13 +1551,6 @@ fn jsonl_snapshot_index_item_path(base_messages_file: &PathBuf, block_id: Option
         .join(format!("{block_id:06}.jsonl")))
 }
 
-fn message_store_message_is_tool_review_report(message: &ChatMessage) -> bool {
-    matches!(
-        message_store_provider_meta_kind(message).as_deref(),
-        Some("tool_review_report")
-    )
-}
-
 fn message_store_message_has_image(message: &ChatMessage) -> bool {
     message.parts.iter().any(|part| {
         matches!(part, MessagePart::Image { mime, .. } if !mime.trim().eq_ignore_ascii_case("application/pdf"))
@@ -1969,17 +1955,6 @@ mod message_store_reader_tests {
         message
     }
 
-    fn test_tool_review_report_message(id: &str) -> ChatMessage {
-        let mut message = test_message(id, "assistant");
-        message.provider_meta = Some(serde_json::json!({
-            "messageKind": "tool_review_report",
-            "messageMeta": {
-                "kind": "tool_review_report"
-            }
-        }));
-        message
-    }
-
     fn write_test_messages(messages: &[ChatMessage]) -> (PathBuf, PathBuf) {
         let root = std::env::temp_dir().join(format!(
             "easy-call-message-store-reader-{}",
@@ -2309,7 +2284,7 @@ mod message_store_reader_tests {
         let conversation = test_conversation(vec![
             test_message("u1", "user"),
             test_message("a1", "assistant"),
-            test_tool_review_report_message("review1"),
+            test_message("a2", "assistant"),
             test_message("u2", "user"),
         ]);
         run_jsonl_snapshot_migration(&paths, &conversation, false).expect("run migration");
@@ -2321,9 +2296,9 @@ mod message_store_reader_tests {
         assert_eq!(snapshot.latest_user.as_ref().map(|m| m.id.as_str()), Some("u2"));
         assert_eq!(
             snapshot.latest_assistant.as_ref().map(|m| m.id.as_str()),
-            Some("a1")
+            Some("a2")
         );
-        assert_eq!(snapshot.active_message_count, 3);
+        assert_eq!(snapshot.active_message_count, 4);
         let _ = fs::remove_dir_all(root);
     }
 

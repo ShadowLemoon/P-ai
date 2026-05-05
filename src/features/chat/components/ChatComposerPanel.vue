@@ -493,7 +493,7 @@ const DELEGATE_REVIEW_FALLBACK_BACKGROUND = [
   "- 只报告真实、可复现、会影响正确性/稳定性/安全性的缺陷。",
   "- 不要把风格建议、命名偏好或无法从 diff 证明的推测当成缺陷。",
   "",
-  "补充输出约束：当前任务是用户手动发起的异步委托，结果会直接写回原会话；请用自然语言报告审查结论，不要输出工具审查 JSON，除非用户明确要求 JSON。",
+  "补充输出约束：当前任务是用户手动发起的异步委托，结果会直接写回原会话；请用自然语言报告审查结论，不要输出工具评估 JSON，除非用户明确要求 JSON。",
 ].join("\n");
 let delegateReviewBackgroundCache = "";
 
@@ -702,7 +702,7 @@ async function loadDelegateReviewBackground(): Promise<string> {
         "",
         content,
         "",
-        "补充输出约束：当前任务是用户手动发起的异步委托，结果会直接写回原会话；请用自然语言报告审查结论，不要输出工具审查 JSON，除非用户明确要求 JSON。",
+        "补充输出约束：当前任务是用户手动发起的异步委托，结果会直接写回原会话；请用自然语言报告审查结论，不要输出工具评估 JSON，除非用户明确要求 JSON。",
       ].join("\n");
       return delegateReviewBackgroundCache;
     }

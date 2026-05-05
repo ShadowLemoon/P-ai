@@ -25,6 +25,7 @@ fn default_agent() -> AgentProfile {
     }
 }
 
+#[allow(dead_code)]
 fn default_deputy_agent() -> AgentProfile {
     let now = now_iso();
     AgentProfile {
@@ -124,10 +125,6 @@ fn ensure_required_builtin_agents(data: &mut AppData) -> bool {
     let mut changed = false;
     if !data.agents.iter().any(|agent| agent.id == DEFAULT_AGENT_ID) {
         data.agents.push(default_agent());
-        changed = true;
-    }
-    if !data.agents.iter().any(|agent| agent.id == DEPUTY_AGENT_ID) {
-        data.agents.push(default_deputy_agent());
         changed = true;
     }
     if !data.agents.iter().any(|agent| agent.id == USER_PERSONA_ID) {

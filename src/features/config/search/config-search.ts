@@ -8,6 +8,7 @@ export type ConfigSearchTab =
   | "skill"
   | "persona"
   | "department"
+  | "departmentTree"
   | "chatSettings"
   | "remoteIm"
   | "memory"
@@ -43,6 +44,7 @@ const CONFIG_SEARCH_SOURCES: ConfigSearchSource[] = [
   { tab: "skill", titleKey: "config.tabs.skill", titleFallback: "Skill", prefixes: [] },
   { tab: "persona", titleKey: "config.tabs.persona", titleFallback: "Persona", prefixes: ["config.persona"] },
   { tab: "department", titleKey: "config.tabs.department", titleFallback: "Department", prefixes: ["config.department"] },
+  { tab: "departmentTree", titleKey: "config.tabs.departmentTree", titleFallback: "Department Tree", prefixes: ["config.departmentTree"] },
   { tab: "chatSettings", titleKey: "config.tabs.chatSettings", titleFallback: "Chat", prefixes: ["config.chatSettings"] },
   { tab: "remoteIm", titleKey: "config.tabs.remoteIm", titleFallback: "Contacts", prefixes: ["config.remoteIm"] },
   { tab: "memory", titleKey: "config.tabs.memory", titleFallback: "Memory", prefixes: ["config.memory", "memory"] },

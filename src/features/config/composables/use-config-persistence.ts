@@ -15,6 +15,7 @@ import type {
 } from "../../../types/app";
 import type { SupportedLocale } from "../../../i18n";
 import { normalizeApiRequestFormat } from "../utils/api-request-format";
+import { normalizeDepartmentChildIds } from "../utils/department-graph";
 
 type TrFn = (key: string, params?: Record<string, unknown>) => string;
 
@@ -82,11 +83,14 @@ function mapDepartmentConfig(item: unknown): AppConfig["departments"][number] {
     agentIds: Array.isArray((item as { agentIds?: unknown[] })?.agentIds)
       ? ((item as { agentIds?: unknown[] }).agentIds || []).map((v) => String(v || "").trim()).filter(Boolean)
       : [],
+    childDepartmentIds: normalizeDepartmentChildIds(
+      (item as { childDepartmentIds?: unknown[] })?.childDepartmentIds,
+      String((item as { id?: unknown })?.id || "").trim(),
+    ),
     createdAt: String((item as { createdAt?: unknown })?.createdAt || "").trim(),
     updatedAt: String((item as { updatedAt?: unknown })?.updatedAt || "").trim(),
     orderIndex: Math.max(1, Number((item as { orderIndex?: unknown })?.orderIndex || 1)),
     isBuiltInAssistant: !!(item as { isBuiltInAssistant?: unknown })?.isBuiltInAssistant,
-    isDeputy: !!(item as { isDeputy?: unknown })?.isDeputy || String((item as { id?: unknown })?.id || "").trim() === "deputy-department",
     source: String((item as { source?: unknown })?.source || "").trim() || "main_config",
     scope: String((item as { scope?: unknown })?.scope || "").trim() || "global",
     permissionControl: {

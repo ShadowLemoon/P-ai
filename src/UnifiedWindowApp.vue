@@ -163,6 +163,7 @@
       :chat-unarchived-conversation-items="chatUnarchivedConversationItems"
       :chat-conversation-items="chatConversationItems"
       :create-conversation-department-options="createConversationDepartmentOptions"
+      :delegate-department-ids="delegateDepartmentIds"
       :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
       :archives="archives"
       :selected-archive-id="selectedArchiveId"
@@ -485,6 +486,7 @@ import type {
 import responseStylesJson from "./constants/response-styles.json";
 import { normalizeLocale } from "./i18n";
 import { searchConfigTabs, type ConfigSearchResult, type ConfigSearchTab } from "./features/config/search/config-search";
+import { departmentDirectChildIds } from "./features/config/utils/department-graph";
 import { ensureConversationMessageIds } from "./features/chat/utils/message-id";
 
 const props = withDefaults(defineProps<{ fixedViewMode?: "chat" | "archives" | "config" }>(), {
@@ -1844,11 +1846,13 @@ const chatPersonaPresenceChips = computed<ChatPersonaPresenceChip[]>(() => {
   });
 });
 const chatMentionOptions = computed<ChatMentionTarget[]>(() => {
+  const allowedDepartmentIds = new Set(delegateDepartmentIds.value);
   const seen = new Set<string>();
   const next: ChatMentionTarget[] = [];
   for (const department of config.departments) {
     const departmentId = String(department.id || "").trim();
     if (!departmentId) continue;
+    if (!allowedDepartmentIds.has(departmentId)) continue;
     const departmentName = String(department.name || "").trim() || departmentId;
     const firstAgentId = Array.isArray(department.agentIds)
       ? department.agentIds.map((item) => String(item || "").trim()).find((item) => !!item)
@@ -1931,6 +1935,9 @@ const createConversationDepartmentOptions = computed(() =>
         modelName: String(apiConfig?.model || "").trim(),
       };
     }),
+);
+const delegateDepartmentIds = computed(() =>
+  departmentDirectChildIds(currentForegroundDepartment.value, config.departments || []),
 );
 const configDirty = computed(() => buildConfigSnapshotJson() !== lastSavedConfigJson.value);
 const personaDirty = computed(() => buildPersonasSnapshotJson() !== lastSavedPersonasJson.value);

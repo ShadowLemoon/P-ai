@@ -187,11 +187,11 @@ export type DepartmentConfig = {
   apiConfigId: string;
   apiConfigIds: string[];
   agentIds: string[];
+  childDepartmentIds: string[];
   createdAt: string;
   updatedAt: string;
   orderIndex: number;
   isBuiltInAssistant?: boolean;
-  isDeputy?: boolean;
   source?: string;
   scope?: string;
   permissionControl?: DepartmentPermissionControl;

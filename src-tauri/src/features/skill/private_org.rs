@@ -352,6 +352,7 @@ fn load_private_departments_from_workspace(
             api_config_ids: vec![api_config_id.clone()],
             api_config_id,
             agent_ids,
+            child_department_ids: Vec::new(),
             created_at: now.clone(),
             updated_at: now,
             order_index: (merged.len() as i64) + 1,

@@ -27,6 +27,7 @@ export type ToolReviewReportRecord = {
   status: "pending" | "failed" | "success" | string;
   scope: string;
   target: string;
+  departmentId?: string;
   workspacePath: string;
   createdAt: string;
   updatedAt: string;
@@ -208,10 +209,10 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
     } as ToolReviewCommitPage;
   }
 
-  async function submitToolReviewCode(input: SubmitToolReviewCodeInput) {
+  async function submitToolReviewCode(input: SubmitToolReviewCodeInput): Promise<ToolReviewReportRecord | null> {
     const conversationId = String(input.conversationId || options.activeConversationId.value || "").trim();
     const scope = String(input.scope || "").trim() as ToolReviewCodeReviewScope;
-    if (!conversationId || !scope) return;
+    if (!conversationId || !scope) return null;
     toolReviewSubmittingBatchKey.value = `scope:${scope}`;
     toolReviewReportErrorText.value = "";
     try {
@@ -233,8 +234,10 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
       toolReviewCurrentReportId.value = String(result?.report?.id || "").trim();
       toolReviewReportErrorText.value = "";
       toolReviewErrorText.value = "";
+      return result?.report || null;
     } catch (error) {
       toolReviewReportErrorText.value = options.t("chat.toolReview.loadFailed", { err: formatToolReviewError(error) });
+      return null;
     } finally {
       if (toolReviewSubmittingBatchKey.value === `scope:${scope}`) {
         toolReviewSubmittingBatchKey.value = "";
@@ -415,10 +418,13 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
     }
   }
 
-  async function submitToolReviewBatch(batchNumber?: number, departmentId?: string) {
+  async function submitToolReviewBatch(
+    batchNumber?: number,
+    departmentId?: string,
+  ): Promise<ToolReviewReportRecord | null> {
     const normalizedBatchNumber = Number(batchNumber || 0);
     const conversationId = String(options.activeConversationId.value || "").trim();
-    if (!Number.isFinite(normalizedBatchNumber) || normalizedBatchNumber <= 0 || !conversationId) return;
+    if (!Number.isFinite(normalizedBatchNumber) || normalizedBatchNumber <= 0 || !conversationId) return null;
     toolReviewSubmittingBatchKey.value = `batch:${normalizedBatchNumber}`;
     toolReviewReportErrorText.value = "";
     try {
@@ -438,8 +444,10 @@ export function useChatToolReview(options: UseChatToolReviewOptions) {
       toolReviewCurrentReportId.value = String(result?.report?.id || "").trim();
       toolReviewReportErrorText.value = "";
       toolReviewErrorText.value = "";
+      return result?.report || null;
     } catch (error) {
       toolReviewReportErrorText.value = options.t("chat.toolReview.loadFailed", { err: formatToolReviewError(error) });
+      return null;
     } finally {
       if (toolReviewSubmittingBatchKey.value === `batch:${normalizedBatchNumber}`) {
         toolReviewSubmittingBatchKey.value = "";

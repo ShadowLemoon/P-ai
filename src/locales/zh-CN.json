@@ -32,6 +32,7 @@
       "skill": "技能",
       "persona": "人格",
       "department": "部门",
+      "departmentTree": "部门树",
       "chatSettings": "对话",
       "remoteIm": "联系人",
       "memory": "记忆",
@@ -464,7 +465,9 @@
         "assistantCannotBeDeputy": "主部门不能作为副手部门。",
         "deputyNeedsAssignee": "副手部门必须选择一个副手人格。",
         "deputyBuiltinPersonaForbidden": "用户人格和系统人格不能担任副手。",
-        "deputyAgentConflict": "副手部门的人格不能同时担任非副手部门。"
+        "deputyAgentConflict": "副手部门的人格不能同时担任非副手部门。",
+        "invalidChildDepartment": "部门「{name}」包含不存在的直接下级，请检查部门树配置。",
+        "departmentRelationCycle": "部门上下级关系中存在循环：{path}"
       },
       "summary": "部门概述",
       "summaryPlaceholder": "写给上级领导看：这个部门适合承接什么任务。",
@@ -487,6 +490,18 @@
       "assignee": "任命",
       "assigneePlaceholder": "暂不指定",
       "selectHint": "请从左侧选择一个部门"
+    },
+    "departmentTree": {
+      "title": "部门树",
+      "hint": "在这里维护部门的直接下级关系。委托时，当前部门只能把任务发给自己的直接下级。",
+      "currentDepartment": "当前部门",
+      "directChildren": "直接下级",
+      "directChildrenHint": "一个下级可以同时被多个上级部门共用；这里只维护当前部门的直属下级。",
+      "noCandidateChildren": "当前没有可挂载的其他部门。",
+      "selectedChildren": "已选直接下级",
+      "noSelectedChildren": "当前还没有直接下级。",
+      "previewTitle": "关系图预览",
+      "previewHint": "下方使用 Mermaid 自动排布所有部门关系，上级在上，下级在下。"
     },
     "chatSettings": {
       "chatLlmProvider": "助理部门驱动模型",

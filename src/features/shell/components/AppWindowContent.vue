@@ -174,6 +174,7 @@
         :unarchived-conversation-items="chatUnarchivedConversationItems"
         :conversation-items="chatConversationItems || chatUnarchivedConversationItems"
         :create-conversation-department-options="createConversationDepartmentOptions"
+        :delegate-department-ids="delegateDepartmentIds"
         :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
         :current-theme="currentTheme"
         :detached-chat-window="detachedChatWindow"
@@ -395,7 +396,7 @@ const props = defineProps<{
   viewMode: "chat" | "archives" | "config";
   detachedChatWindow?: boolean;
   config: AppConfig;
-  configTab: "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "about";
+  configTab: "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
   localeOptions: Array<{ value: "zh-CN" | "en-US" | "zh-TW"; label: string }>;
   currentTheme: string;
   generatedThemeControls: GeneratedThemeControls;
@@ -520,6 +521,7 @@ const props = defineProps<{
   chatUnarchivedConversationItems: ChatConversationOverviewItem[];
   chatConversationItems?: ChatConversationOverviewItem[];
   createConversationDepartmentOptions: Array<{ id: string; name: string; ownerAgentId?: string; ownerName: string; providerName?: string; modelName?: string }>;
+  delegateDepartmentIds: string[];
   defaultCreateConversationDepartmentId: string;
   archives: ArchiveSummary[];
   selectedArchiveId: string;

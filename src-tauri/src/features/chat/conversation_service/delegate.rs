@@ -85,6 +85,13 @@ impl ConversationService {
         let target_department = department_by_id(&config, target_department_id)
             .cloned()
             .ok_or_else(|| format!("目标部门不存在，departmentId={target_department_id}"))?;
+        if !department_has_direct_child(&config, &source_department.id, &target_department.id) {
+            drop(guard);
+            return Err(format!(
+                "目标部门不是当前部门的直接下级，sourceDepartmentId={}，targetDepartmentId={}",
+                source_department.id, target_department.id
+            ));
+        }
         let target_agent_id = target_department
             .agent_ids
             .iter()

@@ -382,6 +382,7 @@
             :persona-name-map="personaNameMap"
             :persona-avatar-url-map="personaAvatarUrlMap"
             :create-conversation-department-options="createConversationDepartmentOptions"
+            :delegate-department-ids="delegateDepartmentIds"
             :default-create-conversation-department-id="defaultCreateConversationDepartmentId"
             @update:chat-input="$emit('update:chatInput', $event)"
             @add-mention="$emit('addMention', $event)"
@@ -457,7 +458,7 @@
         :current-workspace-root-path="currentWorkspaceRootPath"
         :workspaces="workspaces"
         :current-department-id="currentDepartmentId"
-        :department-options="createConversationDepartmentOptions"
+        :department-options="toolReviewDepartmentOptions"
         :delegate-statuses="delegateStatuses"
         :delegate-loading="delegateStatusesLoading"
         :delegate-error-text="delegateStatusesErrorText"
@@ -500,6 +501,7 @@ import { useChatImagePreview } from "../composables/use-chat-image-preview";
 import { useChatMessageActions } from "../composables/use-chat-message-actions";
 import { useChatScrollLayout } from "../composables/use-chat-scroll-layout";
 import { useChatToolReview, type ToolReviewCodeReviewScope, type ToolReviewCommitOption, type ToolReviewReportRecord } from "../composables/use-chat-tool-review";
+import { resolveRetryToolReviewDepartmentId } from "../utils/tool-review-department";
 import type { TerminalApprovalConversationItem } from "../../shell/composables/use-terminal-approval";
 import { isAbsoluteLocalPath, normalizeLocalLinkHref } from "../utils/local-link";
 
@@ -659,6 +661,7 @@ const props = defineProps<{
   unarchivedConversationItems: ChatConversationOverviewItem[];
   conversationItems?: ChatConversationOverviewItem[];
   createConversationDepartmentOptions: Array<{ id: string; name: string; ownerAgentId?: string; ownerName: string; providerName?: string; modelName?: string }>;
+  delegateDepartmentIds: string[];
   defaultCreateConversationDepartmentId: string;
   detachedChatWindow?: boolean;
   terminalApprovals?: TerminalApprovalConversationItem[];
@@ -666,6 +669,15 @@ const props = defineProps<{
 }>();
 
 const markdownIsDark = computed(() => isDarkAppTheme(props.currentTheme));
+const toolReviewDepartmentOptions = computed(() => {
+  const allowedDepartmentIds = new Set(
+    (Array.isArray(props.delegateDepartmentIds) ? props.delegateDepartmentIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
+  return (Array.isArray(props.createConversationDepartmentOptions) ? props.createConversationDepartmentOptions : [])
+    .filter((item) => allowedDepartmentIds.has(String(item.id || "").trim()));
+});
 const activeConversationSummary = computed(() => {
   const activeConversationId = String(props.activeConversationId || "").trim();
   if (!activeConversationId) return null;
@@ -791,23 +803,12 @@ async function handleRetryToolReviewReport(report: ToolReviewReportRecord) {
     toolReviewErrorText.value = "当前没有活跃会话，无法重新生成审查任务。";
     return;
   }
-  try {
-    await deleteToolReviewReport({
-      conversationId,
-      reportId,
-    });
-  } catch (error) {
-    const detail = error instanceof Error ? String(error.message || "").trim() : String(error);
-    console.error("[工具审查][前端] 删除旧审查报告失败，取消重新生成", {
-      conversationId,
-      reportId,
-      scope,
-      target,
-      error,
-    });
-    toolReviewErrorText.value = t("chat.toolReview.loadFailed", { err: detail || "删除旧审查报告失败" });
-    return;
-  }
+  const retryBatchDepartmentId = String(report.departmentId || props.currentDepartmentId || "").trim();
+  const retryCodeReviewDepartmentId = resolveRetryToolReviewDepartmentId({
+    reportDepartmentId: String(report.departmentId || "").trim(),
+    currentDepartmentId: String(props.currentDepartmentId || "").trim(),
+    departmentOptions: toolReviewDepartmentOptions.value,
+  });
   if (scope === "batch") {
     const matched = /^第\s*(\d+)\s*批$/.exec(target);
     if (!matched) {
@@ -823,24 +824,63 @@ async function handleRetryToolReviewReport(report: ToolReviewReportRecord) {
       conversationId,
       reportId,
       batchNumber,
+      departmentId: retryBatchDepartmentId,
     });
-    void submitToolReviewBatch(batchNumber, String(props.currentDepartmentId || "").trim());
+    const nextReport = await submitToolReviewBatch(batchNumber, retryBatchDepartmentId);
+    if (!nextReport) return;
+    try {
+      await deleteToolReviewReport({
+        conversationId,
+        reportId,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? String(error.message || "").trim() : String(error);
+      console.error("[工具审查][前端] 删除旧批次审查报告失败", {
+        conversationId,
+        reportId,
+        batchNumber,
+        error,
+      });
+      toolReviewErrorText.value = t("chat.toolReview.loadFailed", { err: detail || "删除旧审查报告失败" });
+    }
     return;
   }
   if (scope === "commit" || scope === "main" || scope === "uncommitted" || scope === "custom") {
+    if (!retryCodeReviewDepartmentId) {
+      toolReviewErrorText.value = "当前没有可用直属下级部门，无法重新生成代码审查任务。";
+      return;
+    }
     console.info("[工具审查][前端] 重新生成代码审查", {
       conversationId,
       reportId,
       scope,
       target,
+      departmentId: retryCodeReviewDepartmentId,
     });
-    void submitToolReviewCode({
+    const nextReport = await submitToolReviewCode({
       conversationId,
       scope,
       target: target || undefined,
-      departmentId: String(props.currentDepartmentId || "").trim(),
+      departmentId: retryCodeReviewDepartmentId,
       apiConfigId: String(props.selectedChatModelId || "").trim() || undefined,
     });
+    if (!nextReport) return;
+    try {
+      await deleteToolReviewReport({
+        conversationId,
+        reportId,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? String(error.message || "").trim() : String(error);
+      console.error("[工具审查][前端] 删除旧代码审查报告失败", {
+        conversationId,
+        reportId,
+        scope,
+        target,
+        error,
+      });
+      toolReviewErrorText.value = t("chat.toolReview.loadFailed", { err: detail || "删除旧审查报告失败" });
+    }
     return;
   }
   toolReviewErrorText.value = `不支持重新生成该审查范围：${scope || "空"}`;

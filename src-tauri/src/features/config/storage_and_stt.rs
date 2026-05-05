@@ -41,25 +41,8 @@ fn write_config(path: &PathBuf, config: &AppConfig) -> Result<(), String> {
 }
 
 fn run_startup_self_checks(config: &mut AppConfig) -> bool {
-    let mut changed = false;
-    for department in &mut config.departments {
-        if !department.is_deputy && department.id != DEPUTY_DEPARTMENT_ID {
-            continue;
-        }
-        let current = department
-            .agent_ids
-            .iter()
-            .find(|id| !id.trim().is_empty())
-            .map(|id| id.trim().to_string())
-            .unwrap_or_default();
-        if current != DEFAULT_AGENT_ID {
-            continue;
-        }
-        department.agent_ids = vec![DEPUTY_AGENT_ID.to_string()];
-        department.updated_at = now_iso();
-        changed = true;
-    }
-    changed
+    let _ = config;
+    false
 }
 
 fn api_endpoint_id(provider_id: &str, model_id: &str) -> String {
@@ -875,8 +858,7 @@ fn normalize_departments(config: &mut AppConfig) {
         if api_config_ids.is_empty()
             && !raw.api_config_id.trim().is_empty()
             && !fallback_api_id.trim().is_empty()
-            && (raw.id == DEPUTY_DEPARTMENT_ID
-                || raw.id == REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID)
+            && raw.id == REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID
         {
             api_config_ids.push(fallback_api_id.clone());
         }
@@ -904,11 +886,15 @@ fn normalize_departments(config: &mut AppConfig) {
             api_config_ids,
             api_config_id,
             agent_ids,
+            child_department_ids: normalize_department_child_ids(
+                &raw.child_department_ids,
+                &id,
+            ),
             created_at: raw.created_at.trim().to_string(),
             updated_at: raw.updated_at.trim().to_string(),
             order_index: raw.order_index,
             is_built_in_assistant: raw.is_built_in_assistant || id == ASSISTANT_DEPARTMENT_ID,
-            is_deputy: raw.is_deputy || id == DEPUTY_DEPARTMENT_ID,
+            is_deputy: raw.is_deputy,
             source: if raw.source.trim().is_empty() { default_main_source() } else { raw.source.trim().to_string() },
             scope: if raw.scope.trim().is_empty() { default_global_scope() } else { raw.scope.trim().to_string() },
             permission_control: normalize_department_permission_control(&raw.permission_control),
@@ -935,9 +921,6 @@ fn normalize_departments(config: &mut AppConfig) {
 
     if !out.iter().any(|item| item.is_built_in_assistant || item.id == ASSISTANT_DEPARTMENT_ID) {
         out.push(default_assistant_department(&fallback_api_id));
-    }
-    if !out.iter().any(|item| item.id == DEPUTY_DEPARTMENT_ID) {
-        out.push(default_deputy_department(&fallback_api_id));
     }
     if !out
         .iter()
@@ -970,21 +953,6 @@ fn normalize_departments(config: &mut AppConfig) {
             if item.agent_ids.is_empty() {
                 item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
             }
-        } else if item.id == DEPUTY_DEPARTMENT_ID {
-            item.is_deputy = true;
-            if item.name.trim().is_empty() {
-                item.name = "副手".to_string();
-            }
-            if item.summary.trim().is_empty() {
-                item.summary = "负责快速执行上级派发的明确任务，强调最小行动与严格边界。".to_string();
-            }
-            if item.guide.trim().is_empty() {
-                item.guide = "你是副手部门。你的核心原则是严格不越权、不擅自扩展需求、不多想。收到上级派发的任务后，用最少的工具调用、最快的速度完成明确目标；若信息不足或任务超出指令边界，就直接说明缺口并等待主部门继续决策。".to_string();
-            }
-            normalize_department_api_bindings(item, &valid_text_chat_api_ids);
-            if item.agent_ids.is_empty() {
-                item.agent_ids = vec![DEPUTY_AGENT_ID.to_string()];
-            }
         } else if item.id == REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID {
             item.is_deputy = false;
             if item.name.trim().is_empty() {
@@ -1002,34 +970,24 @@ fn normalize_departments(config: &mut AppConfig) {
             }
         }
     }
-
-    let non_deputy_agent_ids = out
+    let valid_department_ids = out
         .iter()
-        .filter(|department| !department.is_deputy)
-        .flat_map(|department| department.agent_ids.iter())
-        .map(|id| id.trim().to_string())
+        .map(|item| item.id.trim().to_string())
         .filter(|id| !id.is_empty())
         .collect::<std::collections::HashSet<_>>();
     for item in &mut out {
-        if !item.is_deputy {
-            item.agent_ids.retain(|id| id.trim() != DEPUTY_AGENT_ID);
-            if (item.id == ASSISTANT_DEPARTMENT_ID || item.is_built_in_assistant)
-                && item.agent_ids.is_empty()
-            {
-                item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
-            }
-            continue;
-        }
-        let current = item
-            .agent_ids
-            .iter()
-            .find(|id| !id.trim().is_empty())
-            .map(|id| id.trim().to_string())
-            .unwrap_or_default();
-        if current.is_empty() || non_deputy_agent_ids.contains(&current) {
-            item.agent_ids = vec![DEPUTY_AGENT_ID.to_string()];
-        } else {
-            item.agent_ids = vec![current];
+        item.is_deputy = false;
+        item.child_department_ids = normalize_department_child_ids(
+            &item.child_department_ids,
+            &item.id,
+        )
+        .into_iter()
+        .filter(|id| valid_department_ids.contains(id))
+        .collect::<Vec<_>>();
+        if (item.id == ASSISTANT_DEPARTMENT_ID || item.is_built_in_assistant)
+            && item.agent_ids.is_empty()
+        {
+            item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
         }
     }
 

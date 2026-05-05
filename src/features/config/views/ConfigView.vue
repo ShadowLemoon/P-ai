@@ -27,6 +27,9 @@
           <a :class="{ 'active': props.configTab === 'department', 'menu-active': props.configTab === 'department', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('department')">{{ t("config.tabs.department") }}</a>
         </li>
         <li>
+          <a :class="{ 'active': props.configTab === 'departmentTree', 'menu-active': props.configTab === 'departmentTree', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('departmentTree')">{{ t("config.tabs.departmentTree") }}</a>
+        </li>
+        <li>
           <a :class="{ 'active': props.configTab === 'chatSettings', 'menu-active': props.configTab === 'chatSettings', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('chatSettings')">{{ t("config.tabs.chatSettings") }}</a>
         </li>
         <li>
@@ -58,7 +61,7 @@
 
     <div
       class="flex-1 min-w-0"
-      :class="props.configTab === 'api' || props.configTab === 'department' ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-gutter-stable'"
+      :class="props.configTab === 'api' || props.configTab === 'department' || props.configTab === 'departmentTree' ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-gutter-stable'"
     >
       <div v-if="props.configTab === 'api'" class="flex-1 min-h-0">
         <ApiTab
@@ -88,6 +91,15 @@
           :save-config-action="saveConfigAction"
           :set-status-action="setStatusAction"
           @update:assistant-department-assignee-id="$emit('update:assistantDepartmentAgentId', $event)"
+        />
+      </div>
+
+      <div v-else-if="props.configTab === 'departmentTree'" class="flex-1 min-h-0">
+        <DepartmentTreeTab
+          :config="config"
+          :saving-config="savingConfig"
+          :save-config-action="saveConfigAction"
+          :set-status-action="setStatusAction"
         />
       </div>
 
@@ -354,6 +366,7 @@ import McpTab from "./config-tabs/McpTab.vue";
 import SkillTab from "./config-tabs/SkillTab.vue";
 import PersonaTab from "./config-tabs/PersonaTab.vue";
 import DepartmentTab from "./config-tabs/DepartmentTab.vue";
+import DepartmentTreeTab from "./config-tabs/DepartmentTreeTab.vue";
 import ChatSettingsTab from "./config-tabs/ChatSettingsTab.vue";
 import RemoteImTab from "./config-tabs/RemoteImTab.vue";
 import MemoryTab from "./config-tabs/MemoryTab.vue";
@@ -366,7 +379,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeTauri } from "../../../services/tauri-api";
 import { toErrorMessage } from "../../../utils/error";
 
-type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
+type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
 type AvatarTarget = { agentId: string };
 
 const props = defineProps<{

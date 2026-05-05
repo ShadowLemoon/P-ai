@@ -439,6 +439,7 @@ const props = defineProps<{
   personaNameMap: Record<string, string>;
   personaAvatarUrlMap: Record<string, string>;
   createConversationDepartmentOptions: ConversationDepartmentOption[];
+  delegateDepartmentIds: string[];
   defaultCreateConversationDepartmentId: string;
 }>();
 
@@ -598,6 +599,13 @@ const activeConversationAgentId = computed(() => {
     )?.agentId || "",
   ).trim();
 });
+const allowedDelegateDepartmentIds = computed(() =>
+  new Set(
+    (Array.isArray(props.delegateDepartmentIds) ? props.delegateDepartmentIds : [])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  ),
+);
 const delegateDepartmentOptions = computed(() =>
   (Array.isArray(props.createConversationDepartmentOptions) ? props.createConversationDepartmentOptions : [])
     .map((item) => ({
@@ -610,6 +618,7 @@ const delegateDepartmentOptions = computed(() =>
     }))
     .filter((item) => {
       if (!item.id) return false;
+      if (!allowedDelegateDepartmentIds.value.has(item.id)) return false;
       const activeAgentId = activeConversationAgentId.value;
       return !activeAgentId || item.ownerAgentId !== activeAgentId;
     }),

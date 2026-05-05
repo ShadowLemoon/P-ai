@@ -32,6 +32,7 @@
       "skill": "Skill",
       "persona": "Persona",
       "department": "Departments",
+      "departmentTree": "Department Tree",
       "chatSettings": "Chat",
       "remoteIm": "Contacts",
       "memory": "Memory",
@@ -470,7 +471,9 @@
         "assistantCannotBeDeputy": "The primary department cannot be a deputy department.",
         "deputyNeedsAssignee": "Deputy departments must select one deputy persona.",
         "deputyBuiltinPersonaForbidden": "The user persona and system persona cannot serve as deputies.",
-        "deputyAgentConflict": "A deputy department persona cannot also serve a non-deputy department."
+        "deputyAgentConflict": "A deputy department persona cannot also serve a non-deputy department.",
+        "invalidChildDepartment": "Department \"{name}\" contains a direct child that no longer exists.",
+        "departmentRelationCycle": "The department hierarchy contains a cycle: {path}"
       },
       "summary": "Department Summary",
       "summaryPlaceholder": "Visible to the leader: what kind of work this department should receive.",
@@ -493,6 +496,18 @@
       "assignee": "Assignee",
       "assigneePlaceholder": "Not assigned",
       "selectHint": "Please select a department from the left"
+    },
+    "departmentTree": {
+      "title": "Department Tree",
+      "hint": "Manage direct child relationships here. A department can delegate work only to its direct children.",
+      "currentDepartment": "Current Department",
+      "directChildren": "Direct Children",
+      "directChildrenHint": "A child department can be shared by multiple parent departments. This page only edits the current department's direct children.",
+      "noCandidateChildren": "There are no other departments available to attach.",
+      "selectedChildren": "Selected Direct Children",
+      "noSelectedChildren": "This department has no direct children yet.",
+      "previewTitle": "Diagram Preview",
+      "previewHint": "The Mermaid diagram below auto-arranges every department relation with parents above children."
     },
     "chatSettings": {
       "chatLlmProvider": "Assistant Department Model",

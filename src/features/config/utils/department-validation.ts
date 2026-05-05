@@ -1,4 +1,5 @@
 import type { ApiConfigItem, AppConfig } from "../../../types/app";
+import { findDepartmentGraphCycle, normalizeDepartmentChildIds } from "./department-graph";
 
 type TrFn = (key: string, params?: Record<string, unknown>) => string;
 
@@ -77,27 +78,23 @@ export function validateDepartmentConfig(
     return t("config.department.validation.missingAssistant");
   }
 
-  const nonDeputyAgentIds = new Set<string>();
+  const existingIds = new Set(departments.map((item) => String(item.id || "").trim()).filter(Boolean));
   for (const department of departments) {
-    if (department.isDeputy) continue;
-    const agentId = String(department.agentIds?.[0] || "").trim();
-    if (agentId) nonDeputyAgentIds.add(agentId);
+    const departmentId = String(department.id || "").trim();
+    for (const childId of normalizeDepartmentChildIds(department.childDepartmentIds, departmentId)) {
+      if (!existingIds.has(childId)) {
+        return t("config.department.validation.invalidChildDepartment", {
+          name: department.name || department.id,
+        });
+      }
+    }
   }
-  for (const department of departments) {
-    if ((department.id === "assistant-department" || department.isBuiltInAssistant) && department.isDeputy) {
-      return t("config.department.validation.assistantCannotBeDeputy");
-    }
-    if (!department.isDeputy) continue;
-    const agentId = String(department.agentIds?.[0] || "").trim();
-    if (!agentId) {
-      return t("config.department.validation.deputyNeedsAssignee");
-    }
-    if (agentId === "user-persona" || agentId === "system-persona") {
-      return t("config.department.validation.deputyBuiltinPersonaForbidden");
-    }
-    if (nonDeputyAgentIds.has(agentId)) {
-      return t("config.department.validation.deputyAgentConflict");
-    }
+
+  const cycle = findDepartmentGraphCycle(departments);
+  if (cycle) {
+    return t("config.department.validation.departmentRelationCycle", {
+      path: cycle.join(" -> "),
+    });
   }
 
   return "";

@@ -325,14 +325,6 @@ async fn builtin_delegate(
         );
         return Ok(delegate_failed_result("委托线程中禁止再次调用 delegate"));
     }
-    if preflight.source_department.id != ASSISTANT_DEPARTMENT_ID
-        && !preflight.source_department.is_built_in_assistant
-    {
-        return Ok(delegate_failed_result(
-            "delegate.mode=async 只能由主助理发起；需要当前线程等待结果时请使用 mode=sync",
-        ));
-    }
-
     let call_stack = match resolve_delegate_call_stack(
         preflight.current_thread.as_ref(),
         &preflight.source_department,

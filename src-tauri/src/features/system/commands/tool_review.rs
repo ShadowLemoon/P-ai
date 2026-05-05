@@ -363,6 +363,8 @@ struct ToolReviewReportRecord {
     status: String,
     scope: String,
     target: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    department_id: Option<String>,
     workspace_path: String,
     created_at: String,
     updated_at: String,
@@ -568,6 +570,7 @@ fn tool_review_report_from_message(message: &ChatMessage) -> Option<ToolReviewRe
         status: "success".to_string(),
         scope: "batch".to_string(),
         target: batch_key.clone(),
+        department_id: None,
         workspace_path: String::new(),
         created_at: message.created_at.clone(),
         updated_at: message.created_at.clone(),
@@ -1313,6 +1316,7 @@ fn tool_review_create_pending_report(
     conversation_id: &str,
     scope: &str,
     target: &str,
+    department_id: Option<&str>,
     workspace_path: &str,
 ) -> Result<ToolReviewReportRecord, String> {
     let mut records = tool_review_read_report_records(data_path, conversation_id)?;
@@ -1324,6 +1328,10 @@ fn tool_review_create_pending_report(
         status: "pending".to_string(),
         scope: scope.trim().to_string(),
         target: target.trim().to_string(),
+        department_id: department_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned),
         workspace_path: workspace_path.trim().to_string(),
         created_at: now.clone(),
         updated_at: now,
@@ -1421,6 +1429,7 @@ fn tool_review_migrate_legacy_reports_after_message_store(
             status: "success".to_string(),
             scope: legacy.scope,
             target: legacy.target,
+            department_id: None,
             workspace_path: legacy.workspace_path,
             created_at: legacy.created_at,
             updated_at: legacy.updated_at,
@@ -1778,6 +1787,7 @@ async fn submit_tool_review_batch(
         conversation_id,
         "batch",
         &report_target,
+        requested_department_id.as_deref(),
         &workspace_text,
     )?;
     runtime_log_info(format!(
@@ -2065,6 +2075,7 @@ async fn submit_tool_review_code(
         conversation_id,
         scope,
         &target_text,
+        Some(&target_department_id),
         &workspace_text,
     )
     .map_err(|err| {
@@ -2244,4 +2255,30 @@ async fn submit_tool_review_code(
     });
 
     Ok(SubmitToolReviewBatchOutput { report: pending_report })
+}
+
+#[cfg(test)]
+mod tool_review_tests {
+    use super::ToolReviewReportRecord;
+
+    #[test]
+    fn tool_review_report_record_should_deserialize_without_department_id() {
+        let record = serde_json::from_str::<ToolReviewReportRecord>(
+            r#"{
+                "id":"report-1",
+                "conversationId":"conversation-1",
+                "title":"Report",
+                "status":"success",
+                "scope":"batch",
+                "target":"第 1 批",
+                "workspacePath":"E:/workspace",
+                "createdAt":"2026-05-05T00:00:00.000Z",
+                "updatedAt":"2026-05-05T00:00:00.000Z",
+                "reportText":"ok"
+            }"#,
+        )
+        .expect("legacy report record should deserialize");
+
+        assert_eq!(record.department_id, None);
+    }
 }

@@ -317,20 +317,33 @@
     }
 
     #[test]
-    fn normalize_app_config_should_force_deputy_departments_to_deputy_only_agents() {
+    fn normalize_app_config_should_preserve_shared_child_departments_and_drop_invalid_refs() {
         let mut cfg = AppConfig::default();
         let mut primary = default_assistant_department("");
         primary.id = "department-primary".to_string();
         primary.name = "主部门".to_string();
         primary.is_built_in_assistant = false;
         primary.agent_ids = vec!["agent-a".to_string()];
+        primary.child_department_ids = vec![
+            "department-shared".to_string(),
+            "department-primary".to_string(),
+            "missing-department".to_string(),
+        ];
 
-        let mut deputy = default_deputy_department("");
-        deputy.id = "department-deputy-custom".to_string();
-        deputy.name = "临时副手".to_string();
-        deputy.agent_ids = vec!["agent-a".to_string()];
+        let mut parent_b = default_assistant_department("");
+        parent_b.id = "department-parent-b".to_string();
+        parent_b.name = "项目二".to_string();
+        parent_b.is_built_in_assistant = false;
+        parent_b.agent_ids = vec!["agent-b".to_string()];
+        parent_b.child_department_ids = vec!["department-shared".to_string()];
 
-        cfg.departments = vec![primary, deputy];
+        let mut shared = default_assistant_department("");
+        shared.id = "department-shared".to_string();
+        shared.name = "共享施工队".to_string();
+        shared.is_built_in_assistant = false;
+        shared.agent_ids = vec!["agent-c".to_string()];
+
+        cfg.departments = vec![primary, parent_b, shared];
 
         normalize_app_config(&mut cfg);
 
@@ -339,48 +352,31 @@
             .iter()
             .find(|item| item.id == "department-primary")
             .expect("primary department");
-        assert!(!primary.is_deputy);
-        assert_eq!(primary.agent_ids, vec!["agent-a".to_string()]);
+        assert_eq!(
+            primary.child_department_ids,
+            vec!["department-shared".to_string()]
+        );
 
-        let deputy = cfg
+        let parent_b = cfg
             .departments
             .iter()
-            .find(|item| item.id == "department-deputy-custom")
-            .expect("custom deputy department");
-        assert!(deputy.is_deputy);
-        assert_eq!(deputy.agent_ids, vec![DEPUTY_AGENT_ID.to_string()]);
-
-        let builtin_deputy = cfg
-            .departments
-            .iter()
-            .find(|item| item.id == DEPUTY_DEPARTMENT_ID)
-            .expect("builtin deputy department");
-        assert!(builtin_deputy.is_deputy);
-        assert_eq!(builtin_deputy.agent_ids, vec![DEPUTY_AGENT_ID.to_string()]);
+            .find(|item| item.id == "department-parent-b")
+            .expect("department-parent-b");
+        assert_eq!(
+            parent_b.child_department_ids,
+            vec!["department-shared".to_string()]
+        );
     }
 
     #[test]
-    fn startup_self_check_should_fix_deputy_department_default_agent() {
+    fn startup_self_check_should_be_noop_after_deputy_semantics_removed() {
         let mut cfg = AppConfig::default();
-        let deputy = cfg
-            .departments
-            .iter_mut()
-            .find(|item| item.id == DEPUTY_DEPARTMENT_ID)
-            .expect("builtin deputy department");
-        deputy.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
-        let previous_updated_at = deputy.updated_at.clone();
-
-        assert!(run_startup_self_checks(&mut cfg));
-
-        let deputy = cfg
-            .departments
-            .iter()
-            .find(|item| item.id == DEPUTY_DEPARTMENT_ID)
-            .expect("builtin deputy department");
-        assert_eq!(deputy.agent_ids, vec![DEPUTY_AGENT_ID.to_string()]);
-        assert!(!deputy.updated_at.is_empty());
-        assert_eq!(parse_rfc3339_time(&deputy.updated_at).is_some(), true);
-        let _ = previous_updated_at;
+        let snapshot = serde_json::to_string(&cfg.departments).expect("departments snapshot");
+        assert!(!run_startup_self_checks(&mut cfg));
+        assert_eq!(
+            snapshot,
+            serde_json::to_string(&cfg.departments).expect("departments snapshot after self check")
+        );
     }
 
     #[test]
@@ -416,6 +412,7 @@
                     api_config_ids: vec!["embed-a".to_string()],
                     api_config_id: "embed-a".to_string(),
                     agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
+                    child_department_ids: Vec::new(),
                     created_at: "2026-03-10T00:00:00Z".to_string(),
                     updated_at: "2026-03-10T00:00:00Z".to_string(),
                     order_index: 1,
@@ -433,6 +430,7 @@
                     api_config_ids: vec!["stt-a".to_string()],
                     api_config_id: "stt-a".to_string(),
                     agent_ids: vec![],
+                    child_department_ids: Vec::new(),
                     created_at: "2026-03-10T00:00:00Z".to_string(),
                     updated_at: "2026-03-10T00:00:00Z".to_string(),
                     order_index: 2,
@@ -569,6 +567,7 @@
                 api_config_ids: Vec::new(),
                 api_config_id: String::new(),
                 agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
+                child_department_ids: Vec::new(),
                 created_at: "2026-03-10T00:00:00Z".to_string(),
                 updated_at: "2026-03-10T00:00:00Z".to_string(),
                 order_index: 1,

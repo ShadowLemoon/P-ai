@@ -1510,8 +1510,8 @@ fn department_prompt_labels(_ui_language: &str) -> DepartmentPromptLabels {
         current_name_label: "部门",
         current_summary_label: "部门概述",
         current_guide_label: "部门办事指南",
-        available_title: "你的可用部门",
-        available_empty: "当前没有可用部门。",
+        available_title: "你的直属下级部门",
+        available_empty: "当前没有可用的直属下级部门。",
         available_id_label: "部门 ID",
         available_summary_label: "概述",
         empty_summary: "未提供",
@@ -1596,9 +1596,8 @@ fn prompt_department_context_from_provider_meta(
                 .collect::<HashSet<String>>()
         })
         .unwrap_or_default();
-    let mut available = departments
-        .iter()
-        .filter(|department| department.is_deputy)
+    let mut available = department_direct_child_departments(&temp_config, current_department)
+        .into_iter()
         .filter(|department| department.id != current_department.id)
         .filter(|department| {
             department
@@ -1632,9 +1631,8 @@ fn build_departments_prompt_block(
     let current_department = department_for_agent_id(&config, &agent.id);
     let prompt_context = current_department.map(|department| PromptDepartmentContext {
         current: prompt_department_card_from_config(department, labels.empty_summary),
-        available: departments
-            .iter()
-            .filter(|item| item.is_deputy)
+        available: department_direct_child_departments(&config, department)
+            .into_iter()
             .filter(|item| item.id != department.id)
             .filter(|item| {
                 item.agent_ids

@@ -131,7 +131,6 @@ impl Default for AppData {
             version: APP_DATA_SCHEMA_VERSION,
             agents: vec![
                 default_agent(),
-                default_deputy_agent(),
                 default_user_persona(),
                 default_system_persona(),
             ],
@@ -271,6 +270,50 @@ fn department_by_id<'a>(
         return None;
     }
     config.departments.iter().find(|item| item.id == trimmed)
+}
+
+fn department_direct_child_ids(
+    config: &AppConfig,
+    department: &DepartmentConfig,
+) -> Vec<String> {
+    let valid_ids = config
+        .departments
+        .iter()
+        .map(|item| item.id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .collect::<std::collections::HashSet<_>>();
+    normalize_department_child_ids(&department.child_department_ids, &department.id)
+        .into_iter()
+        .filter(|id| valid_ids.contains(id))
+        .collect::<Vec<_>>()
+}
+
+fn department_direct_child_departments<'a>(
+    config: &'a AppConfig,
+    department: &DepartmentConfig,
+) -> Vec<&'a DepartmentConfig> {
+    department_direct_child_ids(config, department)
+        .into_iter()
+        .filter_map(|id| department_by_id(config, &id))
+        .collect::<Vec<_>>()
+}
+
+fn department_has_direct_child(
+    config: &AppConfig,
+    source_department_id: &str,
+    target_department_id: &str,
+) -> bool {
+    let source_department = match department_by_id(config, source_department_id) {
+        Some(department) => department,
+        None => return false,
+    };
+    let target_department_id = target_department_id.trim();
+    if target_department_id.is_empty() {
+        return false;
+    }
+    department_direct_child_ids(config, source_department)
+        .iter()
+        .any(|id| id == target_department_id)
 }
 
 fn department_for_agent_id<'a>(
@@ -663,5 +706,45 @@ mod types_storage_tests {
             DepartmentPermissionCategory::Skill,
             &["github-project-breakdown"],
         ));
+    }
+
+    #[test]
+    fn department_direct_child_helpers_should_support_shared_children() {
+        let mut config = AppConfig::default();
+        let mut parent_a = default_assistant_department("api-a");
+        parent_a.id = "dept-a".to_string();
+        parent_a.name = "部门A".to_string();
+        parent_a.is_built_in_assistant = false;
+        parent_a.child_department_ids =
+            vec!["shared-team".to_string(), "missing-team".to_string(), "dept-a".to_string()];
+
+        let mut parent_b = default_assistant_department("api-a");
+        parent_b.id = "dept-b".to_string();
+        parent_b.name = "部门B".to_string();
+        parent_b.is_built_in_assistant = false;
+        parent_b.child_department_ids = vec!["shared-team".to_string()];
+
+        let mut shared = default_assistant_department("api-a");
+        shared.id = "shared-team".to_string();
+        shared.name = "共享施工队".to_string();
+        shared.is_built_in_assistant = false;
+        shared.child_department_ids = Vec::new();
+
+        config.departments = vec![parent_a, parent_b, shared];
+
+        let dept_a = department_by_id(&config, "dept-a").expect("dept-a");
+        let dept_b = department_by_id(&config, "dept-b").expect("dept-b");
+
+        assert_eq!(
+            department_direct_child_ids(&config, dept_a),
+            vec!["shared-team".to_string()]
+        );
+        assert_eq!(
+            department_direct_child_ids(&config, dept_b),
+            vec!["shared-team".to_string()]
+        );
+        assert!(department_has_direct_child(&config, "dept-a", "shared-team"));
+        assert!(department_has_direct_child(&config, "dept-b", "shared-team"));
+        assert!(!department_has_direct_child(&config, "dept-a", "missing-team"));
     }
 }

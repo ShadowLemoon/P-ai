@@ -139,7 +139,7 @@ import type { ApiConfigItem, AppConfig, PersonaProfile } from "../../../../types
 import { invokeTauri } from "../../../../services/tauri-api";
 import { toErrorMessage } from "../../../../utils/error";
 
-type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "chatSettings" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
+type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "chatSettings" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
 type WelcomeCardLevel = "required" | "strong" | "optional";
 type HostRuntimePrerequisiteKind = "git" | "node";
 type MemoryProviderBindings = {
@@ -254,7 +254,7 @@ const cards = computed(() => {
     .map((id) => apiConfigs.find((api) => api.id === id && api.enableText))
     .filter((item): item is ApiConfigItem => !!item);
   const customPersonaCount = Math.max(0, (props.personas || []).filter((item) => !item.isBuiltInUser && !item.isBuiltInSystem).length);
-  const customDepartmentCount = Math.max(0, (props.config.departments || []).filter((item) => !item.isBuiltInAssistant && String(item.id || "").trim() !== "deputy-department").length);
+  const customDepartmentCount = Math.max(0, (props.config.departments || []).filter((item) => !item.isBuiltInAssistant).length);
   const enabledMcpCount = Math.max(0, (props.config.mcpServers || []).filter((item) => item.enabled).length);
   const embeddingBound = !!String(memoryBindings.value.embeddingApiConfigId || "").trim();
   const rerankBound = !!String(memoryBindings.value.rerankApiConfigId || "").trim();

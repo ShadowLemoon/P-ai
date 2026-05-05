@@ -77,6 +77,7 @@ mod archive_host_selection_tests {
             api_config_ids: Vec::new(),
             api_config_id: String::new(),
             agent_ids: agent_ids.into_iter().map(ToOwned::to_owned).collect(),
+            child_department_ids: Vec::new(),
             created_at: now_iso(),
             updated_at: now_iso(),
             order_index: 0,

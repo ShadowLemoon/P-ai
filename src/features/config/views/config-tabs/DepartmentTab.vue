@@ -100,22 +100,6 @@
               </div>
             </div>
 
-            <div v-if="showDeputyToggle" class="px-4 py-4">
-              <label class="flex items-center justify-between gap-3 rounded-box border border-base-300 bg-base-200/40 px-3 py-3">
-                <div>
-                  <div class="text-sm font-medium">{{ t("config.department.deputyToggle") }}</div>
-                  <div class="mt-1 text-xs opacity-60">{{ t("config.department.deputyToggleHint") }}</div>
-                </div>
-                <input
-                  type="checkbox"
-                  class="toggle toggle-sm toggle-primary"
-                  :checked="!!selectedDepartment.isDeputy"
-                  :disabled="selectedDepartmentIsPrivateWorkspace || selectedDepartment.id === 'deputy-department' || selectedDepartment.isBuiltInAssistant || selectedDepartment.id === 'assistant-department'"
-                  @change="setSelectedDepartmentDeputy(($event.target as HTMLInputElement).checked)"
-                />
-              </label>
-            </div>
-
             <div class="px-4 py-4">
               <div class="mb-2 text-[11px] uppercase tracking-wide opacity-40">{{ t("config.department.assignee") }}</div>
               <select
@@ -309,10 +293,7 @@
 
                   <div class="grid min-w-0 gap-2 overflow-hidden">
                     <div class="text-xs font-medium text-base-content/70">{{ t("config.department.permissionSkills") }}</div>
-                    <div v-if="selectedDepartment.isDeputy" class="text-xs text-base-content/50">
-                      {{ t("config.department.permissionDeputySkillsDisabled") }}
-                    </div>
-                    <div v-else-if="skillPermissionRequiresExec" class="text-xs text-base-content/50">
+                    <div v-if="skillPermissionRequiresExec" class="text-xs text-base-content/50">
                       {{ t("config.department.permissionSkillsRequireExec") }}
                     </div>
                     <fieldset class="grid min-w-0 gap-2 overflow-hidden">
@@ -419,7 +400,13 @@ import { Check, Plus, RotateCcw, Save, Trash2, X } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
 import { invokeTauri } from "../../../../services/tauri-api";
 import type { ApiConfigItem, AppConfig, DepartmentConfig, DepartmentPermissionCatalog, PersonaProfile } from "../../../../types/app";
+import {
+  buildDepartmentBasicSnapshot,
+  departmentBasicComparableSnapshot,
+  mergeDepartmentChildIdsFromSource,
+} from "../../utils/department-basic-editor";
 import { validateDepartmentConfig } from "../../utils/department-validation";
+import { normalizeDepartmentChildIds } from "../../utils/department-graph";
 import { REMOTE_CUSTOMER_SERVICE_DEPARTMENT_DEFAULT } from "../../constants/department-defaults";
 import SettingsStickyLayout from "../../components/SettingsStickyLayout.vue";
 
@@ -441,7 +428,6 @@ const { t } = useI18n();
 const selectedDepartmentId = ref("assistant-department");
 const SYSTEM_DEPARTMENT_IDS = new Set([
   "assistant-department",
-  "deputy-department",
   "remote-customer-service-department",
 ]);
 
@@ -506,11 +492,7 @@ function cloneDepartment(department: DepartmentConfig): DepartmentConfig {
       : [department.apiConfigId || ""],
   );
   const id = String(department.id || "").trim();
-  const isDeputy = !!department.isDeputy || id === "deputy-department";
   const agentIds = normalizeNameList(department.agentIds);
-  if (isDeputy && agentIds.length === 0) {
-    agentIds.push("deputy-agent");
-  }
   return {
     id,
     name: String(department.name || ""),
@@ -519,11 +501,11 @@ function cloneDepartment(department: DepartmentConfig): DepartmentConfig {
     apiConfigId: apiConfigIds[0] || "",
     apiConfigIds,
     agentIds,
+    childDepartmentIds: normalizeDepartmentChildIds(department.childDepartmentIds, id),
     createdAt: String(department.createdAt || "").trim(),
     updatedAt: String(department.updatedAt || "").trim(),
     orderIndex: Math.max(1, Number(department.orderIndex || 1)),
     isBuiltInAssistant: !!department.isBuiltInAssistant,
-    isDeputy,
     source: String(department.source || "").trim() || "main_config",
     scope: String(department.scope || "").trim() || "global",
     permissionControl: normalizePermissionControl(department.permissionControl),
@@ -532,23 +514,6 @@ function cloneDepartment(department: DepartmentConfig): DepartmentConfig {
 
 function cloneDepartmentList(departments: DepartmentConfig[] | null | undefined) {
   return (departments || []).map(cloneDepartment);
-}
-
-function buildDepartmentSnapshot(departments: DepartmentConfig[] | null | undefined) {
-  return JSON.stringify(
-    cloneDepartmentList(departments).map((item) => ({
-      id: item.id,
-      name: item.name,
-      summary: item.summary,
-      guide: item.guide,
-      apiConfigId: item.apiConfigId,
-      apiConfigIds: [...item.apiConfigIds],
-      agentIds: [...item.agentIds],
-      orderIndex: item.orderIndex,
-      isDeputy: !!item.isDeputy,
-      permissionControl: item.permissionControl,
-    })),
-  );
 }
 
 const departmentDrafts = ref<DepartmentConfig[]>(cloneDepartmentList(props.config.departments || []));
@@ -562,7 +527,7 @@ const permissionCatalogError = ref("");
 
 const sortedDepartments = computed(() =>
   [...departmentDrafts.value].sort((a, b) => {
-    const rank = (id: string) => id === "assistant-department" ? 0 : id === "deputy-department" ? 1 : 2;
+    const rank = (id: string) => id === "assistant-department" ? 0 : id === "remote-customer-service-department" ? 1 : 2;
     const aRank = rank(String(a.id || "").trim());
     const bRank = rank(String(b.id || "").trim());
     return aRank - bRank || a.orderIndex - b.orderIndex;
@@ -599,14 +564,25 @@ const selectedDepartmentNameDuplicated = computed(() => {
   return (departmentNameCounts.value.get(key) || 0) > 1;
 });
 const selectedDepartmentNameEmpty = computed(() => !String(selectedDepartment.value?.name || "").trim());
-const sourceDepartmentSnapshot = computed(() => buildDepartmentSnapshot(props.config.departments || []));
-const departmentSnapshot = computed(() => buildDepartmentSnapshot(departmentDrafts.value));
+const sourceDepartmentSnapshot = computed(() => buildDepartmentBasicSnapshot(props.config.departments || []));
+const sourceDepartmentRelationSnapshot = computed(() =>
+  JSON.stringify(
+    (props.config.departments || []).map((item) => ({
+      id: String(item.id || "").trim(),
+      childDepartmentIds: normalizeDepartmentChildIds(item.childDepartmentIds, item.id),
+    })),
+  ),
+);
+const departmentSnapshot = computed(() => buildDepartmentBasicSnapshot(departmentDrafts.value));
 const departmentDirty = computed(() => departmentSnapshot.value !== sourceDepartmentSnapshot.value);
 const departmentValidationMessage = computed(() =>
   validateDepartmentConfig(
     {
       ...props.config,
-      departments: cloneDepartmentList(departmentDrafts.value),
+      departments: mergeDepartmentChildIdsFromSource(
+        cloneDepartmentList(departmentDrafts.value),
+        props.config.departments || [],
+      ),
     },
     props.apiConfigs,
     (key, params) => t(key, params ?? {}),
@@ -643,60 +619,23 @@ const skillPermissionRequiresExec = computed(() =>
 const skillPermissionListDisabled = computed(() =>
   permissionListDisabled.value || skillPermissionRequiresExec.value,
 );
-const showDeputyToggle = computed(() => {
-  const department = selectedDepartment.value;
-  if (!department) return false;
-  return department.id !== "assistant-department" && !department.isBuiltInAssistant;
-});
 const visiblePermissionBuiltinTools = computed(() => {
   return permissionCatalog.value.builtinTools.filter((item) => !builtinPermissionNameForceHidden(item.name));
 });
-const visiblePermissionSkills = computed(() => {
-  if (!selectedDepartment.value?.isDeputy) return permissionCatalog.value.skills;
-  return permissionCatalog.value.skills.filter((item) => !deputySkillPermissionNameHidden(item.name));
-});
-
-const nonDeputyAssigneeIds = computed(() => {
-  const ids = new Set<string>();
-  for (const department of departmentDrafts.value) {
-    if (department.id === selectedDepartment.value?.id || department.isDeputy) continue;
-    const id = String(department.agentIds?.[0] || "").trim();
-    if (id) ids.add(id);
-  }
-  return ids;
-});
-
-const deputyAssigneeIds = computed(() => {
-  const ids = new Set<string>();
-  for (const department of departmentDrafts.value) {
-    if (department.id === selectedDepartment.value?.id || !department.isDeputy) continue;
-    const id = String(department.agentIds?.[0] || "").trim();
-    if (id) ids.add(id);
-  }
-  return ids;
-});
+const visiblePermissionSkills = computed(() => permissionCatalog.value.skills);
 
 const availableAssigneePersonas = computed(() =>
   sortPersonasForSelect(
     props.personas.filter((persona) => {
       const id = String(persona.id || "").trim();
-      if (!id) return false;
-      if (selectedDepartment.value?.isDeputy) {
-        return canServeAsDeputyPersona(persona) && !nonDeputyAssigneeIds.value.has(id);
-      }
-      return canServeAsRegularDepartmentPersona(persona) && !deputyAssigneeIds.value.has(id);
+      return !!id && canServeAsRegularDepartmentPersona(persona);
     }),
   ),
 );
 
-function canServeAsDeputyPersona(persona: PersonaProfile): boolean {
-  const id = String(persona.id || "").trim();
-  return id !== "user-persona" && id !== "system-persona" && !persona.isBuiltInUser;
-}
-
 function canServeAsRegularDepartmentPersona(persona: PersonaProfile): boolean {
   const id = String(persona.id || "").trim();
-  return id !== "deputy-agent" && !persona.isBuiltInUser && !persona.isBuiltInSystem;
+  return id !== "user-persona" && !persona.isBuiltInUser && (id === "deputy-agent" || !persona.isBuiltInSystem);
 }
 
 function personaSelectRank(persona: PersonaProfile): number {
@@ -717,31 +656,9 @@ function builtinPermissionNameForceHidden(name: string): boolean {
   if (!department) return false;
   const toolName = String(name || "").trim();
   if (!toolName) return true;
-  if (department.isDeputy) {
-    return !["fetch", "websearch", "exec", "read_file"].includes(toolName);
-  }
   const isAssistant = department.id === "assistant-department" || !!department.isBuiltInAssistant;
   if (isAssistant) return false;
   return ["reload", "organize_context", "wait", "screenshot", "operate", "task"].includes(toolName);
-}
-
-function workspacePresetSkillName(name: string): boolean {
-  return [
-    "agent-office",
-    "agents-md-setup",
-    "assistant-interaction-guide",
-    "browser-automation",
-    "mcp-setup",
-    "news-analyst",
-    "pai-guide",
-    "private-organization-guide",
-    "skill-setup",
-    "workspace-guide",
-  ].includes(String(name || "").trim());
-}
-
-function deputySkillPermissionNameHidden(name: string): boolean {
-  return !!selectedDepartment.value?.isDeputy && workspacePresetSkillName(name);
 }
 
 function ensureDepartmentPermissionControl(target: DepartmentConfig | null | undefined) {
@@ -750,21 +667,6 @@ function ensureDepartmentPermissionControl(target: DepartmentConfig | null | und
     target.permissionControl = normalizePermissionControl(null);
   }
   return target.permissionControl;
-}
-
-function departmentComparableSnapshot(department: DepartmentConfig) {
-  return JSON.stringify({
-    id: department.id,
-    name: department.name,
-    summary: department.summary,
-    guide: department.guide,
-    apiConfigId: department.apiConfigId,
-    apiConfigIds: [...department.apiConfigIds],
-    agentIds: [...department.agentIds],
-    orderIndex: department.orderIndex,
-    isDeputy: !!department.isDeputy,
-    permissionControl: department.permissionControl,
-  });
 }
 
 function syncDepartmentDraftsFromSource() {
@@ -800,6 +702,16 @@ watch(
   () => {
     if (departmentDirty.value) return;
     syncDepartmentDraftsFromSource();
+  },
+);
+
+watch(
+  () => sourceDepartmentRelationSnapshot.value,
+  () => {
+    departmentDrafts.value = mergeDepartmentChildIdsFromSource(
+      departmentDrafts.value,
+      props.config.departments || [],
+    );
   },
 );
 
@@ -930,7 +842,6 @@ function toggleBuiltinPermissionName(name: string) {
 
 function handleSkillPermissionToggle(name: string) {
   if (skillPermissionListDisabled.value) return;
-  if (deputySkillPermissionNameHidden(name)) return;
   togglePermissionName("skillNames", name, !permissionNameChecked("skillNames", name));
 }
 
@@ -973,6 +884,7 @@ function addDepartment() {
     apiConfigId: "",
     apiConfigIds: [],
     agentIds: [],
+    childDepartmentIds: [],
     createdAt: now,
     updatedAt: now,
     orderIndex: maxOrderIndex + 1,
@@ -980,7 +892,6 @@ function addDepartment() {
     source: "main_config",
     scope: "global",
     permissionControl: normalizePermissionControl(null),
-    isDeputy: false,
   });
   selectedDepartmentId.value = id;
 }
@@ -1044,20 +955,6 @@ function selectDepartmentAssignee(agentId: string) {
   const currentAgentId = target.agentIds[0] || "";
   if (currentAgentId === (newAgentIds[0] || "")) return;
   target.agentIds = newAgentIds;
-  touchSelectedDepartment();
-}
-
-function setSelectedDepartmentDeputy(enabled: boolean) {
-  const target = selectedDepartment.value;
-  if (!target) return;
-  target.isDeputy = target.id === "deputy-department" ? true : enabled;
-  const currentAgentId = String(target.agentIds?.[0] || "").trim();
-  if (target.isDeputy && (!currentAgentId || nonDeputyAssigneeIds.value.has(currentAgentId))) {
-    target.agentIds = ["deputy-agent"];
-  }
-  if (!target.isDeputy && (currentAgentId === "deputy-agent" || deputyAssigneeIds.value.has(currentAgentId))) {
-    target.agentIds = [];
-  }
   touchSelectedDepartment();
 }
 
@@ -1154,12 +1051,12 @@ function applyUpdatedAtToChangedDepartments(
   previousDepartments: DepartmentConfig[],
 ) {
   const previousById = new Map(
-    previousDepartments.map((item) => [item.id, departmentComparableSnapshot(item)] as const),
+    previousDepartments.map((item) => [item.id, departmentBasicComparableSnapshot(item)] as const),
   );
   const now = new Date().toISOString();
   return nextDepartments.map((item) => {
     const previousSnapshot = previousById.get(item.id);
-    const nextSnapshot = departmentComparableSnapshot(item);
+    const nextSnapshot = departmentBasicComparableSnapshot(item);
     if (previousSnapshot === nextSnapshot) {
       return item;
     }
@@ -1177,7 +1074,10 @@ async function saveDepartments() {
   const previousAssistantApiConfigId = String(props.config.assistantDepartmentApiConfigId || "").trim();
   const previousAssistantAgentId = String(props.assistantDepartmentAgentId || "").trim();
   const nextDepartments = applyUpdatedAtToChangedDepartments(
-    cloneDepartmentList(departmentDrafts.value),
+    mergeDepartmentChildIdsFromSource(
+      cloneDepartmentList(departmentDrafts.value),
+      previousDepartments,
+    ),
     previousDepartments,
   );
   const assistantState = resolveAssistantDepartmentState(nextDepartments);

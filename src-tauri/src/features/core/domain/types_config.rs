@@ -150,12 +150,14 @@ struct DepartmentConfig {
     api_config_id: String,
     #[serde(default)]
     agent_ids: Vec<String>,
+    #[serde(default)]
+    child_department_ids: Vec<String>,
     created_at: String,
     updated_at: String,
     order_index: i64,
     #[serde(default)]
     is_built_in_assistant: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing)]
     is_deputy: bool,
     #[serde(default = "default_main_source")]
     source: String,
@@ -196,6 +198,7 @@ fn default_assistant_department(api_config_id: &str) -> DepartmentConfig {
         },
         api_config_id,
         agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
+        child_department_ids: Vec::new(),
         created_at: now.clone(),
         updated_at: now,
         order_index: 1,
@@ -207,6 +210,7 @@ fn default_assistant_department(api_config_id: &str) -> DepartmentConfig {
     }
 }
 
+#[allow(dead_code)]
 fn default_deputy_department(api_config_id: &str) -> DepartmentConfig {
     let now = now_iso();
     let api_config_id = api_config_id.trim().to_string();
@@ -222,6 +226,7 @@ fn default_deputy_department(api_config_id: &str) -> DepartmentConfig {
         },
         api_config_id,
         agent_ids: vec![DEPUTY_AGENT_ID.to_string()],
+        child_department_ids: Vec::new(),
         created_at: now.clone(),
         updated_at: now,
         order_index: 2,
@@ -248,6 +253,7 @@ fn default_remote_customer_service_department(api_config_id: &str) -> Department
         },
         api_config_id,
         agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
+        child_department_ids: Vec::new(),
         created_at: now.clone(),
         updated_at: now,
         order_index: 3,
@@ -270,18 +276,32 @@ fn default_assistant_department_name(ui_language: &str) -> String {
 fn built_in_department_rank(id: &str) -> i32 {
     match id.trim() {
         ASSISTANT_DEPARTMENT_ID => 0,
-        DEPUTY_DEPARTMENT_ID => 1,
-        REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID => 2,
-        _ => 3,
+        REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID => 1,
+        _ => 2,
     }
 }
 
 fn default_departments(api_config_id: &str) -> Vec<DepartmentConfig> {
     vec![
         default_assistant_department(api_config_id),
-        default_deputy_department(api_config_id),
         default_remote_customer_service_department(api_config_id),
     ]
+}
+
+fn normalize_department_child_ids(values: &[String], self_id: &str) -> Vec<String> {
+    let self_id = self_id.trim();
+    let mut out = Vec::<String>::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+    for value in values {
+        let trimmed = value.trim();
+        if trimmed.is_empty() || trimmed == self_id {
+            continue;
+        }
+        if seen.insert(trimmed.to_string()) {
+            out.push(trimmed.to_string());
+        }
+    }
+    out
 }
 
 fn department_api_config_ids(department: &DepartmentConfig) -> Vec<String> {

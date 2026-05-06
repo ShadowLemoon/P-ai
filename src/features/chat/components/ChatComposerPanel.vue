@@ -209,15 +209,15 @@
     <div v-if="selectedMentions.length > 0" class="mb-2 flex flex-wrap gap-1">
       <span
         v-for="item in selectedMentions"
-        :key="item.agentId"
+        :key="`${item.agentId}:${item.departmentId}`"
         class="badge gap-1 bg-base-300 px-3 py-3 text-sm text-base-content border-transparent"
       >
-        <span class="max-w-24 truncate leading-none">@{{ item.agentName }}</span>
+        <span class="max-w-40 truncate leading-none">@{{ mentionDisplayLabel(item) }}</span>
         <button
           type="button"
           class="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-base-content transition hover:bg-error hover:text-error-content"
           :disabled="chatting || frozen"
-          @click.stop="removeSelectedMention(item.agentId)"
+          @click.stop="removeSelectedMention(item)"
         >
           <X class="h-3 w-3" />
         </button>
@@ -279,13 +279,17 @@
               >
                 <button
                   type="button"
-                  class="flex min-h-0 w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-base-content transition-colors hover:bg-base-200/80"
-                  :class="mentionFocusIndex === index ? 'bg-base-200' : ''"
+                  class="flex min-h-0 w-full items-start gap-2 rounded-xl px-2 py-1.5 text-left text-base-content transition-colors"
+                  :class="[
+                    mentionFocusIndex === index ? 'bg-base-200' : '',
+                    item.mentionable ? 'hover:bg-base-200/80' : 'opacity-65',
+                  ]"
+                  :disabled="!item.mentionable"
                   @click="applyMention(item)"
                 >
                   <div class="indicator shrink-0">
                     <span
-                      v-if="isMentionSelected(item.agentId)"
+                      v-if="isMentionSelected(item)"
                       class="indicator-item inline-flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-content"
                     >
                       @
@@ -304,7 +308,15 @@
                       </div>
                     </div>
                   </div>
-                  <span class="min-w-0 flex-1 truncate pr-0.5 text-sm leading-5">{{ item.agentName }}</span>
+                  <div class="min-w-0 flex-1 pr-0.5">
+                    <div class="truncate text-sm leading-5">@{{ mentionDisplayLabel(item) }}</div>
+                    <div
+                      v-if="!item.mentionable && item.unavailableReason"
+                      class="truncate text-[11px] leading-4 text-base-content/60"
+                    >
+                      {{ item.unavailableReason }}
+                    </div>
+                  </div>
                 </button>
               </li>
             </ul>
@@ -390,7 +402,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useI18n } from "vue-i18n";
 import { FileText, Image as ImageIcon, Layers2, Mic, Paperclip, Send, Square, X } from "lucide-vue-next";
-import type { ApiConfigItem, ChatConversationOverviewItem, ChatMentionTarget, PromptCommandPreset, SkillListResult } from "../../../types/app";
+import type { ApiConfigItem, ChatConversationOverviewItem, ChatMentionEntry, ChatMentionTarget, PromptCommandPreset, SkillListResult } from "../../../types/app";
 import { invokeTauri } from "../../../services/tauri-api";
 import ChatQueuePreview from "./ChatQueuePreview.vue";
 import { useChatQueue } from "../composables/use-chat-queue";
@@ -406,13 +418,22 @@ type ConversationDepartmentOption = {
   providerName?: string;
   modelName?: string;
 };
+type MentionOptionView = {
+  agentId: string;
+  agentName: string;
+  departmentId: string;
+  departmentName: string;
+  avatarUrl?: string;
+  mentionable: boolean;
+  unavailableReason?: string;
+};
 
 const props = defineProps<{
   selectionModeEnabled: boolean;
   selectedMessageCount: number;
   chatInput: string;
   instructionPresets: PromptCommandPreset[];
-  mentionOptions: ChatMentionTarget[];
+  mentionEntries: ChatMentionEntry[];
   selectedMentions: ChatMentionTarget[];
   chatInputPlaceholder: string;
   clipboardImages: BinaryAttachment[];
@@ -454,7 +475,7 @@ const emit = defineEmits<{
   (e: "update:chatInput", value: string): void;
   (e: "update:selectedInstructionPrompts", value: PromptCommandPreset[]): void;
   (e: "addMention", value: ChatMentionTarget): void;
-  (e: "removeMention", agentId: string): void;
+  (e: "removeMention", value: string | { agentId: string; departmentId?: string }): void;
   (e: "removeClipboardImage", index: number): void;
   (e: "removeQueuedAttachmentNotice", index: number): void;
   (e: "startRecording"): void;
@@ -569,16 +590,18 @@ const selectedMentions = computed(() =>
     }))
     .filter((item) => !!item.agentId && !!item.departmentId && !!item.agentName),
 );
-const filteredMentionOptions = computed(() => {
-  return (Array.isArray(props.mentionOptions) ? props.mentionOptions : [])
+const filteredMentionOptions = computed<MentionOptionView[]>(() => {
+  return (Array.isArray(props.mentionEntries) ? props.mentionEntries : [])
     .map((item) => ({
       agentId: String(item?.agentId || "").trim(),
       agentName: String(item?.agentName || "").trim(),
       departmentId: String(item?.departmentId || "").trim(),
       departmentName: String(item?.departmentName || "").trim(),
       avatarUrl: String(item?.avatarUrl || "").trim() || undefined,
+      mentionable: !!item?.mentionable,
+      unavailableReason: String(item?.unavailableReason || "").trim() || undefined,
     }))
-    .filter((item) => !!item.agentId && !!item.departmentId && !!item.agentName);
+    .filter((item) => !!item.agentId && !!item.agentName);
 });
 const selectionDeliverTargetOptions = computed(() =>
   (Array.isArray(props.unarchivedConversationItems) ? props.unarchivedConversationItems : [])
@@ -963,22 +986,38 @@ function clearSelectedInstructionPrompts() {
   emitSelectedInstructionPrompts();
 }
 
-function removeSelectedMention(agentId: string) {
-  emit("removeMention", agentId);
+function removeSelectedMention(item: ChatMentionTarget | undefined) {
+  if (!item) return;
+  emit("removeMention", {
+    agentId: String(item.agentId || "").trim(),
+    departmentId: String(item.departmentId || "").trim() || undefined,
+  });
   closeMentionPanel();
 }
 
-function applyMention(item: ChatMentionTarget | undefined) {
-  if (!item || !mentionRange.value) return;
+function applyMention(item: MentionOptionView | undefined) {
+  if (!item || !item.mentionable || !mentionRange.value) return;
   const current = String(localChatInput.value || "");
   const before = current.slice(0, mentionRange.value.start);
   const after = current.slice(mentionRange.value.end);
   const nextValue = `${before}${after}`;
   localChatInput.value = nextValue;
-  if (selectedMentions.value.some((entry) => entry.agentId === item.agentId)) {
-    emit("removeMention", item.agentId);
+  if (selectedMentions.value.some((entry) =>
+    String(entry.agentId || "").trim() === String(item.agentId || "").trim()
+    && String(entry.departmentId || "").trim() === String(item.departmentId || "").trim()
+  )) {
+    emit("removeMention", {
+      agentId: String(item.agentId || "").trim(),
+      departmentId: String(item.departmentId || "").trim() || undefined,
+    });
   } else {
-    emit("addMention", item);
+    emit("addMention", {
+      agentId: String(item.agentId || "").trim(),
+      agentName: String(item.agentName || "").trim(),
+      departmentId: String(item.departmentId || "").trim(),
+      departmentName: String(item.departmentName || "").trim(),
+      avatarUrl: String(item.avatarUrl || "").trim() || undefined,
+    });
   }
   closeMentionPanel();
   nextTick(() => {
@@ -1226,8 +1265,21 @@ function avatarInitial(name: string): string {
   return text[0].toUpperCase();
 }
 
-function isMentionSelected(agentId: string): boolean {
-  return selectedMentions.value.some((item) => item.agentId === agentId);
+function mentionDisplayLabel(target: Pick<ChatMentionTarget, "agentName" | "departmentName">): string {
+  const agentName = String(target?.agentName || "").trim();
+  const departmentName = String(target?.departmentName || "").trim();
+  if (!departmentName) return agentName;
+  return `${agentName} / ${departmentName}`;
+}
+
+function isMentionSelected(target: Pick<ChatMentionTarget, "agentId" | "departmentId"> | undefined): boolean {
+  const agentId = String(target?.agentId || "").trim();
+  const departmentId = String(target?.departmentId || "").trim();
+  if (!agentId || !departmentId) return false;
+  return selectedMentions.value.some((item) =>
+    String(item.agentId || "").trim() === agentId
+    && String(item.departmentId || "").trim() === departmentId
+  );
 }
 
 async function handleRecallToInput(event: {

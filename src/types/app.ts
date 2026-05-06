@@ -577,6 +577,19 @@ export type ChatMentionTarget = {
   avatarUrl?: string;
 };
 
+export type ChatMentionEntry = {
+  agentId: string;
+  agentName: string;
+  avatarUrl?: string;
+  departmentId?: string;
+  departmentName: string;
+  departmentNames: string[];
+  isFrontSpeaking: boolean;
+  hasBackgroundTask: boolean;
+  mentionable: boolean;
+  unavailableReason?: string;
+};
+
 export type ArchiveSummary = {
   archiveId: string;
   archivedAt: string;

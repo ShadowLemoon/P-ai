@@ -101,21 +101,79 @@
 
             <div class="px-4 py-4">
               <div class="mb-2 text-[11px] uppercase tracking-wide opacity-40">{{ t("config.department.assignee") }}</div>
-              <select
-                class="select select-bordered select-sm w-full"
-                :value="selectedDepartment.agentIds[0] || ''"
-                @change="selectDepartmentAssignee(($event.target as HTMLSelectElement).value)"
-              >
-                <option value="">{{ t("config.department.assigneePlaceholder") }}</option>
-                <option v-for="persona in availableAssigneePersonas" :key="persona.id" :value="persona.id">
-                  {{ persona.name }}
-                </option>
-              </select>
-              <div
-                v-if="selectedDepartment.isBuiltInAssistant && selectedDepartment.agentIds[0] === assistantDepartmentAgentId && selectedDepartment.agentIds[0]"
-                class="mt-2 text-xs opacity-50"
-              >
-                {{ t("config.department.currentAssistant") }}
+              <div class="grid gap-3">
+                <div v-if="selectedDepartmentAssigneeIds.length > 0" class="grid gap-2">
+                  <div
+                    v-for="(agentId, idx) in selectedDepartmentAssigneeIds"
+                    :key="`${selectedDepartment.id}-agent-${agentId}`"
+                    class="flex items-center gap-2"
+                  >
+                    <div class="min-w-0 flex-1 rounded-xl border border-base-300 bg-base-200/60 px-3 py-2">
+                      <div class="flex items-center gap-2">
+                        <span class="truncate text-sm">{{ personaNameById(agentId) }}</span>
+                        <span v-if="idx === 0" class="badge badge-primary badge-sm shrink-0">{{ t("config.department.primaryAssignee") }}</span>
+                        <span
+                          v-if="selectedDepartment.isBuiltInAssistant && idx === 0 && agentId === assistantDepartmentAgentId"
+                          class="text-xs opacity-50"
+                        >
+                          {{ t("config.department.currentAssistant") }}
+                        </span>
+                      </div>
+                    </div>
+                    <div class="join">
+                      <button
+                        class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
+                        type="button"
+                        :disabled="idx <= 0"
+                        :title="t('config.department.moveUp')"
+                        @click="moveDepartmentAssignee(idx, -1)"
+                      >
+                        ↑
+                      </button>
+                      <button
+                        class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
+                        type="button"
+                        :disabled="idx >= selectedDepartmentAssigneeIds.length - 1"
+                        :title="t('config.department.moveDown')"
+                        @click="moveDepartmentAssignee(idx, 1)"
+                      >
+                        ↓
+                      </button>
+                      <button
+                        class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
+                        type="button"
+                        :title="t('config.department.remove')"
+                        @click="removeDepartmentAssigneeAt(idx)"
+                      >
+                        <Trash2 class="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="text-xs opacity-50">
+                  {{ t("config.department.assigneeEmpty") }}
+                </div>
+                <div class="flex items-center gap-2">
+                  <select
+                    class="select select-bordered select-sm flex-1"
+                    :value="pendingDepartmentAssigneeId"
+                    @change="pendingDepartmentAssigneeId = ($event.target as HTMLSelectElement).value"
+                  >
+                    <option value="">{{ t("config.department.assigneePlaceholder") }}</option>
+                    <option v-for="persona in remainingAssigneePersonas" :key="persona.id" :value="persona.id">
+                      {{ persona.name }}
+                    </option>
+                  </select>
+                  <button
+                    class="btn btn-sm"
+                    type="button"
+                    :disabled="!pendingDepartmentAssigneeId"
+                    @click="addDepartmentAssignee"
+                  >
+                    {{ t("config.department.addAssignee") }}
+                  </button>
+                </div>
+                <div class="text-[11px] opacity-50">{{ t("config.department.assigneePrimaryHint") }}</div>
               </div>
             </div>
 
@@ -519,6 +577,7 @@ const permissionCatalog = ref<DepartmentPermissionCatalog>({
 });
 const permissionCatalogLoading = ref(false);
 const permissionCatalogError = ref("");
+const pendingDepartmentAssigneeId = ref("");
 
 const sortedDepartments = computed(() =>
   [...departmentDrafts.value].sort((a, b) => {
@@ -628,6 +687,14 @@ const availableAssigneePersonas = computed(() =>
     }),
   ),
 );
+const selectedDepartmentAssigneeIds = computed(() =>
+  normalizeNameList(selectedDepartment.value?.agentIds || []),
+);
+const remainingAssigneePersonas = computed(() =>
+  availableAssigneePersonas.value.filter(
+    (persona) => !selectedDepartmentAssigneeIds.value.includes(String(persona.id || "").trim()),
+  ),
+);
 
 function canServeAsRegularDepartmentPersona(persona: PersonaProfile): boolean {
   const id = String(persona.id || "").trim();
@@ -689,6 +756,23 @@ watch(
     if (!sortedDepartments.value.some((item) => item.id === selectedDepartmentId.value)) {
       selectedDepartmentId.value = sortedDepartments.value[0]?.id || "assistant-department";
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => ({
+    selectedDepartmentId: selectedDepartmentId.value,
+    remainingPersonaIds: remainingAssigneePersonas.value.map((persona) => persona.id).join("|"),
+  }),
+  () => {
+    if (
+      pendingDepartmentAssigneeId.value
+      && remainingAssigneePersonas.value.some((persona) => persona.id === pendingDepartmentAssigneeId.value)
+    ) {
+      return;
+    }
+    pendingDepartmentAssigneeId.value = remainingAssigneePersonas.value[0]?.id || "";
   },
   { immediate: true },
 );
@@ -947,13 +1031,50 @@ function handleSelectedDepartmentPrimaryAction() {
   removeSelectedDepartment();
 }
 
-function selectDepartmentAssignee(agentId: string) {
+function personaNameById(agentId: string): string {
+  const normalizedAgentId = String(agentId || "").trim();
+  if (!normalizedAgentId) return "";
+  return String(
+    props.personas.find((persona) => String(persona.id || "").trim() === normalizedAgentId)?.name || normalizedAgentId,
+  ).trim() || normalizedAgentId;
+}
+
+function addDepartmentAssignee() {
   const target = selectedDepartment.value;
   if (!target) return;
-  const newAgentIds = agentId ? [agentId] : [];
-  const currentAgentId = target.agentIds[0] || "";
-  if (currentAgentId === (newAgentIds[0] || "")) return;
-  target.agentIds = newAgentIds;
+  const nextAgentId = String(pendingDepartmentAssigneeId.value || "").trim();
+  if (!nextAgentId) return;
+  const nextAgentIds = normalizeNameList([...(target.agentIds || []), nextAgentId]);
+  if (JSON.stringify(nextAgentIds) === JSON.stringify(normalizeNameList(target.agentIds || []))) return;
+  target.agentIds = nextAgentIds;
+  pendingDepartmentAssigneeId.value = remainingAssigneePersonas.value
+    .map((persona) => String(persona.id || "").trim())
+    .find((id) => !!id && id !== nextAgentId) || "";
+  touchSelectedDepartment();
+}
+
+function removeDepartmentAssigneeAt(index: number) {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const nextAgentIds = normalizeNameList(target.agentIds || []);
+  if (index < 0 || index >= nextAgentIds.length) return;
+  nextAgentIds.splice(index, 1);
+  target.agentIds = nextAgentIds;
+  if (!pendingDepartmentAssigneeId.value) {
+    pendingDepartmentAssigneeId.value = remainingAssigneePersonas.value[0]?.id || "";
+  }
+  touchSelectedDepartment();
+}
+
+function moveDepartmentAssignee(index: number, delta: number) {
+  const target = selectedDepartment.value;
+  if (!target) return;
+  const nextAgentIds = normalizeNameList(target.agentIds || []);
+  const swapIndex = index + delta;
+  if (index < 0 || index >= nextAgentIds.length || swapIndex < 0 || swapIndex >= nextAgentIds.length) return;
+  const [item] = nextAgentIds.splice(index, 1);
+  nextAgentIds.splice(swapIndex, 0, item);
+  target.agentIds = nextAgentIds;
   touchSelectedDepartment();
 }
 

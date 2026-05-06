@@ -108,8 +108,7 @@
       :selected-persona-avatar-url="currentForegroundPersonaAvatarUrl"
       :chat-persona-name-map="chatPersonaNameMap"
       :chat-persona-avatar-url-map="chatPersonaAvatarUrlMap"
-      :chat-persona-presence-chips="chatPersonaPresenceChips"
-      :chat-mention-options="chatMentionOptions"
+      :chat-mention-entries="chatMentionEntries"
       :selected-chat-mentions="selectedChatMentions"
       :latest-user-text="latestUserText"
       :latest-user-images="latestUserImages"
@@ -475,12 +474,12 @@ import type {
   PersonaProfile,
   AppConfig,
   ApiRequestFormat,
+  ChatMentionEntry,
   ChatMentionTarget,
   ChatMessage,
   ChatConversationOverviewItem,
   PromptCommandPreset,
   ChatTodoItem,
-  ChatPersonaPresenceChip,
   ConversationPreviewMessage,
   ImageTextCacheStats,
   RemoteImContactConversationSummary,
@@ -708,7 +707,7 @@ function addChatMention(value: ChatMentionTarget) {
   const departmentId = String(value?.departmentId || "").trim();
   const agentName = String(value?.agentName || "").trim();
   if (!agentId || !departmentId || !agentName) return;
-  if (selectedChatMentions.value.some((item) => item.agentId === agentId)) return;
+  if (selectedChatMentions.value.some((item) => item.agentId === agentId && item.departmentId === departmentId)) return;
   selectedChatMentions.value = [
     ...selectedChatMentions.value,
     {
@@ -721,9 +720,20 @@ function addChatMention(value: ChatMentionTarget) {
   ];
 }
 
-function removeChatMention(agentId: string) {
-  const normalizedAgentId = String(agentId || "").trim();
-  selectedChatMentions.value = selectedChatMentions.value.filter((item) => item.agentId !== normalizedAgentId);
+function removeChatMention(value: string | { agentId?: string; departmentId?: string }) {
+  const normalizedAgentId =
+    typeof value === "string"
+      ? String(value || "").trim()
+      : String(value?.agentId || "").trim();
+  const normalizedDepartmentId =
+    typeof value === "string"
+      ? ""
+      : String(value?.departmentId || "").trim();
+  selectedChatMentions.value = selectedChatMentions.value.filter((item) => {
+    if (item.agentId !== normalizedAgentId) return true;
+    if (!normalizedDepartmentId) return false;
+    return item.departmentId !== normalizedDepartmentId;
+  });
 }
 
 async function updatePlanModeEnabled(value: boolean) {
@@ -1819,71 +1829,112 @@ const chatPersonaAvatarUrlMap = computed<Record<string, string>>(() => {
   }
   return next;
 });
-const chatPersonaDepartmentNameMap = computed<Record<string, string>>(() => {
-  const next: Record<string, string> = {};
-  for (const department of config.departments) {
-    const departmentName = String(department.name || "").trim();
-    if (!departmentName) continue;
-    for (const agentId of department.agentIds || []) {
-      const trimmedId = String(agentId || "").trim();
-      if (!trimmedId) continue;
-      next[trimmedId] = departmentName;
+const chatMentionEntries = computed<ChatMentionEntry[]>(() => {
+  const localeName = config.uiLanguage === "en-US" ? "en" : "zh-CN";
+  const currentAgentId = String(currentForegroundAgentId.value || "").trim();
+  const currentDepartmentId = String(currentForegroundDepartmentId.value || "").trim();
+  const allowedDepartmentIds = new Set(
+    delegateDepartmentIds.value.map((id) => String(id || "").trim()).filter(Boolean),
+  );
+  const textCapableApiIds = new Set(
+    (config.apiConfigs || [])
+      .filter((api) => !!api.enableText && isTextRequestFormat(api.requestFormat))
+      .map((api) => String(api.id || "").trim())
+      .filter(Boolean),
+  );
+  const departmentsByPersonaId = new Map<string, typeof config.departments>();
+  for (const department of config.departments || []) {
+    for (const rawAgentId of department.agentIds || []) {
+      const agentId = String(rawAgentId || "").trim();
+      if (!agentId) continue;
+      const current = departmentsByPersonaId.get(agentId) || [];
+      current.push(department);
+      departmentsByPersonaId.set(agentId, current);
     }
   }
-  return next;
-});
-const chatPersonaPresenceChips = computed<ChatPersonaPresenceChip[]>(() => {
-  const items: ChatPersonaPresenceChip[] = [];
+  const items: ChatMentionEntry[] = [];
   for (const persona of personas.value) {
     if (persona.isBuiltInSystem || persona.id === "system-persona") continue;
-    const id = String(persona.id || "").trim();
-    if (!id) continue;
-    const backgroundTaskCount = agentWorkPresence.activeWorkCountForAgent(id);
-    items.push({
-      id,
-      name: String(persona.name || "").trim() || id,
-      avatarUrl: String(chatPersonaAvatarUrlMap.value[id] || "").trim(),
-      departmentName:
-        String(chatPersonaDepartmentNameMap.value[id] || "").trim()
-        || (id === "user-persona" ? "用户" : "未归属部门"),
-      isFrontSpeaking: id === currentForegroundAgentId.value,
-      hasBackgroundTask: backgroundTaskCount > 0,
-    });
+    const agentId = String(persona.id || "").trim();
+    if (!agentId) continue;
+    const agentName = String(persona.name || "").trim() || agentId;
+    const avatarUrl = String(chatPersonaAvatarUrlMap.value[agentId] || "").trim() || undefined;
+    const backgroundTaskCount = agentWorkPresence.activeWorkCountForAgent(agentId);
+    const boundDepartments = (departmentsByPersonaId.get(agentId) || [])
+      .map((department) => ({
+        departmentId: String(department.id || "").trim(),
+        departmentName: String(department.name || "").trim() || String(department.id || "").trim(),
+        apiConfigIds: departmentOrderedApiConfigIds(department),
+      }))
+      .filter((item, index, list) =>
+        !!item.departmentId && list.findIndex((candidate) => candidate.departmentId === item.departmentId) === index,
+      );
+
+    if (boundDepartments.length === 0) {
+      items.push({
+        agentId,
+        agentName,
+        avatarUrl,
+        departmentName: agentId === "user-persona" ? "用户" : "未归属部门",
+        departmentNames: [],
+        isFrontSpeaking: false,
+        hasBackgroundTask: backgroundTaskCount > 0,
+        mentionable: false,
+        unavailableReason: agentId === "user-persona"
+          ? t("chat.mentionUnavailableUserPersona")
+          : t("chat.mentionUnavailableUnassigned"),
+      });
+      continue;
+    }
+
+    for (const department of boundDepartments) {
+      const isCurrentRuntimeAgent = department.departmentId === currentDepartmentId && agentId === currentAgentId;
+      const hasTextModel = department.apiConfigIds.some((apiConfigId) => textCapableApiIds.has(apiConfigId));
+      let mentionable = true;
+      let unavailableReason = "";
+      if (agentId === "user-persona" || persona.isBuiltInUser) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableUserPersona");
+      } else if (!department.departmentId) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableUnassigned");
+      } else if (isCurrentRuntimeAgent) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableSelf");
+      } else if (!currentDepartmentId) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableNoForegroundDepartment");
+      } else if (!allowedDepartmentIds.has(department.departmentId)) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableNotDirectChild");
+      } else if (!hasTextModel) {
+        mentionable = false;
+        unavailableReason = t("chat.mentionUnavailableNoModel");
+      }
+      items.push({
+        agentId,
+        agentName,
+        avatarUrl,
+        departmentId: department.departmentId,
+        departmentName: department.departmentName,
+        departmentNames: boundDepartments.map((item) => item.departmentName),
+        isFrontSpeaking: isCurrentRuntimeAgent,
+        hasBackgroundTask: backgroundTaskCount > 0,
+        mentionable,
+        unavailableReason: unavailableReason || undefined,
+      });
+    }
   }
   return items.sort((left, right) => {
     if (left.isFrontSpeaking !== right.isFrontSpeaking) return left.isFrontSpeaking ? -1 : 1;
+    if (left.mentionable !== right.mentionable) return left.mentionable ? -1 : 1;
     if (left.hasBackgroundTask !== right.hasBackgroundTask) return left.hasBackgroundTask ? -1 : 1;
-    if (left.id === "user-persona" && right.id !== "user-persona") return -1;
-    if (right.id === "user-persona" && left.id !== "user-persona") return 1;
-    return left.name.localeCompare(right.name, config.uiLanguage === "en-US" ? "en" : "zh-CN");
+    if (left.agentId === "user-persona" && right.agentId !== "user-persona") return -1;
+    if (right.agentId === "user-persona" && left.agentId !== "user-persona") return 1;
+    const nameCompare = left.agentName.localeCompare(right.agentName, localeName);
+    if (nameCompare !== 0) return nameCompare;
+    return left.departmentName.localeCompare(right.departmentName, localeName);
   });
-});
-const chatMentionOptions = computed<ChatMentionTarget[]>(() => {
-  const allowedDepartmentIds = new Set(delegateDepartmentIds.value);
-  const seen = new Set<string>();
-  const next: ChatMentionTarget[] = [];
-  for (const department of config.departments) {
-    const departmentId = String(department.id || "").trim();
-    if (!departmentId) continue;
-    if (!allowedDepartmentIds.has(departmentId)) continue;
-    const departmentName = String(department.name || "").trim() || departmentId;
-    const firstAgentId = Array.isArray(department.agentIds)
-      ? department.agentIds.map((item) => String(item || "").trim()).find((item) => !!item)
-      : "";
-    if (!firstAgentId || seen.has(firstAgentId)) continue;
-    if (firstAgentId === currentForegroundAgentId.value) continue;
-    const persona = personas.value.find((item) => String(item.id || "").trim() === firstAgentId);
-    if (!persona || persona.isBuiltInUser || persona.isBuiltInSystem) continue;
-    seen.add(firstAgentId);
-    next.push({
-      agentId: firstAgentId,
-      agentName: String(persona.name || "").trim() || firstAgentId,
-      departmentId,
-      departmentName,
-      avatarUrl: String(chatPersonaAvatarUrlMap.value[firstAgentId] || "").trim() || undefined,
-    });
-  }
-  return next;
 });
 const selectedModelOptions = computed(() => {
   const id = config.selectedApiConfigId;

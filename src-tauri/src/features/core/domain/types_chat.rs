@@ -152,11 +152,20 @@ struct Conversation {
 }
 
 #[derive(Debug, Clone)]
+struct RemoteImConversationAssistantContext {
+    department_id: String,
+    department_name: String,
+    agent_id: String,
+    agent_name: String,
+}
+
+#[derive(Debug, Clone)]
 struct ConversationRuntimeSlot {
     state: MainSessionState,
     pending_queue: std::collections::VecDeque<ChatPendingEvent>,
     stream_cache: ConversationStreamRuntimeCache,
     active_remote_im_activation_sources: Vec<RemoteImActivationSource>,
+    active_remote_im_assistant_context: Option<RemoteImConversationAssistantContext>,
     plan_mode_enabled: bool,
     last_activity_at: String,
 }
@@ -192,6 +201,7 @@ impl Default for ConversationRuntimeSlot {
             pending_queue: std::collections::VecDeque::new(),
             stream_cache: ConversationStreamRuntimeCache::default(),
             active_remote_im_activation_sources: Vec::new(),
+            active_remote_im_assistant_context: None,
             plan_mode_enabled: false,
             last_activity_at: String::new(),
         }

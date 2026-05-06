@@ -816,34 +816,179 @@
         }
     }
 
+    fn remote_im_test_secretary_assistant_context() -> RemoteImConversationAssistantContext {
+        RemoteImConversationAssistantContext {
+            department_id: "dept-sales".to_string(),
+            department_name: "售前部门".to_string(),
+            agent_id: "agent-sales".to_string(),
+            agent_name: "售前助理".to_string(),
+        }
+    }
+
+    fn remote_im_test_agent(agent_id: &str, agent_name: &str) -> AgentProfile {
+        AgentProfile {
+            id: agent_id.to_string(),
+            name: agent_name.to_string(),
+            system_prompt: String::new(),
+            tools: Vec::new(),
+            created_at: now_iso(),
+            updated_at: now_iso(),
+            avatar_path: None,
+            avatar_updated_at: None,
+            is_built_in_user: false,
+            is_built_in_system: false,
+            private_memory_enabled: false,
+            source: "manual".to_string(),
+            scope: "global".to_string(),
+        }
+    }
+
+    #[test]
+    fn remote_im_secretary_current_assistant_context_should_read_from_runtime_slot() {
+        let state = remote_im_test_state();
+        let assistant = remote_im_test_secretary_assistant_context();
+
+        set_conversation_remote_im_assistant_context(
+            &state,
+            "conversation-a",
+            Some(assistant.clone()),
+        )
+        .expect("set runtime assistant");
+
+        let resolved = remote_im_secretary_current_assistant_context(&state, "conversation-a")
+            .expect("resolve runtime assistant");
+
+        assert_eq!(resolved.department_id, assistant.department_id);
+        assert_eq!(resolved.agent_id, assistant.agent_id);
+        let _ = std::fs::remove_dir_all(app_root_from_data_path(&state.data_path));
+    }
+
+    #[test]
+    fn remote_im_resolve_contact_assistant_context_should_require_bound_department() {
+        let mut contact = remote_im_test_contact("contact-a", "conversation-a");
+        contact.bound_department_id = None;
+
+        let err = remote_im_resolve_contact_assistant_context(
+            &AppConfig::default(),
+            &[remote_im_test_agent(DEFAULT_AGENT_ID, "主助理")],
+            &contact,
+        )
+        .expect_err("missing department should fail");
+
+        assert!(err.contains("未设置应答部门"));
+    }
+
+    #[test]
+    fn remote_im_resolve_contact_assistant_context_should_resolve_department_and_agent_names() {
+        let contact = remote_im_test_contact("contact-a", "conversation-a");
+
+        let resolved = remote_im_resolve_contact_assistant_context(
+            &AppConfig::default(),
+            &[remote_im_test_agent(DEFAULT_AGENT_ID, "主助理")],
+            &contact,
+        )
+        .expect("resolve assistant context");
+
+        assert_eq!(resolved.department_id, REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID);
+        assert_eq!(resolved.department_name, "远程客服");
+        assert_eq!(resolved.agent_id, DEFAULT_AGENT_ID);
+        assert_eq!(resolved.agent_name, "主助理");
+    }
+
+    #[test]
+    fn remote_im_resolve_contact_assistant_context_should_reject_missing_agent_profile() {
+        let contact = remote_im_test_contact("contact-a", "conversation-a");
+
+        let err = remote_im_resolve_contact_assistant_context(
+            &AppConfig::default(),
+            &[remote_im_test_agent("agent-other", "其他助理")],
+            &contact,
+        )
+        .expect_err("missing agent profile should fail");
+
+        assert!(err.contains("路由人格不存在"));
+        assert!(err.contains(DEFAULT_AGENT_ID));
+    }
+
     #[test]
     fn remote_im_collect_secretary_recent_messages_should_keep_last_seven_and_truncate_each_item() {
+        let mut contact = remote_im_test_contact("contact-a", "conversation-a");
+        contact.remote_contact_type = "private".to_string();
+        contact.remote_contact_id = "contact-42".to_string();
+        contact.remote_contact_name = "陈先生".to_string();
+        let agents = vec![AgentProfile {
+            id: "agent-sales".to_string(),
+            name: "售前助理".to_string(),
+            system_prompt: String::new(),
+            tools: Vec::new(),
+            created_at: now_iso(),
+            updated_at: now_iso(),
+            avatar_path: None,
+            avatar_updated_at: None,
+            is_built_in_user: false,
+            is_built_in_system: false,
+            private_memory_enabled: false,
+            source: "manual".to_string(),
+            scope: "global".to_string(),
+        }];
+        let current_assistant = remote_im_test_secretary_assistant_context();
         let mut messages = Vec::<ChatMessage>::new();
         for idx in 0..8 {
             messages.push(ChatMessage {
                 id: format!("msg-{idx}"),
                 role: if idx % 2 == 0 { "user".to_string() } else { "assistant".to_string() },
                 created_at: now_iso(),
-                speaker_agent_id: None,
+                speaker_agent_id: if idx % 2 == 0 {
+                    None
+                } else {
+                    Some("agent-sales".to_string())
+                },
                 parts: vec![MessagePart::Text {
                     text: format!("第{}条{}", idx, "很长的内容".repeat(30)),
                 }],
                 extra_text_blocks: Vec::new(),
-                provider_meta: None,
+                provider_meta: if idx % 2 == 0 {
+                    Some(serde_json::json!({
+                        "origin": {
+                            "kind": "remote_im",
+                            "contact_type": "private",
+                            "contact_id": "contact-42",
+                            "contact_name": "陈先生",
+                            "sender_id": "contact-42",
+                            "sender_name": "陈先生"
+                        }
+                    }))
+                } else {
+                    None
+                },
                 tool_call: None,
                 mcp_call: None,
             });
         }
 
-        let digests = remote_im_collect_secretary_recent_messages(&messages, 7);
+        let digests = remote_im_collect_secretary_recent_messages(
+            &messages,
+            7,
+            &contact,
+            &agents,
+            &current_assistant,
+        );
 
         assert_eq!(digests.len(), 7);
-        assert_eq!(digests.first().map(|item| item.role.as_str()), Some("你"));
+        assert_eq!(
+            digests.first().map(|item| item.speaker.as_str()),
+            Some("你 售前助理(agent-sales)")
+        );
         assert!(digests.iter().all(|item| item.text.chars().count() <= 100));
     }
 
     #[test]
-    fn remote_im_secretary_message_digest_should_include_media_placeholder() {
+    fn remote_im_secretary_message_digest_should_include_group_member_identity_and_media_placeholder() {
+        let mut contact = remote_im_test_contact("contact-a", "conversation-a");
+        contact.remote_contact_type = "group".to_string();
+        contact.remote_contact_id = "group-88".to_string();
+        contact.remote_contact_name = "项目群".to_string();
+        let current_assistant = remote_im_test_secretary_assistant_context();
         let digest = remote_im_secretary_message_digest(&ChatMessage {
             id: "msg-image".to_string(),
             role: "user".to_string(),
@@ -856,14 +1001,79 @@
                 compressed: false,
             }],
             extra_text_blocks: Vec::new(),
-            provider_meta: None,
+            provider_meta: Some(serde_json::json!({
+                "origin": {
+                    "kind": "remote_im",
+                    "contact_type": "group",
+                    "contact_id": "group-88",
+                    "contact_name": "项目群",
+                    "sender_id": "user-7",
+                    "sender_name": "张三"
+                }
+            })),
             tool_call: None,
             mcp_call: None,
-        })
+        }, &contact, &Vec::new(), &current_assistant)
         .expect("digest");
 
-        assert_eq!(digest.role, "对方");
+        assert_eq!(digest.speaker, "群友 张三(user-7)");
         assert_eq!(digest.text, "[图片]");
+    }
+
+    #[test]
+    fn build_remote_im_secretary_prepared_prompt_should_include_boundary_and_latest_marker() {
+        let mut contact = remote_im_test_contact("contact-a", "conversation-a");
+        contact.remote_contact_type = "group".to_string();
+        contact.remote_contact_id = "group-88".to_string();
+        contact.remote_contact_name = "项目群".to_string();
+        let current_assistant = remote_im_test_secretary_assistant_context();
+        let history_messages = vec![
+            RemoteImSecretaryMessageDigest {
+                speaker: "群友 张三(user-7)".to_string(),
+                text: "这个报价我先看一下".to_string(),
+            },
+            RemoteImSecretaryMessageDigest {
+                speaker: "你 售前助理(agent-sales)".to_string(),
+                text: "好的，有问题随时提".to_string(),
+            },
+        ];
+        let new_batch_messages = vec![
+            RemoteImSecretaryMessageDigest {
+                speaker: "群友 李四(user-8)".to_string(),
+                text: "交期今天能不能定".to_string(),
+            },
+            RemoteImSecretaryMessageDigest {
+                speaker: "群友 张三(user-7)".to_string(),
+                text: "老板现在就等结论".to_string(),
+            },
+        ];
+
+        let prompt = build_remote_im_secretary_prepared_prompt(
+            "简体中文",
+            &contact,
+            &current_assistant,
+            &history_messages,
+            &new_batch_messages,
+        );
+
+        assert!(prompt.latest_user_text.contains("当前应答部门："));
+        assert!(prompt.latest_user_text.contains("名称：售前部门"));
+        assert!(prompt.latest_user_text.contains("ID：dept-sales"));
+        assert!(prompt.latest_user_text.contains("当前助理："));
+        assert!(prompt.latest_user_text.contains("名称：售前助理"));
+        assert!(prompt.latest_user_text.contains("ID：agent-sales"));
+        assert!(prompt.latest_user_text.contains("当前联系人："));
+        assert!(prompt.latest_user_text.contains("名称：项目群"));
+        assert!(prompt.latest_user_text.contains("ID：group-88"));
+        assert!(!prompt.latest_user_text.contains("当前人格："));
+        assert!(prompt.latest_user_text.contains("最近 7 条已处理历史消息"));
+        assert!(prompt
+            .latest_user_text
+            .contains("================ 未处理边界 ================"));
+        assert!(prompt.latest_user_text.contains("最后一条是最新消息"));
+        assert!(prompt
+            .latest_user_text
+            .contains("2. 群友 张三(user-7)（最新）：老板现在就等结论"));
     }
 
     #[test]

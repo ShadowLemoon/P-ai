@@ -701,15 +701,7 @@ const ideContextGroups = ref<IdeContextWorkspaceGroup[]>([]);
 const attachedIdeContextReferences = ref<IdeContextReferenceItem[]>([]);
 let ideContextRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let ideContextRefreshSeq = 0;
-const visibleIdeContextGroups = computed<IdeContextWorkspaceGroup[]>(() => {
-  const attachedIds = new Set(attachedIdeContextReferences.value.map((item) => item.id));
-  return ideContextGroups.value
-    .map((group) => ({
-      ...group,
-      references: group.references.filter((item) => !attachedIds.has(item.id)),
-    }))
-    .filter((group) => group.references.length > 0);
-});
+const visibleIdeContextGroups = computed<IdeContextWorkspaceGroup[]>(() => ideContextGroups.value);
 const ephemeralBlockRenderIdMap = new WeakMap<ChatMessageBlock, string>();
 let ephemeralBlockRenderIdSeq = 0;
 

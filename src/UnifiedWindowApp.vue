@@ -1833,9 +1833,6 @@ const chatMentionEntries = computed<ChatMentionEntry[]>(() => {
   const localeName = config.uiLanguage === "en-US" ? "en" : "zh-CN";
   const currentAgentId = String(currentForegroundAgentId.value || "").trim();
   const currentDepartmentId = String(currentForegroundDepartmentId.value || "").trim();
-  const allowedDepartmentIds = new Set(
-    delegateDepartmentIds.value.map((id) => String(id || "").trim()).filter(Boolean),
-  );
   const textCapableApiIds = new Set(
     (config.apiConfigs || [])
       .filter((api) => !!api.enableText && isTextRequestFormat(api.requestFormat))
@@ -1904,9 +1901,6 @@ const chatMentionEntries = computed<ChatMentionEntry[]>(() => {
       } else if (!currentDepartmentId) {
         mentionable = false;
         unavailableReason = t("chat.mentionUnavailableNoForegroundDepartment");
-      } else if (!allowedDepartmentIds.has(department.departmentId)) {
-        mentionable = false;
-        unavailableReason = t("chat.mentionUnavailableNotDirectChild");
       } else if (!hasTextModel) {
         mentionable = false;
         unavailableReason = t("chat.mentionUnavailableNoModel");

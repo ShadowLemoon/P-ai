@@ -587,7 +587,9 @@ export type ChatMentionEntry = {
   isFrontSpeaking: boolean;
   hasBackgroundTask: boolean;
   mentionable: boolean;
+  /** @deprecated 改用 selectedChatMentionKeys */
   unavailableReason?: string;
+  selected?: boolean;
 };
 
 export type ArchiveSummary = {

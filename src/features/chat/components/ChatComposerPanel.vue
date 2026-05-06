@@ -601,8 +601,9 @@ const filteredMentionOptions = computed<MentionOptionView[]>(() => {
       mentionable: !!item?.mentionable,
       unavailableReason: String(item?.unavailableReason || "").trim() || undefined,
     }))
-    .filter((item) => !!item.agentId && !!item.agentName);
+    .filter((item) => !!item.agentId && !!item.agentName && !!item.mentionable);
 });
+
 const selectionDeliverTargetOptions = computed(() =>
   (Array.isArray(props.unarchivedConversationItems) ? props.unarchivedConversationItems : [])
     .filter((item) => String(item.conversationId || "").trim() !== String(props.activeConversationId || "").trim())

@@ -2,6 +2,7 @@
 
 ## 进行中
 
+- 修复（chat-mention-async-delegate-cross-department）：用户通过 `@` 主动发起异步委托时，不再错误套用“必须直属下级部门”的工具委托限制；只要目标部门里确实有该人格，就允许创建委托计划。
 - 修复（chat-mention-avatar-background-task-indicator）：被 `@` 触发异步委托的人格在后台执行期间，聊天工具栏头像会显示三点工作提醒，便于观察谁正在处理委托。
 
 ## 发布：v0.9.74

@@ -519,17 +519,6 @@ fn build_user_mention_dispatch_plans(
             });
             continue;
         };
-        if !department_has_direct_child(app_config, source_department_id, &target_department_id) {
-            mention_failures.push(UserMentionFailurePlan {
-                root_conversation_id: conversation.id.clone(),
-                source_agent_id: source_agent_id.to_string(),
-                target_department_id: target_department_id.clone(),
-                target_agent_id: target_agent_id.clone(),
-                target_agent_name: target_agent_name.clone(),
-                reason: "目标部门不是当前部门的直接下级".to_string(),
-            });
-            continue;
-        }
         if !target_department
             .agent_ids
             .iter()

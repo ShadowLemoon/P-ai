@@ -3655,6 +3655,91 @@
     }
 
     #[test]
+    fn build_user_mention_dispatch_plans_should_allow_non_child_department_mentions() {
+        let mut source_agent = default_agent();
+        source_agent.id = "source-agent".to_string();
+        source_agent.name = "主负责人".to_string();
+
+        let mut target_agent = default_agent();
+        target_agent.id = "target-agent".to_string();
+        target_agent.name = "被@人格".to_string();
+
+        let mut source_department = default_assistant_department("provider-a::model-a");
+        source_department.id = "dept-source".to_string();
+        source_department.name = "源部门".to_string();
+        source_department.is_built_in_assistant = false;
+        source_department.agent_ids = vec![source_agent.id.clone()];
+        source_department.child_department_ids = Vec::new();
+
+        let mut target_department = default_assistant_department("provider-a::model-a");
+        target_department.id = "dept-target".to_string();
+        target_department.name = "目标部门".to_string();
+        target_department.is_built_in_assistant = false;
+        target_department.agent_ids = vec![target_agent.id.clone()];
+        target_department.child_department_ids = Vec::new();
+
+        let app_config = AppConfig {
+            api_configs: vec![ApiConfig {
+                id: "provider-a::model-a".to_string(),
+                name: "provider-a/model-a".to_string(),
+                request_format: RequestFormat::OpenAI,
+                allow_concurrent_requests: false,
+                enable_text: true,
+                enable_image: false,
+                enable_audio: false,
+                enable_tools: true,
+                tools: vec![],
+                base_url: "https://api.openai.com/v1".to_string(),
+                api_key: "k".to_string(),
+                codex_auth_mode: default_codex_auth_mode(),
+                codex_local_auth_path: default_codex_local_auth_path(),
+                model: "gpt-4o-mini".to_string(),
+                reasoning_effort: default_reasoning_effort(),
+                temperature: 1.0,
+                custom_temperature_enabled: false,
+                context_window_tokens: 128_000,
+                max_output_tokens: 4_096,
+                custom_max_output_tokens_enabled: false,
+                failure_retry_count: 0,
+            }],
+            api_providers: Vec::new(),
+            departments: vec![source_department, target_department],
+            ..AppConfig::default()
+        };
+        let conversation = build_conversation_record(
+            "provider-a::model-a",
+            &source_agent.id,
+            "dept-source",
+            "主会话",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
+        let mentions = vec![UserMentionTargetInput {
+            agent_id: target_agent.id.clone(),
+            agent_name: Some(target_agent.name.clone()),
+            department_id: "dept-target".to_string(),
+            department_name: Some("目标部门".to_string()),
+        }];
+
+        let (plans, failures) = build_user_mention_dispatch_plans(
+            &app_config,
+            &conversation,
+            &[source_agent, target_agent],
+            "dept-source",
+            "source-agent",
+            "请你异步处理这个问题",
+            Some(&mentions),
+        )
+        .expect("build mention dispatch plans");
+
+        assert_eq!(plans.len(), 1);
+        assert!(failures.is_empty());
+        assert_eq!(plans[0].target_department_id, "dept-target");
+        assert_eq!(plans[0].target_agent_id, "target-agent");
+    }
+
+    #[test]
     fn build_departments_prompt_block_should_keep_same_persona_child_departments() {
         let agent = default_agent();
         let conversation = build_conversation_record(

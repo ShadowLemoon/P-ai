@@ -493,6 +493,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, toRef, watch, type ComponentPublicInstance } from "vue";
 import { useVirtualizer } from "@tanstack/vue-virtual";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useI18n } from "vue-i18n";
 import { isDarkAppTheme } from "../../shell/composables/use-app-theme";
 import { ChevronsDown, History, ListTodo } from "lucide-vue-next";
@@ -700,6 +701,7 @@ const activeConversationSummary = computed(() => {
 const ideContextGroups = ref<IdeContextWorkspaceGroup[]>([]);
 const attachedIdeContextReferences = ref<IdeContextReferenceItem[]>([]);
 let ideContextRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let ideContextEventUnlisten: UnlistenFn | null = null;
 let ideContextRefreshSeq = 0;
 const visibleIdeContextGroups = computed<IdeContextWorkspaceGroup[]>(() => ideContextGroups.value);
 const ephemeralBlockRenderIdMap = new WeakMap<ChatMessageBlock, string>();
@@ -756,13 +758,30 @@ function startIdeContextRefreshTimer() {
   stopIdeContextRefreshTimer();
   ideContextRefreshTimer = window.setInterval(() => {
     void refreshIdeContextGroups();
-  }, 1500);
+  }, 5000);
 }
 
 function stopIdeContextRefreshTimer() {
   if (!ideContextRefreshTimer) return;
   clearInterval(ideContextRefreshTimer);
   ideContextRefreshTimer = null;
+}
+
+async function startIdeContextEventListener() {
+  stopIdeContextEventListener();
+  try {
+    ideContextEventUnlisten = await listen("ide-context-updated", () => {
+      void refreshIdeContextGroups();
+    });
+  } catch (error) {
+    console.warn("[IDE 上下文] 监听更新事件失败", error);
+  }
+}
+
+function stopIdeContextEventListener() {
+  if (!ideContextEventUnlisten) return;
+  ideContextEventUnlisten();
+  ideContextEventUnlisten = null;
 }
 
 function handleAttachIdeContextReference(reference: IdeContextReferenceItem) {
@@ -2339,12 +2358,14 @@ onMounted(() => {
     chatScrollResizeObserver.observe(scroller);
   }
   void refreshIdeContextGroups();
+  void startIdeContextEventListener();
   startIdeContextRefreshTimer();
 });
 
 onBeforeUnmount(() => {
   clearDelegateStatusesPollTimer();
   stopIdeContextRefreshTimer();
+  stopIdeContextEventListener();
   chatScrollResizeObserver?.disconnect();
   chatScrollResizeObserver = null;
   if (pendingMeasureFrame) {

@@ -90,6 +90,13 @@ static IDE_CONTEXT_BRIDGE_STARTED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct IdeContextUpdatedEvent {
+    client_id: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct IdeContextBridgeDiscovery {
     url: String,
     bridge_url: String,
@@ -98,6 +105,22 @@ struct IdeContextBridgeDiscovery {
     path: String,
     pid: u32,
     updated_at: String,
+}
+
+fn emit_ide_context_updated(state: &AppState, client_id: &str, updated_at: &str) {
+    let app_handle = match state.app_handle.lock() {
+        Ok(slot) => slot.clone(),
+        Err(_) => None,
+    };
+    if let Some(app_handle) = app_handle {
+        let _ = app_handle.emit(
+            "ide-context-updated",
+            IdeContextUpdatedEvent {
+                client_id: client_id.to_string(),
+                updated_at: updated_at.to_string(),
+            },
+        );
+    }
 }
 
 fn ide_context_compare_key(raw: &str) -> String {
@@ -279,11 +302,18 @@ async fn bind_ide_context_bridge_listener() -> Result<(tokio::net::TcpListener, 
 fn upsert_ide_context_snapshot_internal(
     input: UpsertIdeContextSnapshotInput,
     state: &AppState,
-) -> Result<String, String> {
+) -> Result<(String, String), String> {
     let client_id = input.client_id.trim().to_string();
     if client_id.is_empty() {
         return Err("clientId is required".to_string());
     }
+    let updated_at = input
+        .updated_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(now_iso);
     let snapshot = IdeContextSnapshot {
         client_id: client_id.clone(),
         editor: {
@@ -334,20 +364,14 @@ fn upsert_ide_context_snapshot_internal(
                 })
             })
             .collect(),
-        updated_at: input
-            .updated_at
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(now_iso),
+        updated_at: updated_at.clone(),
     };
     let mut snapshots = state
         .ide_context_snapshots
         .lock()
         .map_err(|_| "Failed to lock ide context snapshots".to_string())?;
     snapshots.insert(client_id.clone(), snapshot);
-    Ok(client_id)
+    Ok((client_id, updated_at))
 }
 
 #[tauri::command]
@@ -355,7 +379,9 @@ fn upsert_ide_context_snapshot(
     input: UpsertIdeContextSnapshotInput,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    upsert_ide_context_snapshot_internal(input, &state).map(|_| ())
+    let (client_id, updated_at) = upsert_ide_context_snapshot_internal(input, &state)?;
+    emit_ide_context_updated(&state, &client_id, &updated_at);
+    Ok(())
 }
 
 #[tauri::command]
@@ -527,8 +553,9 @@ async fn ide_context_ws_handle_connection(
             Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                 match serde_json::from_str::<UpsertIdeContextSnapshotInput>(&text) {
                     Ok(input) => match upsert_ide_context_snapshot_internal(input, &state) {
-                        Ok(client_id) => {
-                            connected_client_id = client_id;
+                        Ok((client_id, updated_at)) => {
+                            connected_client_id = client_id.clone();
+                            emit_ide_context_updated(&state, &client_id, &updated_at);
                             let _ = ws_sender
                                 .send(tokio_tungstenite::tungstenite::Message::Text(
                                     serde_json::json!({"type": "ack", "ok": true}).to_string().into(),

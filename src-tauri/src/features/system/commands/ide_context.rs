@@ -160,11 +160,11 @@ fn ide_context_line_suffix(start_line: Option<u32>, end_line: Option<u32>) -> St
     }
 }
 
-fn ide_context_text_block(display_path: &str, reference: &IdeContextReference) -> String {
+fn ide_context_text_block(file_path: &str, reference: &IdeContextReference) -> String {
     if reference.source.trim() == "active_file" {
-        return ["[IDE 上下文引用]".to_string(), format!("文件: {display_path}")].join("\n");
+        return ["[IDE 上下文引用]".to_string(), format!("文件: {file_path}")].join("\n");
     }
-    let mut lines = vec!["[IDE 上下文引用]".to_string(), format!("文件: {display_path}")];
+    let mut lines = vec!["[IDE 上下文引用]".to_string(), format!("文件: {file_path}")];
     if reference.start_line.is_some() || reference.end_line.is_some() {
         let line_text = match (reference.start_line, reference.end_line) {
             (Some(start), Some(end)) if end > start => format!("{start}-{end}"),
@@ -326,13 +326,13 @@ fn query_ide_context_references(
                     .and_then(|value| value.to_str())
                     .map(ToOwned::to_owned)
                     .unwrap_or_else(|| file_path.clone());
-                let relative_path = ide_context_relative_display_path(&file_path, &group.workspace_path);
+                let _relative_path = ide_context_relative_display_path(&file_path, &group.workspace_path);
                 let display_label = format!(
                     "{}{}",
-                    relative_path,
+                    file_name,
                     ide_context_line_suffix(reference.start_line, reference.end_line)
                 );
-                let text_block = ide_context_text_block(&display_label, reference);
+                let text_block = ide_context_text_block(&file_path, reference);
                 group.references.push(IdeContextReferenceItemOutput {
                     id: format!("{}:{}:{}", snapshot.client_id, reference.id, reference.captured_at),
                     workspace_path: group.workspace_path.clone(),

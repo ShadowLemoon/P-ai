@@ -81,9 +81,24 @@ struct IdeContextQueryResultOutput {
     updated_at: String,
 }
 
-const IDE_CONTEXT_BRIDGE_ADDR: &str = "127.0.0.1:43129";
+const IDE_CONTEXT_BRIDGE_HOST: &str = "127.0.0.1";
+const IDE_CONTEXT_BRIDGE_BASE_PORT: u16 = 43129;
+const IDE_CONTEXT_BRIDGE_MAX_PORT: u16 = 43139;
 const IDE_CONTEXT_BRIDGE_PATH: &str = "/ide-context";
+const IDE_CONTEXT_BRIDGE_DISCOVERY_FILE: &str = "p-ai-ide-context-bridge.json";
 static IDE_CONTEXT_BRIDGE_STARTED: AtomicBool = AtomicBool::new(false);
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IdeContextBridgeDiscovery {
+    url: String,
+    bridge_url: String,
+    host: String,
+    port: u16,
+    path: String,
+    pid: u32,
+    updated_at: String,
+}
 
 fn ide_context_compare_key(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -196,6 +211,69 @@ fn ide_context_text_block(file_path: &str, reference: &IdeContextReference) -> S
     lines.push("内容:".to_string());
     lines.push(reference.content.clone());
     lines.join("\n")
+}
+
+fn ide_context_bridge_url(port: u16) -> String {
+    format!("ws://{}:{}{}", IDE_CONTEXT_BRIDGE_HOST, port, IDE_CONTEXT_BRIDGE_PATH)
+}
+
+fn ide_context_bridge_discovery_path() -> PathBuf {
+    std::env::temp_dir().join(IDE_CONTEXT_BRIDGE_DISCOVERY_FILE)
+}
+
+fn publish_ide_context_bridge_discovery(port: u16) -> Result<(), String> {
+    let url = ide_context_bridge_url(port);
+    let payload = IdeContextBridgeDiscovery {
+        url: url.clone(),
+        bridge_url: url,
+        host: IDE_CONTEXT_BRIDGE_HOST.to_string(),
+        port,
+        path: IDE_CONTEXT_BRIDGE_PATH.to_string(),
+        pid: std::process::id(),
+        updated_at: now_iso(),
+    };
+    let path = ide_context_bridge_discovery_path();
+    let text = serde_json::to_string_pretty(&payload)
+        .map_err(|err| format!("Serialize IDE context bridge discovery failed: {err}"))?;
+    fs::write(&path, text).map_err(|err| {
+        format!(
+            "Write IDE context bridge discovery failed ({}): {err}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+fn clear_ide_context_bridge_discovery() {
+    let path = ide_context_bridge_discovery_path();
+    if path.exists() {
+        let _ = fs::remove_file(path);
+    }
+}
+
+async fn bind_ide_context_bridge_listener() -> Result<(tokio::net::TcpListener, u16), String> {
+    let mut errors = Vec::new();
+    for port in IDE_CONTEXT_BRIDGE_BASE_PORT..=IDE_CONTEXT_BRIDGE_MAX_PORT {
+        let addr = format!("{}:{}", IDE_CONTEXT_BRIDGE_HOST, port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(listener) => return Ok((listener, port)),
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::AddrInUse {
+                    eprintln!("[IDE 上下文桥] 端口占用，尝试顺延: {}", addr);
+                } else {
+                    eprintln!("[IDE 上下文桥] 监听失败，尝试下一个端口 {}: {}", addr, err);
+                }
+                errors.push(format!("{addr}: {err}"));
+            }
+        }
+    }
+    Err(format!(
+        "No available IDE context bridge port in {}:{}-{} ({})",
+        IDE_CONTEXT_BRIDGE_HOST,
+        IDE_CONTEXT_BRIDGE_BASE_PORT,
+        IDE_CONTEXT_BRIDGE_MAX_PORT,
+        errors.join("; ")
+    ))
 }
 
 fn upsert_ide_context_snapshot_internal(
@@ -381,14 +459,19 @@ fn start_ide_context_bridge_server(state: AppState) {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        let listener = match tokio::net::TcpListener::bind(IDE_CONTEXT_BRIDGE_ADDR).await {
-            Ok(listener) => listener,
+        let (listener, port) = match bind_ide_context_bridge_listener().await {
+            Ok(result) => result,
             Err(err) => {
-                eprintln!("[IDE 上下文桥] 监听失败 {}: {}", IDE_CONTEXT_BRIDGE_ADDR, err);
+                clear_ide_context_bridge_discovery();
+                eprintln!("[IDE 上下文桥] 监听失败: {}", err);
                 return;
             }
         };
-        eprintln!("[IDE 上下文桥] 已监听 ws://{}{}", IDE_CONTEXT_BRIDGE_ADDR, IDE_CONTEXT_BRIDGE_PATH);
+        let bridge_url = ide_context_bridge_url(port);
+        if let Err(err) = publish_ide_context_bridge_discovery(port) {
+            eprintln!("[IDE 上下文桥] 写入发现文件失败: {}", err);
+        }
+        eprintln!("[IDE 上下文桥] 已监听 {}", bridge_url);
         loop {
             let (stream, peer_addr) = match listener.accept().await {
                 Ok(result) => result,

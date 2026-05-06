@@ -216,9 +216,9 @@ fn default_deputy_department(api_config_id: &str) -> DepartmentConfig {
     let api_config_id = api_config_id.trim().to_string();
     DepartmentConfig {
         id: DEPUTY_DEPARTMENT_ID.to_string(),
-        name: "副手".to_string(),
-        summary: "当任务目标明确、边界清晰、需要快速执行，或需要在严格限制下完成具体动作时，立刻使用 delegate 工具对我发起委托。".to_string(),
-        guide: "你是副手部门。你的核心原则是严格不越权、不擅自扩展需求、不多想。收到上级派发的任务后，用最少的工具调用、最快的速度完成明确目标；若信息不足或任务超出指令边界，就直接说明缺口并等待主部门继续决策。".to_string(),
+        name: "explorer".to_string(),
+        summary: "当需要围绕一个明确主题做大范围摸底、搜集证据、定位文件与调用链、梳理影响面、风险和开放问题时，立刻使用 delegate 工具对我发起委托。".to_string(),
+        guide: "你是 explorer 部门。你的职责是围绕明确主题快速建立全局认识，并输出高密度、可验证的探索结果。收到委托后，优先扩大搜索范围，系统梳理相关文件、符号、调用链、配置、日志、风险与开放问题，再收敛成清晰结论。你擅长回答范围清晰的代码库问题、做大范围事实收集和影响面分析；主要产出应是发现、证据、线索、定位、风险和下一步建议，而不是直接承担主线实现。除非任务本身明确要求，否则不要擅自扩展目标，也不要把探索任务改写成执行任务。".to_string(),
         api_config_ids: if api_config_id.is_empty() {
             Vec::new()
         } else {

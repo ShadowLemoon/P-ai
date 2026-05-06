@@ -89,6 +89,7 @@
                 v-model.trim="selectedDepartment.name"
                 class="input input-bordered input-sm w-full"
                 :placeholder="t('config.department.namePlaceholder')"
+                :disabled="selectedDepartmentIsLockedPreset"
                 @input="touchSelectedDepartment"
               />
               <div v-if="selectedDepartmentNameEmpty" class="mt-2 text-xs text-error opacity-80">
@@ -249,6 +250,7 @@
                 v-model="selectedDepartment.summary"
                 class="textarea textarea-bordered textarea-sm min-h-20 w-full"
                 :placeholder="t('config.department.summaryPlaceholder')"
+                :disabled="selectedDepartmentIsLockedPreset"
                 @input="touchSelectedDepartment"
               />
             </div>
@@ -259,6 +261,7 @@
                 v-model="selectedDepartment.guide"
                 class="textarea textarea-bordered textarea-sm min-h-28 w-full"
                 :placeholder="t('config.department.guidePlaceholder')"
+                :disabled="selectedDepartmentIsLockedPreset"
                 @input="touchSelectedDepartment"
               />
               <div class="mt-2 text-[11px] opacity-40">{{ t("config.department.guideHint") }}</div>
@@ -463,7 +466,7 @@ import {
 } from "../../utils/department-basic-editor";
 import { validateDepartmentConfig } from "../../utils/department-validation";
 import { normalizeDepartmentChildIds } from "../../utils/department-graph";
-import { REMOTE_CUSTOMER_SERVICE_DEPARTMENT_DEFAULT } from "../../constants/department-defaults";
+import { EXPLORER_DEPARTMENT_DEFAULT, REMOTE_CUSTOMER_SERVICE_DEPARTMENT_DEFAULT } from "../../constants/department-defaults";
 import SettingsStickyLayout from "../../components/SettingsStickyLayout.vue";
 
 const props = defineProps<{
@@ -596,6 +599,7 @@ const sortedDepartments = computed(() =>
 const selectedDepartment = computed(
   () => departmentDrafts.value.find((item) => item.id === selectedDepartmentId.value) ?? sortedDepartments.value[0] ?? null,
 );
+const selectedDepartmentIsLockedPreset = computed(() => String(selectedDepartment.value?.id || "").trim() === "deputy-department");
 const selectedDepartmentIsSystemBuiltIn = computed(() => isSystemBuiltInDepartment(selectedDepartment.value));
 const selectedDepartmentIsPrivateWorkspace = computed(() => selectedDepartment.value?.source === "private_workspace");
 const textDepartmentApiConfigs = computed(() =>
@@ -1006,11 +1010,7 @@ function departmentDefaultSeed(department: DepartmentConfig | null | undefined):
     };
   }
   if (id === "deputy-department") {
-    return {
-      name: "副手",
-      summary: "当任务目标明确、边界清晰、需要快速执行，或需要在严格限制下完成具体动作时，立刻使用 delegate 工具对我发起委托。",
-      guide: "你是副手部门。你的核心原则是严格不越权、不擅自扩展需求、不多想。收到上级派发的任务后，用最少的工具调用、最快的速度完成明确目标；若信息不足或任务超出指令边界，就直接说明缺口并等待主部门继续决策。",
-    };
+    return EXPLORER_DEPARTMENT_DEFAULT;
   }
   if (id === "remote-customer-service-department") {
     return REMOTE_CUSTOMER_SERVICE_DEPARTMENT_DEFAULT;

@@ -400,6 +400,8 @@
             .find(|item| item.id == DEPUTY_DEPARTMENT_ID)
             .expect("deputy department");
         assert!(!deputy.is_deputy);
+        assert_eq!(deputy.name, "explorer");
+        assert!(deputy.summary.contains("大范围摸底"));
         assert_eq!(deputy.agent_ids, vec![DEPUTY_AGENT_ID.to_string()]);
 
         let assistant = cfg

@@ -2411,8 +2411,11 @@ export function useChatFlow(options: UseChatFlowOptions) {
     if (!hasForegroundRoundInFlight) {
       resetDisplayState();
       if (round.phase === "streaming") removeDraft(round.draftId);
-      setRound({ phase: "queued", gen });
-      updateQueuedAssistantDraftStatus(`${DRAFT_ASSISTANT_ID_PREFIX}${gen}`, options.t("chat.statusPreparingMessage"));
+      if (selectedMentions.length === 0) {
+        setRound({ phase: "queued", gen });
+        updateQueuedAssistantDraftStatus(`${DRAFT_ASSISTANT_ID_PREFIX}${gen}`, options.t("chat.statusPreparingMessage"));
+      }
+      // 有 @ 目标时：消息已委托给目标部门，当前会话不需助理回复，跳过 queued 和草稿。
       // 注意：queued 阶段不应提前置 chatting=true。
       // 之前这里提前置 true，会让“未收到 history_flushed 前 UI 不应进入流式态”的测试失败。
     }

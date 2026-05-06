@@ -85,6 +85,7 @@
       @remove-selected-api-config="removeSelectedApiConfig"
       @add-persona="addPersona"
       @remove-selected-persona="removeSelectedPersona"
+      @reset-personas="resetPersonas"
       @save-personas="savePersonas"
       @import-persona-memories="importPersonaMemories"
       @open-current-history="openCurrentHistory"
@@ -589,6 +590,7 @@ const props = defineProps<{
   removeSelectedApiConfig: () => void;
   addPersona: () => void;
   removeSelectedPersona: () => void;
+  resetPersonas: () => Promise<unknown> | unknown;
   savePersonas: () => Promise<boolean> | boolean;
   importPersonaMemories: (payload: { agentId: string; file: File }) => void;
   openCurrentHistory: () => void;

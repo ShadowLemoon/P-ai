@@ -6,7 +6,7 @@
         <div class="flex gap-1">
           <select :value="personaEditorId" class="select select-bordered select-sm flex-1" @change="$emit('update:personaEditorId', ($event.target as HTMLSelectElement).value)">
             <option v-for="p in sortedPersonas" :key="p.id" :value="p.id">
-              {{ p.name }}{{ p.isBuiltInUser ? `（${t("config.persona.userTag")}）` : (p.isBuiltInSystem ? `（${t("config.persona.systemTag")}）` : (p.source === "private_workspace" ? `（${t("config.persona.privateWorkspaceTag")}）` : "")) }}
+              {{ p.name }}{{ p.isBuiltInUser ? `（${t("config.persona.userTag")}）` : (isPresetPersona(p) ? `（${t("config.persona.systemTag")}）` : (p.source === "private_workspace" ? `（${t("config.persona.privateWorkspaceTag")}）` : "")) }}
             </option>
           </select>
           <button class="btn btn-sm btn-square bg-base-200" :title="t('config.persona.add')" @click="$emit('addPersona')">
@@ -20,6 +20,15 @@
             @click="$emit('removeSelectedPersona')"
           >
             <Trash2 class="h-3.5 w-3.5" />
+          </button>
+          <button
+            class="btn btn-sm btn-square"
+            :class="personaDirty ? 'bg-base-200' : 'text-base-content/30 bg-base-200 cursor-not-allowed'"
+            :title="t('common.reset')"
+            :disabled="!personaDirty || personaSaving"
+            @click="$emit('resetPersonas')"
+          >
+            <RotateCcw class="h-3.5 w-3.5" />
           </button>
           <button
             class="btn btn-sm btn-square"
@@ -78,8 +87,14 @@
             class="textarea textarea-bordered textarea-sm w-full"
             rows="12"
             :disabled="selectedPersonaIsPrivateWorkspace"
-            :placeholder="selectedPersona.isBuiltInUser ? t('config.persona.userPlaceholder') : (selectedPersona.isBuiltInSystem ? t('config.persona.systemPlaceholder') : t('config.persona.assistantPlaceholder'))"
+            :placeholder="selectedPersona.isBuiltInUser ? t('config.persona.userPlaceholder') : (selectedPersona.id === 'system-persona' ? t('config.persona.systemPlaceholder') : t('config.persona.assistantPlaceholder'))"
           ></textarea>
+          <div v-if="selectedPersonaIsPreset && !selectedPersonaIsPrivateWorkspace" class="mt-3 flex justify-end">
+            <button class="btn btn-ghost btn-sm gap-2" @click="restoreSelectedPersonaPreset">
+              <RotateCcw class="h-3.5 w-3.5" />
+              {{ t("config.persona.restoreInitial") }}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -176,7 +191,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useI18n } from "vue-i18n";
-import { Plus, Save, Trash2 } from "lucide-vue-next";
+import { Plus, RotateCcw, Save, Trash2 } from "lucide-vue-next";
 import type { PersonaProfile } from "../../../../types/app";
 import { invokeTauri } from "../../../../services/tauri-api";
 
@@ -196,6 +211,7 @@ const emit = defineEmits<{
   (e: "update:personaEditorId", value: string): void;
   (e: "addPersona"): void;
   (e: "removeSelectedPersona"): void;
+  (e: "resetPersonas"): void;
   (e: "openAvatarEditor"): void;
   (e: "importPersonaMemories", value: { agentId: string; file: File }): void;
   (e: "savePersonas"): void;
@@ -215,7 +231,12 @@ const pendingDisableAgentId = ref("");
 const selectedPersonaIsPrivateWorkspace = computed(
   () => props.selectedPersona?.source === "private_workspace",
 );
+const selectedPersonaIsPreset = computed(
+  () => isPresetPersona(props.selectedPersona),
+);
 const sortedPersonas = computed(() => sortPersonasForSelect(props.personas));
+
+type PersonaDefaultSeed = Pick<PersonaProfile, "systemPrompt">;
 
 function personaSelectRank(persona: PersonaProfile): number {
   if (persona.isBuiltInUser) return 0;
@@ -234,6 +255,51 @@ function avatarInitial(name: string): string {
   const text = (name || "").trim();
   if (!text) return "?";
   return text[0].toUpperCase();
+}
+
+function isPresetPersona(persona: PersonaProfile | null | undefined): boolean {
+  const id = String(persona?.id || "").trim();
+  if (!id) return false;
+  return id === "default-agent"
+    || id === "deputy-agent"
+    || id === "user-persona"
+    || id === "system-persona"
+    || !!persona?.isBuiltInUser
+    || !!persona?.isBuiltInSystem;
+}
+
+function personaDefaultSeed(persona: PersonaProfile | null | undefined): PersonaDefaultSeed | null {
+  const id = String(persona?.id || "").trim();
+  if (!id) return null;
+  if (id === "default-agent") {
+    return {
+      systemPrompt: "你是谁：你是助理，是用户默认会先对话的助手。\n台词技巧：表达自然、直接、有人味；先给结论，再补必要说明；少空话，少套话。\n性格画像：耐心、友善、靠谱、利落。",
+    };
+  }
+  if (id === "user-persona" || persona?.isBuiltInUser) {
+    return {
+      systemPrompt: "我是...",
+    };
+  }
+  if (id === "deputy-agent") {
+    return {
+      systemPrompt: "你是谁：你是副手，是一个偏执行、偏推进的助手分身。\n台词技巧：短句作答，直给重点，少铺垫，少客套。\n性格画像：简洁、干脆、克制、利落。",
+    };
+  }
+  if (id === "system-persona") {
+    return {
+      systemPrompt: "你是谁：你是 pai system，是系统消息与状态播报使用的人格。\n台词技巧：用词明确、稳定、客观，像系统通知，不抒情，不延展。\n性格画像：冷静、克制、严谨。",
+    };
+  }
+  return null;
+}
+
+function restoreSelectedPersonaPreset() {
+  if (!selectedPersonaIsPreset.value || selectedPersonaIsPrivateWorkspace.value) return;
+  const target = props.selectedPersona;
+  const defaults = personaDefaultSeed(target);
+  if (!target || !defaults) return;
+  target.systemPrompt = defaults.systemPrompt;
 }
 
 function triggerPersonaMemoryImport() {

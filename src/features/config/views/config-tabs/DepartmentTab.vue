@@ -157,6 +157,7 @@
                   <select
                     class="select select-bordered select-sm flex-1"
                     :value="pendingDepartmentAssigneeId"
+                    :disabled="departmentAssigneeLimitReached"
                     @change="pendingDepartmentAssigneeId = ($event.target as HTMLSelectElement).value"
                   >
                     <option value="">{{ t("config.department.assigneePlaceholder") }}</option>
@@ -167,13 +168,16 @@
                   <button
                     class="btn btn-sm"
                     type="button"
-                    :disabled="!pendingDepartmentAssigneeId"
+                    :disabled="!pendingDepartmentAssigneeId || departmentAssigneeLimitReached"
                     @click="addDepartmentAssignee"
                   >
                     {{ t("config.department.addAssignee") }}
                   </button>
                 </div>
                 <div class="text-[11px] opacity-50">{{ t("config.department.assigneePrimaryHint") }}</div>
+                <div v-if="departmentAssigneeLimitReached" class="text-[11px] text-warning opacity-80">
+                  {{ t("config.department.assigneeLimitHint") }}
+                </div>
               </div>
             </div>
 
@@ -690,6 +694,9 @@ const availableAssigneePersonas = computed(() =>
 const selectedDepartmentAssigneeIds = computed(() =>
   normalizeNameList(selectedDepartment.value?.agentIds || []),
 );
+const departmentAssigneeLimitReached = computed(() =>
+  selectedDepartmentAssigneeIds.value.length >= 1,
+);
 const remainingAssigneePersonas = computed(() =>
   availableAssigneePersonas.value.filter(
     (persona) => !selectedDepartmentAssigneeIds.value.includes(String(persona.id || "").trim()),
@@ -1042,6 +1049,7 @@ function personaNameById(agentId: string): string {
 function addDepartmentAssignee() {
   const target = selectedDepartment.value;
   if (!target) return;
+  if (departmentAssigneeLimitReached.value) return;
   const nextAgentId = String(pendingDepartmentAssigneeId.value || "").trim();
   if (!nextAgentId) return;
   const nextAgentIds = normalizeNameList([...(target.agentIds || []), nextAgentId]);

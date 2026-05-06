@@ -236,7 +236,7 @@
         </button>
       </div>
     </div>
-    <div v-if="ideContextGroups.length > 0" class="mb-2 flex flex-col gap-2">
+    <div v-if="attachedIdeContextReferences.length > 0 || mergedIdeContextGroups.length > 0" class="mb-2 flex flex-col gap-2">
       <div v-for="group in mergedIdeContextGroups" :key="group.workspacePath" class="flex flex-col gap-1">
         <div v-if="showIdeWorkspaceGroupLabel" class="px-1 text-[11px] opacity-60">{{ group.workspaceName }}</div>
         <div class="flex flex-wrap gap-1">
@@ -600,7 +600,7 @@ const normalizedChatModelOptions = computed(() =>
     }))
     .filter((item) => !!item.id && !!item.name),
 );
-const showIdeWorkspaceGroupLabel = computed(() => (props.ideContextGroups || []).length > 1);
+const showIdeWorkspaceGroupLabel = computed(() => mergedIdeContextGroups.value.length > 1);
 const attachedIdeContextReferenceIds = computed(() => new Set((props.attachedIdeContextReferences || []).map((item) => item.id)));
 const mergedIdeContextGroups = computed<IdeContextWorkspaceGroup[]>(() => {
   const groupsMap = new Map<string, IdeContextWorkspaceGroup>();

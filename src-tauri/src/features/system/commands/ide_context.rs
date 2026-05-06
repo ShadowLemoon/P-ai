@@ -279,7 +279,7 @@ async fn bind_ide_context_bridge_listener() -> Result<(tokio::net::TcpListener, 
 fn upsert_ide_context_snapshot_internal(
     input: UpsertIdeContextSnapshotInput,
     state: &AppState,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let client_id = input.client_id.trim().to_string();
     if client_id.is_empty() {
         return Err("clientId is required".to_string());
@@ -346,8 +346,8 @@ fn upsert_ide_context_snapshot_internal(
         .ide_context_snapshots
         .lock()
         .map_err(|_| "Failed to lock ide context snapshots".to_string())?;
-    snapshots.insert(client_id, snapshot);
-    Ok(())
+    snapshots.insert(client_id.clone(), snapshot);
+    Ok(client_id)
 }
 
 #[tauri::command]
@@ -355,7 +355,7 @@ fn upsert_ide_context_snapshot(
     input: UpsertIdeContextSnapshotInput,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    upsert_ide_context_snapshot_internal(input, &state)
+    upsert_ide_context_snapshot_internal(input, &state).map(|_| ())
 }
 
 #[tauri::command]
@@ -516,6 +516,7 @@ async fn ide_context_ws_handle_connection(
     }
     eprintln!("[IDE 上下文桥] 客户端已连接: {}", peer_addr);
     let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+    let mut connected_client_id = String::new();
     let _ = ws_sender
         .send(tokio_tungstenite::tungstenite::Message::Text(
             serde_json::json!({"type": "ready", "path": IDE_CONTEXT_BRIDGE_PATH}).to_string().into(),
@@ -526,7 +527,8 @@ async fn ide_context_ws_handle_connection(
             Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
                 match serde_json::from_str::<UpsertIdeContextSnapshotInput>(&text) {
                     Ok(input) => match upsert_ide_context_snapshot_internal(input, &state) {
-                        Ok(()) => {
+                        Ok(client_id) => {
+                            connected_client_id = client_id;
                             let _ = ws_sender
                                 .send(tokio_tungstenite::tungstenite::Message::Text(
                                     serde_json::json!({"type": "ack", "ok": true}).to_string().into(),
@@ -558,6 +560,16 @@ async fn ide_context_ws_handle_connection(
             Err(err) => {
                 eprintln!("[IDE 上下文桥] 客户端消息错误 {}: {}", peer_addr, err);
                 break;
+            }
+        }
+    }
+    if !connected_client_id.is_empty() {
+        match state.ide_context_snapshots.lock() {
+            Ok(mut snapshots) => {
+                snapshots.remove(&connected_client_id);
+            }
+            Err(_) => {
+                eprintln!("[IDE 上下文桥] 清理客户端缓存失败: {}", connected_client_id);
             }
         }
     }

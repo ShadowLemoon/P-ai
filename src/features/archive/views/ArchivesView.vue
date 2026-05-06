@@ -172,24 +172,10 @@
                 class="archive-meme-segment-flow"
               >
                 <template v-for="(segment, index) in messageMemeSegments(m)" :key="`${m.id}-meme-${index}`">
-                  <MarkdownRender
+                  <div
                     v-if="segment.type === 'text' && archiveMemeText(segment)"
-                    class="ecall-markdown-content archive-markdown-content max-w-none"
-                    custom-id="chat-markstream"
-                    :nodes="markdownNodesForText(archiveMemeText(segment), `${m.id}:meme:${index}`)"
-                    :is-dark="markdownIsDark"
-                    :final="true"
-                    :max-live-nodes="0"
-                    :batch-rendering="false"
-                    :initial-render-batch-size="0"
-                    :render-batch-size="0"
-                    :render-batch-delay="0"
-                    :render-batch-budget-ms="0"
-                    :code-block-props="markdownCodeBlockProps"
-                    :mermaid-props="markdownMermaidProps"
-                    :typewriter="false"
-                    @click="handleArchiveMarkdownClick"
-                  />
+                    class="whitespace-pre-wrap break-words text-sm leading-7"
+                  >{{ archiveMemeText(segment) }}</div>
                   <img
                     v-else-if="segment.type === 'meme'"
                     :src="archiveMemeSegmentDataUrl(segment)"
@@ -207,43 +193,15 @@
                   {{ collapsibleArchiveMessageTitle(m) }}
                 </summary>
                 <div class="collapse-content px-3 pb-3 pt-0">
-                  <MarkdownRender
-                    class="ecall-markdown-content archive-markdown-content max-w-none"
-                    custom-id="chat-markstream"
-                    :nodes="markdownNodesForMessage(m)"
-                    :is-dark="markdownIsDark"
-                    :final="true"
-                    :max-live-nodes="0"
-                    :batch-rendering="false"
-                    :initial-render-batch-size="0"
-                    :render-batch-size="0"
-                    :render-batch-delay="0"
-                    :render-batch-budget-ms="0"
-                    :code-block-props="markdownCodeBlockProps"
-                    :mermaid-props="markdownMermaidProps"
-                    :typewriter="false"
-                    @click="handleArchiveMarkdownClick"
-                  />
+                  <div class="whitespace-pre-wrap break-words text-sm leading-7">
+                    {{ messageText(m) }}
+                  </div>
                 </div>
               </details>
-              <MarkdownRender
+              <div
                 v-else-if="messageText(m)"
-                class="ecall-markdown-content archive-markdown-content max-w-none"
-                custom-id="chat-markstream"
-                :nodes="markdownNodesForMessage(m)"
-                :is-dark="markdownIsDark"
-                :final="true"
-                :max-live-nodes="0"
-                :batch-rendering="false"
-                :initial-render-batch-size="0"
-                :render-batch-size="0"
-                :render-batch-delay="0"
-                :render-batch-budget-ms="0"
-                :code-block-props="markdownCodeBlockProps"
-                :mermaid-props="markdownMermaidProps"
-                :typewriter="false"
-                @click="handleArchiveMarkdownClick"
-              />
+                class="whitespace-pre-wrap break-words text-sm leading-7"
+              >{{ messageText(m) }}</div>
               <div
                 v-if="messageAttachments(m).length > 0"
                 class="mt-2 flex flex-wrap gap-2"
@@ -297,12 +255,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, watchEffect } from "vue";
 import { Trash2 } from "lucide-vue-next";
 import { useI18n } from "vue-i18n";
-import MarkdownRender, { enableKatex, enableMermaid, getMarkdown, parseMarkdownToStructure } from "markstream-vue";
-import "markstream-vue/index.css";
 import { invokeTauri } from "../../../services/tauri-api";
-import { registerChatMarkstreamComponents } from "../../chat/markdown/register-chat-markstream";
-import { isAbsoluteLocalPath, normalizeLocalLinkHref } from "../../chat/utils/local-link";
-import { isDarkAppTheme } from "../../shell/composables/use-app-theme";
 import type {
   ArchiveSummary,
   ChatMessage,
@@ -345,37 +298,6 @@ const props = defineProps<{
   currentTheme: string;
 }>();
 const { t, locale } = useI18n();
-
-enableMermaid();
-enableKatex();
-registerChatMarkstreamComponents();
-
-const MARKDOWN_NODE_CACHE_LIMIT = 120;
-const markstreamMarkdown = getMarkdown();
-const markdownNodeCache = new Map<string, { text: string; nodes: any[] }>();
-const markdownCodeBlockProps = {
-  showHeader: true,
-  showCopyButton: true,
-  showPreviewButton: false,
-  showExpandButton: true,
-  showCollapseButton: true,
-  showFontSizeButtons: false,
-  enableFontSizeControl: false,
-  isShowPreview: false,
-  showTooltips: false,
-};
-const markdownMermaidProps = {
-  showHeader: true,
-  showCopyButton: true,
-  showExportButton: false,
-  showFullscreenButton: true,
-  showCollapseButton: false,
-  showZoomControls: true,
-  showModeToggle: false,
-  enableWheelZoom: true,
-  showTooltips: false,
-};
-const markdownIsDark = computed(() => isDarkAppTheme(props.currentTheme));
 
 const emit = defineEmits<{
   (e: "loadArchives"): void;
@@ -715,28 +637,6 @@ function messageText(msg: ChatMessage): string {
     .trim();
 }
 
-function markdownNodesForText(text: string, cacheKey: string): any[] {
-  const normalized = String(text || "").trim();
-  const key = String(cacheKey || "archive").trim() || "archive";
-  const cached = markdownNodeCache.get(key);
-  if (cached && cached.text === normalized) {
-    markdownNodeCache.delete(key);
-    markdownNodeCache.set(key, cached);
-    return cached.nodes;
-  }
-  const nodes = parseMarkdownToStructure(normalized, markstreamMarkdown, { final: true });
-  if (markdownNodeCache.size >= MARKDOWN_NODE_CACHE_LIMIT) {
-    const oldestKey = markdownNodeCache.keys().next().value;
-    if (typeof oldestKey === "string") markdownNodeCache.delete(oldestKey);
-  }
-  markdownNodeCache.set(key, { text: normalized, nodes });
-  return nodes;
-}
-
-function markdownNodesForMessage(msg: ChatMessage): any[] {
-  return markdownNodesForText(messageText(msg), `${String(msg.id || "")}:main`);
-}
-
 function isContextOrganizationMessage(msg: ChatMessage): boolean {
   if (msg.role !== "user") return false;
   return messageText(msg).trimStart().startsWith("[上下文整理]");
@@ -757,35 +657,6 @@ function collapsibleArchiveMessageTitle(msg: ChatMessage): string {
     .map((line) => line.trim())
     .find((line) => !!line);
   return firstLine || "[上下文整理]";
-}
-
-async function handleArchiveMarkdownClick(event: MouseEvent) {
-  const target = event.target as HTMLElement | null;
-  const anchor = target?.closest("a") as HTMLAnchorElement | null;
-  if (!anchor) return;
-  const href = normalizeLocalLinkHref(anchor.getAttribute("href")?.trim() || "");
-  if (!href) return;
-
-  if (isAbsoluteLocalPath(href)) {
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      await invokeTauri("open_local_file_directory", { path: href });
-    } catch (error) {
-      console.warn("[归档链接] 打开本地路径失败", { href, error });
-    }
-    return;
-  }
-
-  if (href.startsWith("http://") || href.startsWith("https://")) {
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      await invokeTauri("open_external_url", { url: href });
-    } catch (error) {
-      console.warn("[归档链接] 打开外部链接失败", { href, error });
-    }
-  }
 }
 
 function isArchiveDialogueMessage(msg: ChatMessage): boolean {
@@ -853,7 +724,26 @@ function archiveMemeName(segment: MemeMessageSegment): string {
   return segment.type === "meme" ? segment.category : "";
 }
 
+function remoteImOriginOfMessage(msg: ChatMessage): {
+  senderName?: string;
+  remoteContactName?: string;
+} | null {
+  const origin = (msg as ChatMessage & {
+    remoteImOrigin?: {
+      senderName?: string;
+      remoteContactName?: string;
+    };
+  }).remoteImOrigin;
+  return origin && typeof origin === "object" ? origin : null;
+}
+
 function speakerLabel(msg: ChatMessage): string {
+  const remoteImOrigin = remoteImOriginOfMessage(msg);
+  if (remoteImOrigin) {
+    const senderName = String(remoteImOrigin.senderName || "").trim();
+    const remoteContactName = String(remoteImOrigin.remoteContactName || "").trim();
+    return senderName || remoteContactName || "IM";
+  }
   const speakerId = String(msg.speakerAgentId || "").trim();
   if (speakerId) {
     return props.personaNameMap?.[speakerId] || speakerId;

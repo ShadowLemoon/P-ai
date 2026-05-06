@@ -216,6 +216,8 @@
         @switch-conversation="onSwitchConversation"
         @rename-conversation="onRenameConversation"
         @toggle-pin-conversation="onToggleConversationPin"
+        @archive-conversation="onArchiveConversation"
+        @delete-conversation="onDeleteConversation"
         @create-conversation="onCreateConversation"
         @approve-terminal-approval="approveTerminalApproval"
         @deny-terminal-approval="denyTerminalApproval"
@@ -638,6 +640,8 @@ const props = defineProps<{
   onSwitchConversation: (payload: { conversationId: string; kind?: "local_unarchived" | "remote_im_contact"; remoteContactId?: string }) => void;
   onRenameConversation: (payload: { conversationId: string; title: string }) => void;
   onToggleConversationPin: (conversationId: string) => void;
+  onArchiveConversation: (conversationId: string) => void;
+  onDeleteConversation: (conversationId: string) => void;
   onCreateConversation: (input?: { title?: string; departmentId?: string }) => void;
   onBranchConversationFromSelection: (payload: { count: number; messageIds: string[] }) => void;
   onForwardConversationFromSelection: (payload: { count: number; messageIds: string[]; targetConversationId: string }) => void;

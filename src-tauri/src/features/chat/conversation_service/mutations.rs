@@ -599,17 +599,6 @@ impl ConversationService {
             .lock()
             .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
 
-        let runtime = state_read_runtime_state_cached(state)?;
-        let main_conversation_id = runtime
-            .main_conversation_id
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or_default()
-            .to_string();
-        if normalized_conversation_id == main_conversation_id {
-            drop(guard);
-            return Err("主会话暂不支持改名".to_string());
-        }
         ensure_unarchived_conversation_not_organizing(state, normalized_conversation_id)?;
 
         let mut conversation = state_read_conversation_cached(state, normalized_conversation_id)?;

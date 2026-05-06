@@ -42,6 +42,8 @@
       @switch-conversation="switchChatConversation"
       @rename-conversation="renameCurrentConversation"
       @toggle-pin-conversation="toggleConversationPin"
+      @archive-conversation="archiveConversationFromList"
+      @delete-conversation="deleteUnarchivedConversationFromArchives"
       @create-conversation="createUnarchivedConversation"
       @force-archive="openForceArchiveActionDialog"
       @start-drag="startDrag"
@@ -279,6 +281,8 @@
       :on-switch-conversation="switchChatConversation"
       :on-rename-conversation="renameCurrentConversation"
       :on-toggle-conversation-pin="toggleConversationPin"
+      :on-archive-conversation="archiveConversationFromList"
+      :on-delete-conversation="deleteUnarchivedConversationFromArchives"
       :on-create-conversation="createUnarchivedConversation"
       :on-branch-conversation-from-selection="branchConversationFromSelection"
       :on-forward-conversation-from-selection="forwardConversationFromSelection"
@@ -2438,6 +2442,15 @@ async function deleteUnarchivedConversationFromArchives(conversationId: string) 
   await recoverForegroundConversationFromOverview("delete_unarchived_conversation", String(result?.activeConversationId || "").trim() || null);
 }
 
+async function archiveConversationFromList(conversationId: string) {
+  const normalizedConversationId = String(conversationId || "").trim();
+  if (!normalizedConversationId) return;
+  if (normalizedConversationId !== String(currentChatConversationId.value || "").trim()) {
+    await switchUnarchivedConversation(normalizedConversationId);
+  }
+  openForceArchiveActionDialog();
+}
+
 async function handleConfirmForceArchiveAction() {
   if (!detachedChatWindow.value) {
     await confirmForceArchiveAction();
@@ -3834,7 +3847,6 @@ async function renameCurrentConversation(payload: { conversationId: string; titl
   const conversationId = String(payload?.conversationId || "").trim();
   const title = String(payload?.title || "").trim();
   if (!conversationId) return;
-  if (conversationId !== String(currentChatConversationId.value || "").trim()) return;
   try {
     const result = await invokeTauri<{ conversationId: string; title: string }>("rename_unarchived_conversation", {
       input: {

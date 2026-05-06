@@ -18,21 +18,25 @@
           {{ section.title }}
         </div>
         <div>
-          <component
-            v-for="item in section.items"
+          <div
+            v-for="(item, itemIndex) in section.items"
             :key="item.conversationId"
-            :is="isCurrentConversation(item) ? 'div' : 'button'"
-            :type="isCurrentConversation(item) ? undefined : 'button'"
-            class="block w-full rounded-none text-left transition-colors"
-            :class="[
-              item.conversationId === props.activeConversationId ? 'bg-base-300' : 'bg-base-100 hover:bg-base-200',
-              isConversationItemDisabled(item) ? 'cursor-not-allowed opacity-60' : '',
-            ]"
-            :disabled="!isCurrentConversation(item) && isConversationItemDisabled(item)"
-            :title="conversationItemTitle(item)"
-            @click="handleConversationCardClick(item)"
+            class="group relative"
           >
-            <div class="flex items-center gap-2 p-2">
+            <div
+              class="block w-full rounded-none text-left transition-colors"
+              :class="[
+                item.conversationId === props.activeConversationId ? 'bg-base-300' : 'bg-base-100 hover:bg-base-200',
+                isConversationItemDisabled(item) ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+              ]"
+              :role="isCurrentConversation(item) || isConversationItemDisabled(item) ? undefined : 'button'"
+              :tabindex="isCurrentConversation(item) || isConversationItemDisabled(item) ? undefined : 0"
+              :title="conversationItemTitle(item)"
+              @click="handleConversationCardClick(item)"
+              @keydown.enter.prevent="handleConversationCardClick(item)"
+              @keydown.space.prevent="handleConversationCardClick(item)"
+            >
+              <div class="flex items-center gap-2 p-2">
               <div class="shrink-0">
                 <div class="avatar">
                   <div class="w-10 h-10 rounded-full bg-error text-error-content">
@@ -64,15 +68,6 @@
                       @keydown.esc.prevent="cancelConversationTitleEdit()"
                       @blur="handleConversationTitleBlur(item)"
                     />
-                    <button
-                      v-else-if="canRenameConversation(item)"
-                      type="button"
-                      class="min-w-0 truncate text-left text-sm font-medium hover:underline"
-                      @click.stop="startConversationTitleEdit(item)"
-                      @mousedown.stop
-                    >
-                      {{ conversationDisplayTitle(item) }}
-                    </button>
                     <div v-else class="min-w-0 truncate text-sm font-medium">
                       {{ conversationDisplayTitle(item) }}
                     </div>
@@ -81,24 +76,71 @@
                     <span class="text-[11px] text-base-content/60">
                       {{ formatConversationTime(item.updatedAt) }}
                     </span>
-                    <button
-                      v-if="!item.isMainConversation"
-                      type="button"
-                      class="btn btn-ghost btn-xs h-6 min-h-6 w-6 min-w-6 p-0 text-base-content/45 hover:text-base-content"
-                      :title="pinConversationTitle(item)"
-                      :disabled="!canToggleConversationPin(item)"
-                      @click.stop="toggleConversationPin(item)"
-                      @mousedown.stop
+                    <div
+                      v-if="shouldShowConversationMenu(item) && !isEditingTitle(item)"
+                      class="dropdown dropdown-end"
+                      :class="conversationMenuPlacementClass(itemIndex, section.items.length)"
                     >
-                      <PinOff
-                        v-if="item.isPinned || item.isMainConversation"
-                        class="h-3.5 w-3.5"
-                      />
-                      <Pin
-                        v-else
-                        class="h-3.5 w-3.5"
-                      />
-                    </button>
+                      <button
+                        type="button"
+                        tabindex="0"
+                        class="btn btn-ghost btn-xs h-6 min-h-6 w-6 min-w-6 p-0 text-base-content/55 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto hover:text-base-content"
+                        :title="t('common.more')"
+                        @click.stop
+                        @mousedown.stop
+                      >
+                        <Ellipsis class="h-3.5 w-3.5" />
+                      </button>
+                      <ul
+                        tabindex="0"
+                        class="menu dropdown-content z-[60] mt-2 w-40 rounded-box border border-base-300 bg-base-100 p-1 shadow-xl"
+                        @click.stop
+                        @mousedown.stop
+                      >
+                        <li v-if="!item.isMainConversation">
+                          <button
+                            type="button"
+                            :disabled="!canToggleConversationPin(item)"
+                            @click.stop="toggleConversationPin(item)"
+                          >
+                            <PinOff v-if="item.isPinned" class="h-4 w-4" />
+                            <Pin v-else class="h-4 w-4" />
+                            <span>{{ pinConversationTitle(item) }}</span>
+                          </button>
+                        </li>
+                        <li>
+                          <button
+                            type="button"
+                            :disabled="!canRenameConversation(item)"
+                            @click.stop="startConversationTitleEdit(item)"
+                          >
+                            <PencilLine class="h-4 w-4" />
+                            <span>{{ t("common.rename") }}</span>
+                          </button>
+                        </li>
+                        <li v-if="!item.isMainConversation">
+                          <button
+                            type="button"
+                            :disabled="!canArchiveConversation(item)"
+                            @click.stop="requestConversationArchive(item)"
+                          >
+                            <Archive class="h-4 w-4" />
+                            <span>{{ t("common.archive") }}</span>
+                          </button>
+                        </li>
+                        <li v-if="!item.isMainConversation">
+                          <button
+                            type="button"
+                            :disabled="!canDeleteConversation(item)"
+                            class="text-error"
+                            @click.stop="requestConversationDelete(item)"
+                          >
+                            <Trash2 class="h-4 w-4" />
+                            <span>{{ t("common.delete") }}</span>
+                          </button>
+                        </li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
 
@@ -120,8 +162,7 @@
                 </div>
               </div>
             </div>
-
-            <div v-if="!compactConversationList" class="space-y-1 px-2 pb-2">
+              <div v-if="!compactConversationList" class="space-y-1 px-2 pb-2">
               <div
                 v-for="preview in normalizedPreviewMessages(item).slice(0, 2)"
                 :key="preview.messageId"
@@ -135,8 +176,10 @@
               <div v-if="normalizedPreviewMessages(item).length === 0" class="px-1 text-xs opacity-60">
                 {{ t("chat.conversationNoPreview") }}
               </div>
+              </div>
             </div>
-          </component>
+
+          </div>
         </div>
       </section>
       <div
@@ -152,7 +195,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watchEffect } from "vue";
 import { useI18n } from "vue-i18n";
-import { Pin, PinOff } from "lucide-vue-next";
+import { Archive, Ellipsis, PencilLine, Pin, PinOff, Trash2 } from "lucide-vue-next";
 import type { ChatConversationOverviewItem, ConversationPreviewMessage } from "../../../types/app";
 import { formatConversationListTime } from "../utils/conversation-time";
 import { resolveConversationDisplayTitle } from "../utils/conversation-title";
@@ -175,6 +218,8 @@ const emit = defineEmits<{
   (e: "selectConversation", payload: { conversationId: string; kind?: "local_unarchived" | "remote_im_contact"; remoteContactId?: string }): void;
   (e: "renameConversation", payload: { conversationId: string; title: string }): void;
   (e: "togglePinConversation", conversationId: string): void;
+  (e: "archiveConversation", conversationId: string): void;
+  (e: "deleteConversation", conversationId: string): void;
 }>();
 
 const { t, locale } = useI18n();
@@ -269,13 +314,20 @@ function isConversationItemDisabled(item: ChatConversationOverviewItem): boolean
   return item.runtimeState === "organizing_context" || !!item.detachedWindowOpen;
 }
 
+function isLocalConversation(item: ChatConversationOverviewItem): boolean {
+  return item.kind !== "remote_im_contact";
+}
+
 function isCurrentConversation(item: ChatConversationOverviewItem): boolean {
   return String(item.conversationId || "").trim() === String(props.activeConversationId || "").trim();
 }
 
+function shouldShowConversationMenu(item: ChatConversationOverviewItem): boolean {
+  return isLocalConversation(item) && !isConversationItemDisabled(item);
+}
+
 function canRenameConversation(item: ChatConversationOverviewItem): boolean {
-  if (item.kind === "remote_im_contact") return false;
-  return isCurrentConversation(item) && !item.isMainConversation && !isConversationItemDisabled(item);
+  return isLocalConversation(item) && !isConversationItemDisabled(item);
 }
 
 function isEditingTitle(item: ChatConversationOverviewItem): boolean {
@@ -316,7 +368,15 @@ function handleConversationCardClick(item: ChatConversationOverviewItem) {
 }
 
 function canToggleConversationPin(item: ChatConversationOverviewItem): boolean {
-  return item.kind !== "remote_im_contact" && !item.isMainConversation;
+  return isLocalConversation(item) && !item.isMainConversation && !isConversationItemDisabled(item);
+}
+
+function canArchiveConversation(item: ChatConversationOverviewItem): boolean {
+  return isLocalConversation(item) && !item.isMainConversation && !isConversationItemDisabled(item);
+}
+
+function canDeleteConversation(item: ChatConversationOverviewItem): boolean {
+  return isLocalConversation(item) && !item.isMainConversation && !isConversationItemDisabled(item);
 }
 
 function pinConversationTitle(item: ChatConversationOverviewItem): string {
@@ -327,6 +387,21 @@ function pinConversationTitle(item: ChatConversationOverviewItem): string {
 function toggleConversationPin(item: ChatConversationOverviewItem) {
   if (!canToggleConversationPin(item)) return;
   emit("togglePinConversation", String(item.conversationId || "").trim());
+}
+
+function requestConversationArchive(item: ChatConversationOverviewItem) {
+  if (!canArchiveConversation(item)) return;
+  emit("archiveConversation", String(item.conversationId || "").trim());
+}
+
+function requestConversationDelete(item: ChatConversationOverviewItem) {
+  if (!canDeleteConversation(item)) return;
+  emit("deleteConversation", String(item.conversationId || "").trim());
+}
+
+function conversationMenuPlacementClass(itemIndex: number, total: number): string {
+  if (total <= 0) return "dropdown-bottom";
+  return itemIndex < Math.ceil(total / 2) ? "dropdown-bottom" : "dropdown-top";
 }
 
 function conversationDisplayTitle(item: ChatConversationOverviewItem): string {

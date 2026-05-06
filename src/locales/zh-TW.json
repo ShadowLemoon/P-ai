@@ -15,6 +15,8 @@
     "save": "保存",
     "saving": "保存中...",
     "reset": "還原",
+    "rename": "重新命名",
+    "archive": "歸檔",
     "delete": "刪除",
     "loading": "加載中..."
   },

@@ -15,6 +15,8 @@
       @select="handleConversationListSelect"
       @rename="handleConversationRename"
       @toggle-pin-conversation="handleConversationPinToggle"
+      @archive-conversation="handleConversationArchive"
+      @delete-conversation="handleConversationDelete"
     />
 
     <div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -1058,6 +1060,8 @@ const emit = defineEmits<{
   (e: "switchConversation", payload: { conversationId: string; kind?: "local_unarchived" | "remote_im_contact"; remoteContactId?: string }): void;
   (e: "renameConversation", payload: { conversationId: string; title: string }): void;
   (e: "togglePinConversation", conversationId: string): void;
+  (e: "archiveConversation", conversationId: string): void;
+  (e: "deleteConversation", conversationId: string): void;
   (e: "createConversation", input?: { title?: string; departmentId?: string }): void;
   (e: "loadOlderHistory"): void;
   (e: "reachedBottom"): void;
@@ -1484,6 +1488,14 @@ watch(
 
 function handleConversationPinToggle(conversationId: string) {
   emit("togglePinConversation", String(conversationId || "").trim());
+}
+
+function handleConversationArchive(conversationId: string) {
+  emit("archiveConversation", String(conversationId || "").trim());
+}
+
+function handleConversationDelete(conversationId: string) {
+  emit("deleteConversation", String(conversationId || "").trim());
 }
 watch(
   () => String(props.activeConversationId || "").trim(),
@@ -2008,7 +2020,6 @@ function handleConversationRename(payload: { conversationId: string; title: stri
   const conversationId = String(payload?.conversationId || "").trim();
   const title = String(payload?.title || "").trim();
   if (!conversationId) return;
-  if (conversationId !== String(props.activeConversationId || "").trim()) return;
   emit("renameConversation", {
     conversationId,
     title,

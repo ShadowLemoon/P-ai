@@ -39,6 +39,8 @@
             @select-conversation="handleConversationListSelect"
             @rename-conversation="handleConversationRename"
             @toggle-pin-conversation="handleConversationPinToggle"
+            @archive-conversation="handleConversationArchive"
+            @delete-conversation="handleConversationDelete"
           />
         </div>
       </div>
@@ -442,6 +444,8 @@ const emit = defineEmits<{
   (e: "switch-conversation", payload: { conversationId: string; kind?: "local_unarchived" | "remote_im_contact"; remoteContactId?: string }): void;
   (e: "rename-conversation", payload: { conversationId: string; title: string }): void;
   (e: "toggle-pin-conversation", conversationId: string): void;
+  (e: "archive-conversation", conversationId: string): void;
+  (e: "delete-conversation", conversationId: string): void;
   (e: "create-conversation", input?: CreateConversationInput): void;
   (e: "force-archive"): void;
   (e: "startDrag"): void;
@@ -592,6 +596,16 @@ function handleConversationRename(payload: { conversationId: string; title: stri
 
 function handleConversationPinToggle(conversationId: string) {
   emit("toggle-pin-conversation", String(conversationId || "").trim());
+}
+
+function handleConversationArchive(conversationId: string) {
+  closeConversationList();
+  emit("archive-conversation", String(conversationId || "").trim());
+}
+
+function handleConversationDelete(conversationId: string) {
+  closeConversationList();
+  emit("delete-conversation", String(conversationId || "").trim());
 }
 
 function handleDocumentPointerDown(event: PointerEvent) {

@@ -1,6 +1,6 @@
 fn build_memory_generation_instruction(agent: &AgentProfile, user_alias: &str) -> String {
     let must_rules = format!(
-        "A) 输出必须是合法 JSON，且仅包含 summary/usefulMemoryIds/newMemories/mergeGroups/profileMemories 五个字段。\n\
+        "A) 输出必须是合法 JSON，且仅包含 title/summary/usefulMemoryIds/newMemories/mergeGroups/profileMemories 六个字段。\n\
          B) 不得输出 markdown、代码块、解释性前后缀。\n\
          C) 你是 {assistant_name}，用户称谓是 {user_name}。",
         assistant_name = agent.name,
@@ -33,6 +33,7 @@ fn build_memory_generation_instruction(agent: &AgentProfile, user_alias: &str) -
 
 fn memory_curation_example_output_block() -> &'static str {
     r###"{
+  "title": "string",
   "summary": "string",
   "usefulMemoryIds": ["12"],
   "newMemories": [

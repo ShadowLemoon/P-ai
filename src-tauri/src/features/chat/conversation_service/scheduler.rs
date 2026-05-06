@@ -113,6 +113,7 @@ fn write_persisted_message_batch(
             last_archive_summary,
             Some(conversation.user_profile_snapshot.as_str()),
             Some(&conversation.current_todos),
+            None,
         );
         persisted_batch_messages.push(summary_message.clone());
         conversation.messages.insert(0, summary_message);

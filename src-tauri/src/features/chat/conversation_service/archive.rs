@@ -525,6 +525,7 @@ fn build_archive_replacement_conversation(
         Some(source.summary.as_str()),
         option_str_or_none(conversation.user_profile_snapshot.as_str()),
         Some(&conversation.current_todos),
+        None,
     );
     conversation.last_user_at = Some(summary_message.created_at.clone());
     conversation.updated_at = summary_message.created_at.clone();

@@ -582,6 +582,7 @@ export type ArchiveBlockPage = {
 export type UnarchivedConversationSummary = {
   conversationId: string;
   title: string;
+  summaryTitle?: string;
   updatedAt: string;
   lastMessageAt?: string;
   messageCount: number;
@@ -621,6 +622,7 @@ export type ConversationPreviewMessage = {
 export type ChatConversationOverviewItem = {
   conversationId: string;
   title: string;
+  summaryTitle?: string;
   kind?: "local_unarchived" | "remote_im_contact";
   remoteContactId?: string;
   remoteContactDisplayName?: string;

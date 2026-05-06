@@ -2007,7 +2007,7 @@ function handleConversationListSelect(payload: { conversationId: string; kind?: 
 function handleConversationRename(payload: { conversationId: string; title: string }) {
   const conversationId = String(payload?.conversationId || "").trim();
   const title = String(payload?.title || "").trim();
-  if (!conversationId || !title) return;
+  if (!conversationId) return;
   if (conversationId !== String(props.activeConversationId || "").trim()) return;
   emit("renameConversation", {
     conversationId,

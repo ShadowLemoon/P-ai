@@ -387,6 +387,7 @@
     fn build_compaction_message_should_append_current_todo_list_after_memory_snapshot() {
         let message = build_compaction_message(
             "这里是压缩摘要",
+            Some("当前标题"),
             "manual",
             Some("<user profile snapshot>\n记忆块\n</user profile snapshot>"),
             Some(&[
@@ -410,6 +411,8 @@
             })
             .expect("compaction text");
 
+        assert!(text.contains("当前会话标题："));
+        assert!(text.contains("当前标题"));
         assert!(text.contains("用户画像："));
         assert!(text.contains("摘要说明："));
         assert!(text.contains("摘要正文："));
@@ -425,6 +428,7 @@
     fn build_compaction_message_should_keep_blank_line_before_active_plans() {
         let message = build_compaction_message(
             "这里是压缩摘要\n\n<active_plans>\n<active_plan index=\"1\">\n执行计划\n</active_plan>\n</active_plans>",
+            Some("计划标题"),
             "manual",
             None,
             None,
@@ -440,6 +444,12 @@
             .expect("compaction text");
 
         assert!(text.contains("这里是压缩摘要\n\n<active_plans>"));
+        let provider_meta = message.provider_meta.expect("provider meta");
+        let schema_version = provider_meta
+            .get("message_meta")
+            .and_then(|value| value.get("schemaVersion"))
+            .and_then(Value::as_u64);
+        assert_eq!(schema_version, Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION));
     }
 
     #[test]

@@ -32,6 +32,8 @@ struct ConversationPreviewMessage {
 struct UnarchivedConversationSummary {
     conversation_id: String,
     title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary_title: Option<String>,
     updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_message_at: Option<String>,
@@ -282,11 +284,8 @@ fn build_unarchived_conversation_summary(
     let detached_window_label = detached_chat_window_for_conversation(conversation_id);
     UnarchivedConversationSummary {
         conversation_id: conversation.id.clone(),
-        title: if conversation.title.trim().is_empty() {
-            conversation_preview_title(conversation)
-        } else {
-            conversation.title.clone()
-        },
+        title: conversation.title.clone(),
+        summary_title: conversation_latest_summary_title(conversation),
         updated_at: conversation.updated_at.clone(),
         last_message_at,
         message_count: conversation.messages.len(),
@@ -761,6 +760,7 @@ mod conversation_snapshot_api_tests {
         UnarchivedConversationSummary {
             conversation_id: conversation_id.to_string(),
             title: conversation_id.to_string(),
+            summary_title: None,
             updated_at: updated_at.to_string(),
             last_message_at: Some(updated_at.to_string()),
             message_count: 1,

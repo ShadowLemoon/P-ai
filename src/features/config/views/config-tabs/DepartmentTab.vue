@@ -74,7 +74,7 @@
             <button
               class="btn btn-sm btn-ghost"
               type="button"
-              :disabled="selectedDepartmentIsPrivateWorkspace || savingConfig"
+              :disabled="savingConfig"
               @click="handleSelectedDepartmentPrimaryAction"
             >
               <Trash2 v-if="!selectedDepartmentIsSystemBuiltIn" class="h-4 w-4" />
@@ -88,7 +88,6 @@
               <input
                 v-model.trim="selectedDepartment.name"
                 class="input input-bordered input-sm w-full"
-                :disabled="selectedDepartmentIsPrivateWorkspace"
                 :placeholder="t('config.department.namePlaceholder')"
                 @input="touchSelectedDepartment"
               />
@@ -104,7 +103,6 @@
               <div class="mb-2 text-[11px] uppercase tracking-wide opacity-40">{{ t("config.department.assignee") }}</div>
               <select
                 class="select select-bordered select-sm w-full"
-                :disabled="selectedDepartmentIsPrivateWorkspace"
                 :value="selectedDepartment.agentIds[0] || ''"
                 @change="selectDepartmentAssignee(($event.target as HTMLSelectElement).value)"
               >
@@ -131,7 +129,6 @@
                 >
                   <select
                     class="select select-bordered select-sm flex-1"
-                    :disabled="selectedDepartmentIsPrivateWorkspace"
                     :value="apiId"
                     @change="updateDepartmentApiConfigAt(idx, ($event.target as HTMLSelectElement).value)"
                   >
@@ -143,7 +140,7 @@
                     <button
                       class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
                       type="button"
-                      :disabled="selectedDepartmentIsPrivateWorkspace || idx <= 0"
+                      :disabled="idx <= 0"
                       :title="t('config.department.moveUp')"
                       @click="moveDepartmentApiConfig(idx, -1)"
                     >
@@ -152,7 +149,7 @@
                     <button
                       class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
                       type="button"
-                      :disabled="selectedDepartmentIsPrivateWorkspace || idx >= selectedDepartmentApiConfigIds.length - 1"
+                      :disabled="idx >= selectedDepartmentApiConfigIds.length - 1"
                       :title="t('config.department.moveDown')"
                       @click="moveDepartmentApiConfig(idx, 1)"
                     >
@@ -161,7 +158,7 @@
                     <button
                       class="btn btn-sm btn-square join-item opacity-60 hover:opacity-100"
                       type="button"
-                      :disabled="selectedDepartmentIsPrivateWorkspace || selectedDepartmentApiConfigIds.length <= 1"
+                      :disabled="selectedDepartmentApiConfigIds.length <= 1"
                       :title="t('config.department.removeModel')"
                       @click="removeDepartmentApiConfigAt(idx)"
                     >
@@ -173,7 +170,7 @@
                 <button
                   class="btn btn-sm"
                   type="button"
-                  :disabled="selectedDepartmentIsPrivateWorkspace || remainingDepartmentApiConfigs.length <= 0"
+                  :disabled="remainingDepartmentApiConfigs.length <= 0"
                   @click="addDepartmentApiConfig"
                 >
                   {{ t("config.department.addModel") }}
@@ -189,7 +186,6 @@
               <textarea
                 v-model="selectedDepartment.summary"
                 class="textarea textarea-bordered textarea-sm min-h-20 w-full"
-                :disabled="selectedDepartmentIsPrivateWorkspace"
                 :placeholder="t('config.department.summaryPlaceholder')"
                 @input="touchSelectedDepartment"
               />
@@ -200,7 +196,6 @@
               <textarea
                 v-model="selectedDepartment.guide"
                 class="textarea textarea-bordered textarea-sm min-h-28 w-full"
-                :disabled="selectedDepartmentIsPrivateWorkspace"
                 :placeholder="t('config.department.guidePlaceholder')"
                 @input="touchSelectedDepartment"
               />
@@ -217,7 +212,6 @@
                   type="checkbox"
                   class="toggle toggle-sm toggle-primary"
                   :checked="permissionControlEnabled"
-                  :disabled="selectedDepartmentIsPrivateWorkspace"
                   @change="updateDepartmentPermissionControl({ enabled: !!($event.target as HTMLInputElement).checked })"
                 />
               </div>
@@ -607,7 +601,7 @@ const permissionCardTone = computed(() =>
       },
 );
 const permissionListDisabled = computed(() =>
-  selectedDepartmentIsPrivateWorkspace.value || !permissionControlEnabled.value,
+  !permissionControlEnabled.value,
 );
 const permissionExecAllowed = computed(() => {
   const control = selectedDepartmentPermissionControl.value;
@@ -616,7 +610,7 @@ const permissionExecAllowed = computed(() => {
   return control.mode === "whitelist" ? execSelected : !execSelected;
 });
 const skillPermissionRequiresExec = computed(() =>
-  permissionControlEnabled.value && !selectedDepartmentIsPrivateWorkspace.value && !permissionExecAllowed.value,
+  permissionControlEnabled.value && !permissionExecAllowed.value,
 );
 const skillPermissionListDisabled = computed(() =>
   permissionListDisabled.value || skillPermissionRequiresExec.value,
@@ -945,7 +939,7 @@ function restoreSelectedDepartment() {
 }
 
 function handleSelectedDepartmentPrimaryAction() {
-  if (!selectedDepartment.value || selectedDepartmentIsPrivateWorkspace.value) return;
+  if (!selectedDepartment.value) return;
   if (selectedDepartmentIsSystemBuiltIn.value) {
     restoreSelectedDepartment();
     return;

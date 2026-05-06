@@ -172,6 +172,15 @@ fn refresh_global_tool_schema_cache(state: &AppState) -> Vec<ProviderToolDefinit
     definitions
 }
 
+fn clear_global_tool_schema_cache() {
+    match tool_schema_cache_store().lock() {
+        Ok(mut guard) => {
+            *guard = None;
+        }
+        Err(err) => runtime_log_warn(format!("[工具Schema缓存] 清空失败，缓存锁已损坏: {err}")),
+    }
+}
+
 fn read_global_tool_schema_cache(_state: Option<&AppState>) -> Vec<ProviderToolDefinition> {
     match tool_schema_cache_store().lock() {
         Ok(guard) => {

@@ -14,9 +14,9 @@
           </button>
           <button
             class="btn btn-sm btn-square"
-            :class="!selectedPersona || selectedPersona.isBuiltInUser || selectedPersona.isBuiltInSystem || selectedPersonaIsPrivateWorkspace || assistantPersonas.length <= 1 ? 'text-base-content/30 bg-base-200 cursor-not-allowed' : 'bg-base-200'"
+            :class="!selectedPersona || selectedPersona.isBuiltInUser || selectedPersona.isBuiltInSystem || assistantPersonas.length <= 1 ? 'text-base-content/30 bg-base-200 cursor-not-allowed' : 'bg-base-200'"
             :title="t('config.persona.remove')"
-            :disabled="!selectedPersona || selectedPersona.isBuiltInUser || selectedPersona.isBuiltInSystem || selectedPersonaIsPrivateWorkspace || assistantPersonas.length <= 1"
+            :disabled="!selectedPersona || selectedPersona.isBuiltInUser || selectedPersona.isBuiltInSystem || assistantPersonas.length <= 1"
             @click="$emit('removeSelectedPersona')"
           >
             <Trash2 class="h-3.5 w-3.5" />
@@ -33,7 +33,7 @@
           <button
             class="btn btn-sm btn-square"
             :class="personaDirty ? 'btn-primary' : 'bg-base-200'"
-            :disabled="!selectedPersona || selectedPersonaIsPrivateWorkspace || !personaDirty || personaSaving"
+            :disabled="!selectedPersona || !personaDirty || personaSaving"
             :title="personaSaving ? t('config.api.saving') : personaDirty ? t('common.save') : t('status.personaSaved')"
             @click="$emit('savePersonas')"
           >
@@ -51,11 +51,11 @@
           <h3 class="card-title text-base mb-3">{{ t("config.persona.name") }}</h3>
           <div class="flex flex-col gap-3">
             <div class="flex items-center gap-2">
-              <input v-model="selectedPersona.name" class="input input-bordered input-sm flex-1" :disabled="selectedPersonaIsPrivateWorkspace" :placeholder="t('config.persona.name')" />
+              <input v-model="selectedPersona.name" class="input input-bordered input-sm flex-1" :placeholder="t('config.persona.name')" />
               <span v-if="selectedPersonaIsPrivateWorkspace" class="badge badge-secondary">{{ t("config.persona.privateWorkspaceTag") }}</span>
               <button
                 class="btn btn-ghost btn-circle p-0 min-h-0 h-auto w-auto"
-                :disabled="avatarSaving || selectedPersonaIsPrivateWorkspace"
+                :disabled="avatarSaving"
                 :title="avatarSaving ? t('config.persona.avatarSaving') : t('config.persona.editAvatar')"
                 @click="$emit('openAvatarEditor')"
               >
@@ -71,9 +71,6 @@
                 </div>
               </button>
             </div>
-            <div v-if="selectedPersonaIsPrivateWorkspace" class="text-xs opacity-70">
-              {{ t("config.persona.privateWorkspaceAvatarReadonly") }}
-            </div>
             <div v-if="avatarError" class="text-error break-all">{{ avatarError }}</div>
           </div>
         </div>
@@ -86,10 +83,9 @@
             v-model="selectedPersona.systemPrompt"
             class="textarea textarea-bordered textarea-sm w-full"
             rows="12"
-            :disabled="selectedPersonaIsPrivateWorkspace"
             :placeholder="selectedPersona.isBuiltInUser ? t('config.persona.userPlaceholder') : (selectedPersona.id === 'system-persona' ? t('config.persona.systemPlaceholder') : t('config.persona.assistantPlaceholder'))"
           ></textarea>
-          <div v-if="selectedPersonaIsPreset && !selectedPersonaIsPrivateWorkspace" class="mt-3 flex justify-end">
+          <div v-if="selectedPersonaIsPreset" class="mt-3 flex justify-end">
             <button class="btn btn-ghost btn-sm gap-2" @click="restoreSelectedPersonaPreset">
               <RotateCcw class="h-3.5 w-3.5" />
               {{ t("config.persona.restoreInitial") }}
@@ -295,7 +291,7 @@ function personaDefaultSeed(persona: PersonaProfile | null | undefined): Persona
 }
 
 function restoreSelectedPersonaPreset() {
-  if (!selectedPersonaIsPreset.value || selectedPersonaIsPrivateWorkspace.value) return;
+  if (!selectedPersonaIsPreset.value) return;
   const target = props.selectedPersona;
   const defaults = personaDefaultSeed(target);
   if (!target || !defaults) return;

@@ -345,6 +345,20 @@ export type WorkspaceLoadError = {
   error: string;
 };
 
+export type WorkspaceLoadedGroup = {
+  kind: string;
+  label: string;
+  count: number;
+  items: string[];
+};
+
+export type WorkspaceFailedGroup = {
+  kind: string;
+  label: string;
+  count: number;
+  items: WorkspaceLoadError[];
+};
+
 export type RefreshMcpAndSkillsResult = {
   mcpLoaded: string[];
   mcpFailed: WorkspaceLoadError[];
@@ -356,6 +370,13 @@ export type RefreshMcpAndSkillsResult = {
   privateAgentsFailed: WorkspaceLoadError[];
   privateDepartmentsLoaded: string[];
   privateDepartmentsFailed: WorkspaceLoadError[];
+  loadedGroups: WorkspaceLoadedGroup[];
+  failedGroups: WorkspaceFailedGroup[];
+  totalLoaded: number;
+  totalFailed: number;
+  loadedSummary: string;
+  failedSummary: string;
+  needsRepair: boolean;
 };
 
 export type LlmRoundLogHeader = {

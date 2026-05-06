@@ -10,6 +10,7 @@ fn load_agents(state: State<'_, AppState>) -> Result<Vec<AgentProfile>, String> 
 #[tauri::command]
 fn save_agents(
     input: SaveAgentsInput,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<AgentProfile>, String> {
     if input.agents.is_empty() {
@@ -17,12 +18,14 @@ fn save_agents(
     }
 
     let base_config = read_config(&state.config_path)?;
+    let mut previous_runtime_data = state_read_agents_runtime_snapshot(&state)?;
+    previous_runtime_data.agents = state_read_agents_cached(&state)?;
+    let previous_runtime_config =
+        runtime_config_with_private_organization(&state, &base_config, &previous_runtime_data)?;
     let runtime = state_read_runtime_state_cached(&state)?;
     let mut data = AppData::default();
     data.agents = state_read_agents_cached(&state)?;
     apply_runtime_state_to_app_data(&mut data, &runtime);
-    let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
     let previous_agents = data.agents.clone();
     let existing_user_persona = data
         .agents
@@ -34,10 +37,11 @@ fn save_agents(
         .iter()
         .find(|a| a.id == SYSTEM_PERSONA_ID)
         .cloned();
+    let desired_agents = input.agents.clone();
     data.agents = input
         .agents
         .into_iter()
-        .filter(|agent| !private_agent_ids.contains(&agent.id))
+        .filter(|agent| !is_private_workspace_source(&agent.source))
         .collect();
     if !data.agents.iter().any(|a| a.id == USER_PERSONA_ID) {
         if let Some(user_persona) = existing_user_persona {
@@ -162,6 +166,7 @@ fn save_agents(
         .collect::<std::collections::HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
+    sync_private_agents_to_workspace(&state.data_path, &base_config, &desired_agents)?;
     state_write_agents_cached(&state, &data.agents)?;
     if !affected_agent_ids.is_empty() {
         mark_prompt_cache_rebuild_for_system_sources_by_agents(&state, &affected_agent_ids);
@@ -173,14 +178,18 @@ fn save_agents(
         .filter(|a| !a.is_built_in_user)
         .map(|a| a.id.clone())
         .collect::<std::collections::HashSet<_>>();
+    let mut runtime_config = runtime_config_with_private_organization(&state, &config, &data)?;
     let mut config_changed = false;
-    for dept in &mut config.departments {
+    for dept in &mut runtime_config.departments {
+        let original_first = dept.agent_ids.first().cloned();
         let original_len = dept.agent_ids.len();
         dept.agent_ids.retain(|id| valid_agent_ids.contains(id));
         if dept.id == ASSISTANT_DEPARTMENT_ID && dept.agent_ids.is_empty() {
             dept.agent_ids.push(data.assistant_department_agent_id.clone());
         }
-        if dept.agent_ids.len() != original_len || (dept.id == ASSISTANT_DEPARTMENT_ID && dept.agent_ids.first() != Some(&data.assistant_department_agent_id)) {
+        if dept.agent_ids.len() != original_len
+            || (dept.id == ASSISTANT_DEPARTMENT_ID && original_first.as_deref() != Some(&data.assistant_department_agent_id))
+        {
             config_changed = true;
             if dept.id == ASSISTANT_DEPARTMENT_ID {
                 dept.agent_ids = vec![data.assistant_department_agent_id.clone()];
@@ -189,34 +198,18 @@ fn save_agents(
         }
     }
     if config_changed {
-        let changed_departments = {
-            let old_by_id = base_config
-                .departments
-                .iter()
-                .map(|item| (item.id.clone(), item.clone()))
-                .collect::<std::collections::HashMap<_, _>>();
-            let new_by_id = config
-                .departments
-                .iter()
-                .map(|item| (item.id.clone(), item.clone()))
-                .collect::<std::collections::HashMap<_, _>>();
-            old_by_id
-                .keys()
-                .chain(new_by_id.keys())
-                .cloned()
-                .collect::<std::collections::HashSet<_>>()
-                .into_iter()
-                .filter(|id| old_by_id.get(id) != new_by_id.get(id))
-                .collect::<Vec<_>>()
-        };
-        normalize_app_config(&mut config);
-        state_write_config_cached(&state, &config)?;
+        let changed_departments = changed_department_ids(&previous_runtime_config, &runtime_config);
+        validate_department_names_unique(&runtime_config)?;
+        normalize_app_config(&mut runtime_config);
+        config = persist_departments_by_source(&state, &runtime_config)?;
         if !changed_departments.is_empty() {
             mark_prompt_cache_rebuild_for_system_sources_by_departments(
                 &state,
                 &changed_departments,
             );
         }
+        let runtime_config = runtime_config_with_private_organization(&state, &config, &data)?;
+        let _ = app.emit("easy-call:config-updated", &runtime_config);
     }
     let runtime_agents = runtime_agents_with_private_organization(&state, &config, &data)?;
     Ok(runtime_agents)
@@ -765,15 +758,12 @@ fn save_agent_avatar(
 
     let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
-    let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
-    if private_agent_ids.contains(input.agent_id.trim()) {
-        return Err(private_agent_operation_error(input.agent_id.trim()));
-    }
-
-    let idx = agents
+    let mut runtime_data = state_read_agents_runtime_snapshot(&state)?;
+    runtime_data.agents = agents.clone();
+    let runtime_agents = runtime_agents_with_private_organization(&state, &base_config, &runtime_data)?;
+    let target = runtime_agents
         .iter()
-        .position(|a| a.id == input.agent_id)
+        .find(|a| a.id == input.agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
 
     let raw = B64
@@ -788,13 +778,30 @@ fn save_agent_avatar(
     fs::write(&path, webp).map_err(|err| format!("Write avatar file failed: {err}"))?;
 
     let now = now_iso();
-    agents[idx].avatar_path = Some(path.to_string_lossy().to_string());
-    agents[idx].avatar_updated_at = Some(now.clone());
-    agents[idx].updated_at = now.clone();
-    state_write_agents_cached(&state, &agents)?;
+    let avatar_path = path.to_string_lossy().to_string();
+    if is_private_workspace_source(&target.source) {
+        let mut next_runtime_agents = runtime_agents.clone();
+        let idx = next_runtime_agents
+            .iter()
+            .position(|a| a.id == input.agent_id)
+            .ok_or_else(|| "Agent not found".to_string())?;
+        next_runtime_agents[idx].avatar_path = Some(avatar_path.clone());
+        next_runtime_agents[idx].avatar_updated_at = Some(now.clone());
+        next_runtime_agents[idx].updated_at = now.clone();
+        sync_private_agents_to_workspace(&state.data_path, &base_config, &next_runtime_agents)?;
+    } else {
+        let idx = agents
+            .iter()
+            .position(|a| a.id == input.agent_id)
+            .ok_or_else(|| "Agent not found".to_string())?;
+        agents[idx].avatar_path = Some(avatar_path.clone());
+        agents[idx].avatar_updated_at = Some(now.clone());
+        agents[idx].updated_at = now.clone();
+        state_write_agents_cached(&state, &agents)?;
+    }
 
     Ok(AvatarMeta {
-        path: path.to_string_lossy().to_string(),
+        path: avatar_path,
         updated_at: now,
     })
 }
@@ -810,26 +817,41 @@ fn clear_agent_avatar(
 
     let mut agents = state_read_agents_cached(&state)?;
     let base_config = read_config(&state.config_path)?;
-    let (private_agent_ids, _) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &agents)?;
-    if private_agent_ids.contains(input.agent_id.trim()) {
-        return Err(private_agent_operation_error(input.agent_id.trim()));
-    }
-    let idx = agents
+    let mut runtime_data = state_read_agents_runtime_snapshot(&state)?;
+    runtime_data.agents = agents.clone();
+    let runtime_agents = runtime_agents_with_private_organization(&state, &base_config, &runtime_data)?;
+    let target = runtime_agents
         .iter()
-        .position(|a| a.id == input.agent_id)
+        .find(|a| a.id == input.agent_id)
         .ok_or_else(|| "Agent not found".to_string())?;
 
-    if let Some(path) = agents[idx].avatar_path.as_deref() {
+    if let Some(path) = target.avatar_path.as_deref() {
         let p = PathBuf::from(path);
         if p.exists() {
             let _ = fs::remove_file(p);
         }
     }
-    agents[idx].avatar_path = None;
-    agents[idx].avatar_updated_at = None;
-    agents[idx].updated_at = now_iso();
-    state_write_agents_cached(&state, &agents)?;
+    let now = now_iso();
+    if is_private_workspace_source(&target.source) {
+        let mut next_runtime_agents = runtime_agents.clone();
+        let idx = next_runtime_agents
+            .iter()
+            .position(|a| a.id == input.agent_id)
+            .ok_or_else(|| "Agent not found".to_string())?;
+        next_runtime_agents[idx].avatar_path = None;
+        next_runtime_agents[idx].avatar_updated_at = None;
+        next_runtime_agents[idx].updated_at = now;
+        sync_private_agents_to_workspace(&state.data_path, &base_config, &next_runtime_agents)?;
+    } else {
+        let idx = agents
+            .iter()
+            .position(|a| a.id == input.agent_id)
+            .ok_or_else(|| "Agent not found".to_string())?;
+        agents[idx].avatar_path = None;
+        agents[idx].avatar_updated_at = None;
+        agents[idx].updated_at = now;
+        state_write_agents_cached(&state, &agents)?;
+    }
     Ok(())
 }
 

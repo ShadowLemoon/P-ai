@@ -241,6 +241,50 @@ fn validate_department_names_unique(config: &AppConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn changed_department_ids(old_config: &AppConfig, new_config: &AppConfig) -> Vec<String> {
+    let old_by_id = old_config
+        .departments
+        .iter()
+        .map(|item| (item.id.clone(), item.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let new_by_id = new_config
+        .departments
+        .iter()
+        .map(|item| (item.id.clone(), item.clone()))
+        .collect::<std::collections::HashMap<_, _>>();
+    old_by_id
+        .keys()
+        .chain(new_by_id.keys())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .filter(|id| old_by_id.get(id) != new_by_id.get(id))
+        .collect::<Vec<_>>()
+}
+
+fn split_main_config_departments(departments: &[DepartmentConfig]) -> Vec<DepartmentConfig> {
+    departments
+        .iter()
+        .filter(|item| !is_private_workspace_source(&item.source))
+        .cloned()
+        .collect::<Vec<_>>()
+}
+
+fn persist_departments_by_source(
+    state: &AppState,
+    runtime_config: &AppConfig,
+) -> Result<AppConfig, String> {
+    sync_private_departments_to_workspace(
+        &state.data_path,
+        runtime_config,
+        &runtime_config.departments,
+    )?;
+    let mut main_config = runtime_config.clone();
+    main_config.departments = split_main_config_departments(&runtime_config.departments);
+    state_write_config_cached(state, &main_config)?;
+    Ok(main_config)
+}
+
 fn runtime_config_with_private_organization(
     state: &AppState,
     config: &AppConfig,
@@ -399,32 +443,11 @@ fn save_config(
 
     let mut data = state_read_agents_runtime_snapshot(&state)?;
     let base_config = state_read_config_cached(&state)?;
-    let departments_changed = {
-        let old_by_id = base_config
-            .departments
-            .iter()
-            .map(|item| (item.id.clone(), item.clone()))
-            .collect::<std::collections::HashMap<_, _>>();
-        let new_by_id = config
-            .departments
-            .iter()
-            .map(|item| (item.id.clone(), item.clone()))
-            .collect::<std::collections::HashMap<_, _>>();
-        old_by_id
-            .keys()
-            .chain(new_by_id.keys())
-            .cloned()
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .filter(|id| old_by_id.get(id) != new_by_id.get(id))
-            .collect::<Vec<_>>()
-    };
+    let previous_runtime_config = runtime_config_with_private_organization(&state, &base_config, &data)?;
+    let departments_changed = changed_department_ids(&previous_runtime_config, &config);
     let shell_workspaces_changed = base_config.shell_workspaces != config.shell_workspaces;
-    let (_private_agent_ids, private_department_ids) =
-        runtime_private_organization_ids(&state.data_path, &base_config, &data.agents)?;
-    config.departments.retain(|item| !private_department_ids.contains(&item.id));
     validate_department_names_unique(&config)?;
-    state_write_config_cached(&state, &config)?;
+    let main_config = persist_departments_by_source(&state, &config)?;
     if !departments_changed.is_empty() {
         mark_prompt_cache_rebuild_for_system_sources_by_departments(
             &state,
@@ -440,12 +463,12 @@ fn save_config(
             state_write_runtime_state_cached(&state, &build_runtime_state_file(&data))?;
         }
     }
-    register_hotkey_from_config(&app, &config)?;
-    match apply_webview_zoom_percent(&app, config.webview_zoom_percent) {
+    register_hotkey_from_config(&app, &main_config)?;
+    match apply_webview_zoom_percent(&app, main_config.webview_zoom_percent) {
         Ok(percent) => emit_webview_zoom_percent_updated(&app, percent),
         Err(err) => eprintln!("[外观] 应用界面缩放失败：{}", err),
     }
-    let runtime_config = runtime_config_with_private_organization(&state, &config, &data)?;
+    let runtime_config = runtime_config_with_private_organization(&state, &main_config, &data)?;
     let _ = app.emit("easy-call:config-updated", &runtime_config);
     Ok(runtime_config)
 }

@@ -5100,10 +5100,6 @@ const {
 });
 
 function handleToolsChanged() {
-  if (selectedPersonaEditor.value?.source === "private_workspace") {
-    setStatus(t("config.tools.privateWorkspaceReadonly"));
-    return;
-  }
   if (configTab.value === "tools") {
     void refreshToolsStatus();
   }

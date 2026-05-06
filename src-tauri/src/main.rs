@@ -262,26 +262,10 @@ async fn start_background_services_after_frontend_ready(
             probe_release_source_once(&probe_state).await;
         }
     });
-    tauri::async_runtime::spawn({
-        let mcp_state = startup_state.clone();
-        async move {
-            match mcp_redeploy_all_from_policy(&mcp_state).await {
-                Ok(errors) => {
-                    refresh_global_tool_schema_cache(&mcp_state);
-                    if !errors.is_empty() {
-                        eprintln!("[启动] MCP 自动重部署完成，发生 {} 个错误", errors.len());
-                        for item in errors {
-                            eprintln!("[启动] MCP 自动重部署异常: {} | {}", item.item, item.error);
-                        }
-                    }
-                }
-                Err(err) => {
-                    eprintln!("[启动] MCP 自动重部署失败: {err}");
-                    refresh_global_tool_schema_cache(&mcp_state);
-                }
-            }
-        }
-    });
+    match load_workspace(&startup_state).await {
+        Ok(result) => log_workspace_load_result("[工作区加载]", &result),
+        Err(err) => eprintln!("[工作区加载] 状态=失败，error={err}"),
+    }
     start_remote_im_services_after_frontend_ready(app_handle).await;
 }
 
@@ -524,9 +508,6 @@ fn main() {
                     eprintln!("[启动自检] 读取配置失败: {err}");
                 }
             }
-            if let Err(err) = warm_hidden_skill_snapshot_cache(app_state.inner()) {
-                eprintln!("[启动] 预热技能快照缓存失败: {err}");
-            }
             if let Err(err) = memory_store_open(&app_state.data_path) {
                 eprintln!("[启动] 初始化记忆存储失败: {err}");
             }
@@ -560,7 +541,7 @@ fn main() {
             if should_enable_devtools() {
                 eprintln!("[启动] 检测到 devtools 开关已开启，但当前构建未启用 open_devtools API，跳过打开 devtools");
             }
-            eprintln!("[启动] 任务调度、MCP 自动重部署与远程 IM 服务延后到前端 mounted ready 后启动");
+            eprintln!("[启动] 任务调度、工作区加载与远程 IM 服务延后到前端 mounted ready 后启动");
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

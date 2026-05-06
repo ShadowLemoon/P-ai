@@ -23,9 +23,15 @@ struct PrivateDepartmentFile {
     #[serde(default)]
     guide: String,
     #[serde(default)]
+    api_config_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     api_config_id: Option<String>,
     #[serde(default)]
     agent_ids: Vec<String>,
+    #[serde(default)]
+    child_department_ids: Vec<String>,
+    #[serde(default)]
+    permission_control: DepartmentPermissionControl,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -95,6 +101,76 @@ fn json_files_sorted(dir: &PathBuf) -> Result<Vec<PathBuf>, String> {
         .collect::<Vec<_>>();
     files.sort();
     Ok(files)
+}
+
+fn sanitize_private_org_filename(raw: &str, fallback: &str) -> String {
+    let trimmed = raw.trim();
+    let mut out = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    let normalized = out.trim_matches('_').trim();
+    if normalized.is_empty() {
+        fallback.to_string()
+    } else {
+        normalized.to_string()
+    }
+}
+
+fn collect_existing_private_persona_paths(
+    data_path: &PathBuf,
+    base_config: &AppConfig,
+) -> Result<std::collections::HashMap<String, PathBuf>, String> {
+    let root = private_personas_root_from_config(data_path, base_config);
+    let mut by_id = std::collections::HashMap::<String, PathBuf>::new();
+    for path in json_files_sorted(&root)? {
+        let raw = match fs::read_to_string(&path) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let file = match serde_json::from_str::<PrivatePersonaFile>(&raw) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let id = file.id.trim().to_string();
+        if id.is_empty() {
+            continue;
+        }
+        by_id.insert(id, path);
+    }
+    Ok(by_id)
+}
+
+fn collect_existing_private_department_paths(
+    data_path: &PathBuf,
+    base_config: &AppConfig,
+) -> Result<std::collections::HashMap<String, PathBuf>, String> {
+    let root = private_departments_root_from_config(data_path, base_config);
+    let mut by_id = std::collections::HashMap::<String, PathBuf>::new();
+    for path in json_files_sorted(&root)? {
+        let raw = match fs::read_to_string(&path) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let file = match serde_json::from_str::<PrivateDepartmentFile>(&raw) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        let id = file.id.trim().to_string();
+        if id.is_empty() {
+            continue;
+        }
+        by_id.insert(id, path);
+    }
+    Ok(by_id)
+}
+
+pub(crate) fn is_private_workspace_source(source: &str) -> bool {
+    source.trim() == default_private_workspace_source()
 }
 
 fn reserved_private_persona_id(id: &str) -> bool {
@@ -293,28 +369,46 @@ fn load_private_departments_from_workspace(
             });
             continue;
         }
-        let api_config_id = file
-            .api_config_id
-            .as_deref()
-            .map(str::trim)
+        let mut api_config_ids = file
+            .api_config_ids
+            .iter()
+            .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
-            .map(ToOwned::to_owned)
-            .unwrap_or_else(|| default_private_department_api_config_id(base_config));
-        if api_config_id.is_empty() {
+            .collect::<Vec<_>>();
+        if api_config_ids.is_empty() {
+            if let Some(api_config_id) = file
+                .api_config_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+            {
+                api_config_ids.push(api_config_id);
+            }
+        }
+        if api_config_ids.is_empty() {
+            let fallback = default_private_department_api_config_id(base_config);
+            if !fallback.is_empty() {
+                api_config_ids.push(fallback);
+            }
+        }
+        if api_config_ids.is_empty() {
             errors.push(WorkspaceLoadError {
                 item: path.to_string_lossy().to_string(),
                 error: format!("私有部门没有可用的默认文本模型，id={id}"),
             });
             continue;
         }
-        if !base_config
-            .api_configs
-            .iter()
-            .any(|api| api.id == api_config_id && api.enable_text && api.request_format.is_chat_text())
-        {
+        let invalid_api_config_id = api_config_ids.iter().find(|api_config_id| {
+            !base_config
+                .api_configs
+                .iter()
+                .any(|api| api.id == **api_config_id && api.enable_text && api.request_format.is_chat_text())
+        });
+        if let Some(invalid_api_config_id) = invalid_api_config_id {
             errors.push(WorkspaceLoadError {
                 item: path.to_string_lossy().to_string(),
-                error: format!("私有部门引用了不可用的文本模型，id={id}, apiConfigId={api_config_id}"),
+                error: format!("私有部门引用了不可用的文本模型，id={id}, apiConfigId={invalid_api_config_id}"),
             });
             continue;
         }
@@ -344,15 +438,17 @@ fn load_private_departments_from_workspace(
             continue;
         }
         let now = now_iso();
+        let normalized_child_department_ids =
+            normalize_department_child_ids(&file.child_department_ids, &id);
         merged.push(DepartmentConfig {
             id: id.clone(),
             name,
             summary: file.summary.trim().to_string(),
             guide: file.guide.trim().to_string(),
-            api_config_ids: vec![api_config_id.clone()],
-            api_config_id,
+            api_config_ids: api_config_ids.clone(),
+            api_config_id: api_config_ids[0].clone(),
             agent_ids,
-            child_department_ids: Vec::new(),
+            child_department_ids: normalized_child_department_ids,
             created_at: now.clone(),
             updated_at: now,
             order_index: (merged.len() as i64) + 1,
@@ -360,7 +456,7 @@ fn load_private_departments_from_workspace(
             is_deputy: false,
             source: default_private_workspace_source(),
             scope: default_assistant_private_scope(),
-            permission_control: DepartmentPermissionControl::default(),
+            permission_control: file.permission_control.clone(),
         });
         loaded.push(id);
     }
@@ -392,6 +488,96 @@ pub(crate) fn merge_private_organization_into_runtime_data(
     data: &mut AppData,
 ) -> Result<PrivateOrganizationMergeResult, String> {
     merge_private_organization_into_runtime(data_path, config, &mut data.agents)
+}
+
+pub(crate) fn sync_private_agents_to_workspace(
+    data_path: &PathBuf,
+    base_config: &AppConfig,
+    agents: &[AgentProfile],
+) -> Result<(), String> {
+    let root = private_personas_root_from_config(data_path, base_config);
+    fs::create_dir_all(&root)
+        .map_err(|err| format!("Create private personas dir failed ({}): {err}", root.display()))?;
+    let mut existing_paths = collect_existing_private_persona_paths(data_path, base_config)?;
+    for agent in agents.iter().filter(|agent| is_private_workspace_source(&agent.source)) {
+        let file = PrivatePersonaFile {
+            id: agent.id.clone(),
+            name: agent.name.clone(),
+            system_prompt: agent.system_prompt.clone(),
+            tools: agent.tools.clone(),
+            avatar_path: agent.avatar_path.clone(),
+        };
+        let path = existing_paths.remove(&agent.id).unwrap_or_else(|| {
+            root.join(format!(
+                "{}.json",
+                sanitize_private_org_filename(&agent.id, "persona")
+            ))
+        });
+        let text = serde_json::to_string_pretty(&file)
+            .map_err(|err| format!("序列化私有人格 JSON 失败，id={}：{err}", agent.id))?;
+        fs::write(&path, text)
+            .map_err(|err| format!("写入私有人格 JSON 失败 ({}): {err}", path.display()))?;
+    }
+    for stale_path in existing_paths.into_values() {
+        if stale_path.exists() {
+            fs::remove_file(&stale_path)
+                .map_err(|err| format!("删除已移除的私有人格 JSON 失败 ({}): {err}", stale_path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+pub(crate) fn sync_private_departments_to_workspace(
+    data_path: &PathBuf,
+    base_config: &AppConfig,
+    departments: &[DepartmentConfig],
+) -> Result<(), String> {
+    let root = private_departments_root_from_config(data_path, base_config);
+    fs::create_dir_all(&root)
+        .map_err(|err| format!("Create private departments dir failed ({}): {err}", root.display()))?;
+    let mut existing_paths = collect_existing_private_department_paths(data_path, base_config)?;
+    for department in departments
+        .iter()
+        .filter(|department| is_private_workspace_source(&department.source))
+    {
+        let primary_api_config_id = department
+            .api_config_ids
+            .iter()
+            .map(|value| value.trim().to_string())
+            .find(|value| !value.is_empty())
+            .or_else(|| {
+                let value = department.api_config_id.trim().to_string();
+                if value.is_empty() { None } else { Some(value) }
+            });
+        let file = PrivateDepartmentFile {
+            id: department.id.clone(),
+            name: department.name.clone(),
+            summary: department.summary.clone(),
+            guide: department.guide.clone(),
+            api_config_ids: department.api_config_ids.clone(),
+            api_config_id: primary_api_config_id,
+            agent_ids: department.agent_ids.clone(),
+            child_department_ids: department.child_department_ids.clone(),
+            permission_control: department.permission_control.clone(),
+        };
+        let path = existing_paths.remove(&department.id).unwrap_or_else(|| {
+            root.join(format!(
+                "{}.json",
+                sanitize_private_org_filename(&department.id, "department")
+            ))
+        });
+        let text = serde_json::to_string_pretty(&file)
+            .map_err(|err| format!("序列化私有部门 JSON 失败，id={}：{err}", department.id))?;
+        fs::write(&path, text)
+            .map_err(|err| format!("写入私有部门 JSON 失败 ({}): {err}", path.display()))?;
+    }
+    for stale_path in existing_paths.into_values() {
+        if stale_path.exists() {
+            fs::remove_file(&stale_path)
+                .map_err(|err| format!("删除已移除的私有部门 JSON 失败 ({}): {err}", stale_path.display()))?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn runtime_private_organization_ids(

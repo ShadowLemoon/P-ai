@@ -302,11 +302,19 @@ pub(crate) fn update_hidden_skill_snapshot_cache(
     Ok(snapshot)
 }
 
-pub(crate) fn warm_hidden_skill_snapshot_cache(state: &AppState) -> Result<String, String> {
-    match load_workspace_skill_summaries_with_errors(state) {
-        Ok((skills, _errors)) => update_hidden_skill_snapshot_cache(state, &skills, None),
-        Err(err) => update_hidden_skill_snapshot_cache(state, &[], Some(err.as_str())),
-    }
+pub(crate) fn clear_hidden_skill_snapshot_cache(state: &AppState) -> Result<(), String> {
+    let mut guard = state
+        .hidden_skill_snapshot_cache
+        .lock()
+        .map_err(|_| "Failed to lock hidden skill snapshot cache".to_string())?;
+    *guard = String::new();
+    drop(guard);
+
+    let mut summaries_guard = hidden_skill_summaries_cache()
+        .lock()
+        .map_err(|_| "Failed to lock hidden skill summaries cache".to_string())?;
+    summaries_guard.remove(&hidden_skill_cache_scope_key(state));
+    Ok(())
 }
 
 pub(crate) fn build_hidden_skill_snapshot_block(state: &AppState) -> String {
@@ -346,7 +354,184 @@ pub(crate) fn build_hidden_skill_snapshot_block_for_department(
     }
 }
 
-pub(crate) fn refresh_workspace_mcp_and_skills(state: &AppState) -> Result<RefreshMcpAndSkillsResult, String> {
+fn format_workspace_named_item(name: &str, id: &str) -> String {
+    let trimmed_name = name.trim();
+    let trimmed_id = id.trim();
+    if trimmed_name.is_empty() {
+        return trimmed_id.to_string();
+    }
+    if trimmed_id.is_empty() || trimmed_name == trimmed_id {
+        return trimmed_name.to_string();
+    }
+    format!("{trimmed_name} ({trimmed_id})")
+}
+
+fn build_workspace_loaded_groups(
+    servers: &[McpServerConfig],
+    skills: &[SkillSummaryItem],
+    agents: &[AgentProfile],
+    departments: &[DepartmentConfig],
+    private_agent_ids: &[String],
+    private_department_ids: &[String],
+) -> Vec<WorkspaceLoadedGroup> {
+    let mcp_items = servers
+        .iter()
+        .map(|server| format_workspace_named_item(&server.name, &server.id))
+        .collect::<Vec<_>>();
+    let skill_items = skills
+        .iter()
+        .map(|item| item.name.trim().to_string())
+        .collect::<Vec<_>>();
+    let private_agent_items = private_agent_ids
+        .iter()
+        .map(|id| {
+            agents
+                .iter()
+                .find(|agent| agent.id == *id)
+                .map(|agent| format_workspace_named_item(&agent.name, &agent.id))
+                .unwrap_or_else(|| id.clone())
+        })
+        .collect::<Vec<_>>();
+    let private_department_items = private_department_ids
+        .iter()
+        .map(|id| {
+            departments
+                .iter()
+                .find(|department| department.id == *id)
+                .map(|department| format_workspace_named_item(&department.name, &department.id))
+                .unwrap_or_else(|| id.clone())
+        })
+        .collect::<Vec<_>>();
+    vec![
+        WorkspaceLoadedGroup {
+            kind: "mcp".to_string(),
+            label: "MCP".to_string(),
+            count: mcp_items.len(),
+            items: mcp_items,
+        },
+        WorkspaceLoadedGroup {
+            kind: "skill".to_string(),
+            label: "SKILL".to_string(),
+            count: skill_items.len(),
+            items: skill_items,
+        },
+        WorkspaceLoadedGroup {
+            kind: "private_agent".to_string(),
+            label: "私有人格".to_string(),
+            count: private_agent_items.len(),
+            items: private_agent_items,
+        },
+        WorkspaceLoadedGroup {
+            kind: "private_department".to_string(),
+            label: "私有部门".to_string(),
+            count: private_department_items.len(),
+            items: private_department_items,
+        },
+    ]
+}
+
+fn build_workspace_failed_groups(
+    mcp_failed: &[WorkspaceLoadError],
+    skills_failed: &[WorkspaceLoadError],
+    private_agents_failed: &[WorkspaceLoadError],
+    private_departments_failed: &[WorkspaceLoadError],
+) -> Vec<WorkspaceFailedGroup> {
+    vec![
+        WorkspaceFailedGroup {
+            kind: "mcp".to_string(),
+            label: "MCP".to_string(),
+            count: mcp_failed.len(),
+            items: mcp_failed.to_vec(),
+        },
+        WorkspaceFailedGroup {
+            kind: "skill".to_string(),
+            label: "SKILL".to_string(),
+            count: skills_failed.len(),
+            items: skills_failed.to_vec(),
+        },
+        WorkspaceFailedGroup {
+            kind: "private_agent".to_string(),
+            label: "私有人格".to_string(),
+            count: private_agents_failed.len(),
+            items: private_agents_failed.to_vec(),
+        },
+        WorkspaceFailedGroup {
+            kind: "private_department".to_string(),
+            label: "私有部门".to_string(),
+            count: private_departments_failed.len(),
+            items: private_departments_failed.to_vec(),
+        },
+    ]
+}
+
+fn summarize_workspace_loaded_groups(groups: &[WorkspaceLoadedGroup]) -> String {
+    let mut lines = Vec::<String>::new();
+    for group in groups {
+        let details = if group.items.is_empty() {
+            "无".to_string()
+        } else {
+            group.items.join("、")
+        };
+        lines.push(format!(
+            "{}：成功加载 {} 个；{}",
+            group.label, group.count, details
+        ));
+    }
+    lines.join("\n")
+}
+
+fn summarize_workspace_failed_groups(groups: &[WorkspaceFailedGroup]) -> String {
+    let mut lines = Vec::<String>::new();
+    for group in groups {
+        if group.items.is_empty() {
+            lines.push(format!("{}：0 个加载失败", group.label));
+            continue;
+        }
+        lines.push(format!("{}：{} 个加载失败", group.label, group.count));
+        for item in &group.items {
+            lines.push(format!("- {} | {}", item.item, item.error));
+        }
+    }
+    lines.join("\n")
+}
+
+fn finalize_workspace_load_result(
+    mut result: RefreshMcpAndSkillsResult,
+    servers: &[McpServerConfig],
+    merged_agents: &[AgentProfile],
+    merged_departments: &[DepartmentConfig],
+) -> RefreshMcpAndSkillsResult {
+    let loaded_groups = build_workspace_loaded_groups(
+        servers,
+        &result.skills,
+        merged_agents,
+        merged_departments,
+        &result.private_agents_loaded,
+        &result.private_departments_loaded,
+    );
+    let failed_groups = build_workspace_failed_groups(
+        &result.mcp_failed,
+        &result.skills_failed,
+        &result.private_agents_failed,
+        &result.private_departments_failed,
+    );
+    let total_loaded = loaded_groups.iter().map(|group| group.count).sum::<usize>();
+    let total_failed = failed_groups.iter().map(|group| group.count).sum::<usize>();
+    let loaded_summary = summarize_workspace_loaded_groups(&loaded_groups);
+    let failed_summary = summarize_workspace_failed_groups(&failed_groups);
+    result.loaded_groups = loaded_groups;
+    result.failed_groups = failed_groups;
+    result.total_loaded = total_loaded;
+    result.total_failed = total_failed;
+    result.loaded_summary = loaded_summary;
+    result.failed_summary = failed_summary;
+    result.needs_repair = total_failed > 0;
+    result
+}
+
+fn collect_workspace_load_snapshot(
+    state: &AppState,
+) -> Result<(RefreshMcpAndSkillsResult, Vec<McpServerConfig>, Vec<AgentProfile>, Vec<DepartmentConfig>), String> {
     ensure_workspace_mcp_layout(state)?;
     ensure_workspace_skills_layout(state)?;
     ensure_workspace_private_organization_layout(state)?;
@@ -365,7 +550,7 @@ pub(crate) fn refresh_workspace_mcp_and_skills(state: &AppState) -> Result<Refre
     let mcp_loaded = servers.iter().map(|s| s.id.clone()).collect::<Vec<_>>();
     let skills_loaded = skills.iter().map(|s| s.name.clone()).collect::<Vec<_>>();
     let skill_summary = render_skill_summary(&skills);
-    Ok(RefreshMcpAndSkillsResult {
+    let result = RefreshMcpAndSkillsResult {
         mcp_loaded,
         mcp_failed: mcp_errors
             .into_iter()
@@ -382,7 +567,84 @@ pub(crate) fn refresh_workspace_mcp_and_skills(state: &AppState) -> Result<Refre
         private_agents_failed: private_org.private_agents_failed,
         private_departments_loaded: private_org.private_departments_loaded,
         private_departments_failed: private_org.private_departments_failed,
-    })
+        loaded_groups: Vec::new(),
+        failed_groups: Vec::new(),
+        total_loaded: 0,
+        total_failed: 0,
+        loaded_summary: String::new(),
+        failed_summary: String::new(),
+        needs_repair: false,
+    };
+    Ok((result, servers, data.agents, config.departments))
+}
+
+async fn disconnect_workspace_mcp_runtime_clients(state: &AppState) {
+    match load_workspace_mcp_servers(state) {
+        Ok(servers) => {
+            for server in servers {
+                mcp_disconnect_cached_client(&server.id).await;
+                mcp_runtime_state_set(&server.id, false, "stopped", "", Vec::new());
+            }
+        }
+        Err(err) => runtime_log_warn(format!(
+            "[工作区加载] reload 前清理 MCP 运行态失败，继续尝试重新加载：{}",
+            err
+        )),
+    }
+}
+
+pub(crate) async fn load_workspace(state: &AppState) -> Result<RefreshMcpAndSkillsResult, String> {
+    let (mut result, servers, merged_agents, merged_departments) =
+        collect_workspace_load_snapshot(state)?;
+    match mcp_redeploy_all_from_policy(state).await {
+        Ok(deploy_errors) => {
+            if !deploy_errors.is_empty() {
+                result.mcp_failed.extend(deploy_errors);
+            }
+        }
+        Err(err) => {
+            result.mcp_failed.push(WorkspaceLoadError {
+                item: "mcp_redeploy_all_from_policy".to_string(),
+                error: err,
+            });
+        }
+    }
+    refresh_global_tool_schema_cache(state);
+    mark_prompt_cache_rebuild_for_all_final_system_sources(state);
+    Ok(finalize_workspace_load_result(
+        result,
+        &servers,
+        &merged_agents,
+        &merged_departments,
+    ))
+}
+
+pub(crate) async fn reload_workspace(
+    state: &AppState,
+) -> Result<RefreshMcpAndSkillsResult, String> {
+    disconnect_workspace_mcp_runtime_clients(state).await;
+    clear_global_tool_schema_cache();
+    if let Err(err) = clear_hidden_skill_snapshot_cache(state) {
+        runtime_log_warn(format!("[工作区加载] reload 前清空技能快照缓存失败：{}", err));
+    }
+    load_workspace(state).await
+}
+
+pub(crate) fn log_workspace_load_result(prefix: &str, result: &RefreshMcpAndSkillsResult) {
+    runtime_log_info(format!(
+        "{} 状态=完成，成功加载={}，加载失败={}，需修复={}",
+        prefix, result.total_loaded, result.total_failed, result.needs_repair
+    ));
+    if !result.loaded_summary.trim().is_empty() {
+        for line in result.loaded_summary.lines() {
+            runtime_log_info(format!("{} {}", prefix, line));
+        }
+    }
+    if !result.failed_summary.trim().is_empty() {
+        for line in result.failed_summary.lines() {
+            runtime_log_info(format!("{} {}", prefix, line));
+        }
+    }
 }
 
 pub(crate) fn open_skills_workspace_dir(state: &AppState) -> Result<String, String> {

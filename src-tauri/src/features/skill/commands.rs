@@ -4,22 +4,7 @@ use super::*;
 pub(crate) async fn mcp_refresh_mcp_and_skills(
     state: State<'_, AppState>,
 ) -> Result<RefreshMcpAndSkillsResult, String> {
-    let mut out = refresh_workspace_mcp_and_skills(&state)?;
-    match mcp_redeploy_all_from_policy(&state).await {
-        Ok(deploy_errors) => {
-            if !deploy_errors.is_empty() {
-                out.mcp_failed.extend(deploy_errors);
-            }
-        }
-        Err(err) => {
-            out.mcp_failed.push(WorkspaceLoadError {
-                item: "mcp_redeploy_all_from_policy".to_string(),
-                error: err,
-            });
-        }
-    }
-    mark_prompt_cache_rebuild_for_all_final_system_sources(&state);
-    Ok(out)
+    reload_workspace(&state).await
 }
 
 #[tauri::command]

@@ -10,22 +10,7 @@ async fn builtin_desktop_wait(ms: u64) -> Result<Value, String> {
 
 
 async fn builtin_reload(app_state: &AppState) -> Result<Value, String> {
-    let mut result = refresh_workspace_mcp_and_skills(app_state)?;
-    match mcp_redeploy_all_from_policy(app_state).await {
-        Ok(deploy_errors) => {
-            if !deploy_errors.is_empty() {
-                result.mcp_failed.extend(deploy_errors);
-            }
-        }
-        Err(err) => {
-            result.mcp_failed.push(WorkspaceLoadError {
-                item: "mcp_redeploy_all_from_policy".to_string(),
-                error: err,
-            });
-        }
-    }
-    refresh_global_tool_schema_cache(app_state);
-    mark_prompt_cache_rebuild_for_all_final_system_sources(app_state);
+    let result = reload_workspace(app_state).await?;
     serde_json::to_value(result).map_err(|err| format!("序列化刷新结果失败：{err}"))
 }
 
@@ -95,4 +80,3 @@ async fn builtin_organize_context(
         "message": "上下文整理已接管当前轮，完成后会立即续跑。"
     }))
 }
-

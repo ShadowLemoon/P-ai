@@ -324,6 +324,8 @@ fn load_config(state: State<'_, AppState>) -> Result<AppConfig, String> {
 }
 
 fn read_app_bootstrap_snapshot(state: &AppState) -> Result<AppBootstrapSnapshot, String> {
+    // 启动快照阶段优先修复会话总索引，避免旧版本误删归档入口后仍需人工恢复。
+    let _ = state_read_chat_index_cached(state)?;
     let mut config = state_read_config_cached(state)?;
     normalize_app_config(&mut config);
     let workspace_changed = ensure_default_shell_workspace_in_config(&mut config, state);

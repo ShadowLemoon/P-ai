@@ -158,6 +158,27 @@ fn conversation_visible_in_foreground_lists(conversation: &Conversation) -> bool
         && !conversation_is_remote_im_contact(conversation)
 }
 
+fn conversation_is_archived(conversation: &Conversation) -> bool {
+    if conversation.status.trim() == "archived" {
+        return true;
+    }
+    if conversation
+        .archived_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        return true;
+    }
+    !conversation.summary.trim().is_empty()
+}
+
+fn conversation_is_unarchived_foreground(conversation: &Conversation) -> bool {
+    !conversation_is_archived(conversation)
+        && conversation_visible_in_foreground_lists(conversation)
+}
+
 const SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION: u64 = 2;
 const SUMMARY_CONTEXT_TITLE_MAX_CHARS: usize = 20;
 

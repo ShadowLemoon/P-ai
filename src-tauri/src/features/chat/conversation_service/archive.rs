@@ -9,7 +9,7 @@ impl ConversationService {
         let mut summaries = chat_index
             .conversations
             .iter()
-            .filter(|item| !item.summary.trim().is_empty())
+            .filter(|item| chat_index_item_is_archived(item))
             .filter_map(|item| match state_read_conversation_cached(state, item.id.as_str()) {
                 Ok(conversation) => Some(conversation),
                 Err(err) => {
@@ -20,7 +20,7 @@ impl ConversationService {
                     None
                 }
             })
-            .filter(|conversation| !conversation.summary.trim().is_empty())
+            .filter(|conversation| conversation_is_archived(conversation))
             .map(|archive| {
                 let api_config_id = department_for_agent_id(&app_config, &archive.agent_id)
                     .map(department_primary_api_config_id)
@@ -62,7 +62,7 @@ impl ConversationService {
         let mut messages = state_read_conversation_cached(state, normalized_archive_id)
             .map_err(|_| "Archive not found".to_string())
             .and_then(|conversation| {
-                if conversation.summary.trim().is_empty() {
+                if !conversation_is_archived(&conversation) {
                     Err("Archive not found".to_string())
                 } else {
                     Ok(conversation.messages)
@@ -115,7 +115,7 @@ impl ConversationService {
         })?;
         let conversation = state_read_conversation_cached(state, normalized_archive_id)
             .map_err(|_| "Archive not found".to_string())?;
-        if conversation.summary.trim().is_empty() {
+        if !conversation_is_archived(&conversation) {
             drop(guard);
             return Err("Archive not found".to_string());
         }
@@ -164,7 +164,7 @@ impl ConversationService {
         let summary = state_read_conversation_cached(state, normalized_archive_id)
             .map_err(|_| "Archive not found".to_string())
             .and_then(|conversation| {
-                if conversation.summary.trim().is_empty() {
+                if !conversation_is_archived(&conversation) {
                     Err("Archive not found".to_string())
                 } else {
                     Ok(conversation.summary)
@@ -224,7 +224,7 @@ impl ConversationService {
         let source_conversation_id = if let Some(conversation_id) = source_conversation_id {
             let conversation = state_read_conversation_cached(state, conversation_id)
                 .map_err(|_| "当前没有可归档的活动对话。".to_string())?;
-            if conversation.summary.trim().is_empty() && !conversation_is_delegate(&conversation) {
+            if conversation_is_unarchived_foreground(&conversation) {
                 Some(conversation.id)
             } else {
                 None
@@ -235,7 +235,7 @@ impl ConversationService {
         .ok_or_else(|| "当前没有可归档的活动对话。".to_string())?;
         let source = state_read_conversation_cached(state, &source_conversation_id)
             .map_err(|_| "当前没有可归档的活动对话。".to_string())?;
-        if !source.summary.trim().is_empty() || conversation_is_delegate(&source) {
+        if !conversation_is_unarchived_foreground(&source) {
             drop(guard);
             return Err("当前没有可归档的活动对话。".to_string());
         }
@@ -253,7 +253,7 @@ impl ConversationService {
         })?;
         let conversation = state_read_conversation_cached(state, normalized_archive_id)
             .map_err(|_| "Archive not found".to_string())?;
-        if conversation.summary.trim().is_empty() {
+        if !conversation_is_archived(&conversation) {
             drop(guard);
             return Err("Archive not found".to_string());
         }
@@ -278,9 +278,7 @@ impl ConversationService {
         })?;
         let source_conversation = state_read_conversation_cached(state, &source.id)
             .map_err(|err| format!("当前没有可归档的活动对话：{}", err))?;
-        if !source_conversation.summary.trim().is_empty()
-            || !conversation_visible_in_foreground_lists(&source_conversation)
-        {
+        if !conversation_is_unarchived_foreground(&source_conversation) {
             drop(guard);
             return Err("当前没有可归档的活动对话。".to_string());
         }
@@ -299,8 +297,7 @@ impl ConversationService {
                 })
                 .filter(|(_, conversation)| {
                     conversation.id != source.id
-                        && conversation.summary.trim().is_empty()
-                        && conversation_visible_in_foreground_lists(conversation)
+                        && conversation_is_unarchived_foreground(conversation)
                 })
                 .max_by(|(idx_a, a), (idx_b, b)| {
                     let a_updated = a.updated_at.trim();
@@ -373,7 +370,7 @@ impl ConversationService {
         let existing_archive_ids = chat_index
             .conversations
             .iter()
-            .filter(|item| !item.summary.trim().is_empty())
+            .filter(|item| chat_index_item_is_archived(item))
             .map(|item| item.id.clone())
             .collect::<std::collections::HashSet<_>>();
 
@@ -410,7 +407,7 @@ impl ConversationService {
         let total_count = state_read_chat_index_cached(state)?
             .conversations
             .iter()
-            .filter(|item| !item.summary.trim().is_empty())
+            .filter(|item| chat_index_item_is_archived(item))
             .count();
 
         Ok(ImportArchivesMutationResult {
@@ -439,7 +436,7 @@ impl ConversationService {
         })?;
         let mut conversation = state_read_conversation_cached(state, &source.id)
             .map_err(|_| "活动对话已变化，请重试上下文整理。".to_string())?;
-        if !conversation.summary.trim().is_empty() {
+        if conversation_is_archived(&conversation) {
             drop(guard);
             return Err("活动对话已变化，请重试上下文整理。".to_string());
         }
@@ -465,7 +462,7 @@ impl ConversationService {
             })?;
             let persisted = state_read_conversation_cached(state, &source.id)
                 .ok()
-                .filter(|conversation| conversation.summary.trim().is_empty())
+                .filter(|conversation| !conversation_is_archived(conversation))
                 .map(|conversation| {
                     conversation
                         .messages

@@ -297,6 +297,22 @@ fn build_chat_index_item(conversation: &Conversation) -> ChatIndexConversationIt
     }
 }
 
+fn chat_index_item_is_archived(item: &ChatIndexConversationItem) -> bool {
+    if item.status.trim() == "archived" {
+        return true;
+    }
+    if item
+        .archived_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        return true;
+    }
+    !item.summary.trim().is_empty()
+}
+
 fn build_chat_index_file(conversations: &[Conversation]) -> ChatIndexFile {
     ChatIndexFile {
         conversations: conversations
@@ -319,6 +335,7 @@ fn upsert_chat_index_conversation(index: &mut ChatIndexFile, conversation: &Conv
     }
 }
 
+#[allow(dead_code)]
 fn remove_chat_index_conversation(index: &mut ChatIndexFile, conversation_id: &str) {
     let conversation_id = conversation_id.trim();
     if conversation_id.is_empty() {

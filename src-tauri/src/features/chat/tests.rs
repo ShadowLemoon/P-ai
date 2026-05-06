@@ -2651,11 +2651,13 @@
     }
 
     #[test]
-    fn state_read_conversation_cached_should_self_heal_stale_hidden_chat_index_item() {
+    fn state_read_conversation_cached_should_keep_archived_chat_index_item_consistent() {
         let state = test_chat_runtime_state();
         let now = now_iso();
         let mut conversation = test_chat_conversation("conversation-hidden-heal", "active", &now);
         conversation.summary = "测试摘要".to_string();
+        conversation.archived_at = Some(now.clone());
+        conversation.status = "archived".to_string();
 
         write_conversation_shard(&state.data_path, &conversation).expect("write conversation");
         write_chat_index_shard(
@@ -2677,10 +2679,70 @@
         assert_eq!(loaded.id, conversation.id);
 
         let chat_index = read_chat_index_shard(&state.data_path).expect("read chat index");
-        assert!(chat_index
+        let item = chat_index
             .conversations
             .iter()
-            .all(|item| item.id != conversation.id));
+            .find(|item| item.id == conversation.id)
+            .expect("archived chat index item");
+        assert_eq!(item.summary, conversation.summary);
+        assert_eq!(item.archived_at, conversation.archived_at);
+        assert_eq!(item.status, conversation.status);
+    }
+
+    #[test]
+    fn state_read_chat_index_cached_should_recover_archived_items_from_storage_snapshot() {
+        let state = test_chat_runtime_state();
+        let now = now_iso();
+        let mut conversation = test_chat_conversation("conversation-archived-recover", "active", &now);
+        conversation.summary = "恢复用归档摘要".to_string();
+        conversation.archived_at = Some(now.clone());
+        conversation.status = "archived".to_string();
+
+        write_conversation_shard(&state.data_path, &conversation).expect("write archived conversation");
+        write_chat_index_shard(&state.data_path, &ChatIndexFile::default())
+            .expect("write empty chat index");
+
+        let chat_index = state_read_chat_index_cached(&state).expect("read repaired chat index");
+        let item = chat_index
+            .conversations
+            .iter()
+            .find(|item| item.id == conversation.id)
+            .expect("recovered archived item");
+        assert_eq!(item.summary, conversation.summary);
+        assert_eq!(item.archived_at, conversation.archived_at);
+        assert_eq!(item.status, conversation.status);
+    }
+
+    #[test]
+    fn read_app_bootstrap_snapshot_should_repair_chat_index_from_storage_snapshot() {
+        let state = test_chat_runtime_state();
+        let now = now_iso();
+        let mut conversation = test_chat_conversation("conversation-bootstrap-recover", "active", &now);
+        conversation.summary = "启动恢复归档摘要".to_string();
+        conversation.archived_at = Some(now.clone());
+        conversation.status = "archived".to_string();
+
+        write_conversation_shard(&state.data_path, &conversation).expect("write archived conversation");
+        write_chat_index_shard(
+            &state.data_path,
+            &ChatIndexFile {
+                conversations: vec![ChatIndexConversationItem {
+                    id: "conversation-orphan".to_string(),
+                    updated_at: now.clone(),
+                    status: "active".to_string(),
+                    summary: String::new(),
+                    archived_at: None,
+                }],
+            },
+        )
+        .expect("write stale chat index");
+
+        let _snapshot = read_app_bootstrap_snapshot(&state).expect("read bootstrap snapshot");
+
+        let chat_index = read_chat_index_shard(&state.data_path).expect("read repaired chat index");
+        assert_eq!(chat_index.conversations.len(), 1);
+        assert_eq!(chat_index.conversations[0].id, conversation.id);
+        assert_eq!(chat_index.conversations[0].status, conversation.status);
     }
 
     #[test]
@@ -2747,6 +2809,43 @@
         assert_eq!(chat_index.conversations.len(), 1);
         assert_eq!(chat_index.conversations[0].id, conversation.id);
         assert_eq!(chat_index.conversations[0].summary, conversation.summary);
+    }
+
+    #[test]
+    fn collect_unarchived_conversation_summaries_cached_should_keep_archived_index_items() {
+        let state = test_chat_runtime_state();
+        let now = now_iso();
+        let active = test_chat_conversation("conversation-active", "active", &now);
+        let mut archived = test_chat_conversation("conversation-archived", "active", &now);
+        archived.summary = "归档摘要".to_string();
+        archived.archived_at = Some(now.clone());
+        archived.status = "archived".to_string();
+
+        write_conversation_shard(&state.data_path, &active).expect("write active conversation");
+        write_conversation_shard(&state.data_path, &archived).expect("write archived conversation");
+        write_chat_index_shard(
+            &state.data_path,
+            &ChatIndexFile {
+                conversations: vec![
+                    build_chat_index_item(&active),
+                    build_chat_index_item(&archived),
+                ],
+            },
+        )
+        .expect("write mixed chat index");
+
+        let summaries = conversation_service()
+            .collect_unarchived_conversation_summaries_cached(&state, &AppConfig::default())
+            .expect("collect summaries");
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].conversation_id, active.id);
+        let chat_index = read_chat_index_shard(&state.data_path).expect("read chat index");
+        assert_eq!(chat_index.conversations.len(), 2);
+        assert!(chat_index
+            .conversations
+            .iter()
+            .any(|item| item.id == archived.id));
     }
 
     #[test]

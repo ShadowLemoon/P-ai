@@ -178,6 +178,120 @@ fn chat_index_item_mismatch_fields(
     fields
 }
 
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatIndexStorageMeta {
+    id: String,
+    updated_at: String,
+    status: String,
+    #[serde(default)]
+    summary: String,
+    #[serde(default)]
+    archived_at: Option<String>,
+}
+
+fn build_chat_index_item_from_storage_meta(
+    meta: &ChatIndexStorageMeta,
+) -> ChatIndexConversationItem {
+    ChatIndexConversationItem {
+        id: meta.id.clone(),
+        updated_at: meta.updated_at.clone(),
+        status: meta.status.clone(),
+        summary: meta.summary.clone(),
+        archived_at: meta.archived_at.clone(),
+    }
+}
+
+fn sort_chat_index_items(items: &mut Vec<ChatIndexConversationItem>) {
+    items.sort_by(|a, b| {
+        a.updated_at
+            .cmp(&b.updated_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+fn collect_chat_index_items_from_storage(
+    data_path: &PathBuf,
+) -> Result<Vec<ChatIndexConversationItem>, String> {
+    let conv_dir = app_layout_chat_conversations_dir(data_path);
+    if !conv_dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut items =
+        std::collections::HashMap::<String, ChatIndexConversationItem>::new();
+    let entries = fs::read_dir(&conv_dir)
+        .map_err(|err| format!("读取会话目录失败，path={}，error={err}", conv_dir.display()))?;
+    for entry in entries {
+        let entry = match entry {
+            Ok(item) => item,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        if path.is_dir() {
+            let meta_path = path.join("meta.json");
+            if !meta_path.exists() {
+                continue;
+            }
+            let meta = match read_json_file::<ChatIndexStorageMeta>(&meta_path, "conversation meta") {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            let item = build_chat_index_item_from_storage_meta(&meta);
+            items.insert(item.id.clone(), item);
+            continue;
+        }
+        if path.extension().and_then(|value| value.to_str()) != Some("json") {
+            continue;
+        }
+        let conversation_id = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if conversation_id.is_empty() {
+            continue;
+        }
+        let conversation = match read_conversation_shard(data_path, &conversation_id) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        items.insert(
+            conversation.id.clone(),
+            build_chat_index_item(&conversation),
+        );
+    }
+    Ok(items.into_values().collect())
+}
+
+fn repair_chat_index_from_storage_snapshot(
+    state: &AppState,
+    index: &mut ChatIndexFile,
+) -> Result<bool, String> {
+    let mut stored_items = collect_chat_index_items_from_storage(&state.data_path)?;
+    if stored_items.is_empty() {
+        return Ok(false);
+    }
+    sort_chat_index_items(&mut stored_items);
+    let changed = index.conversations.len() != stored_items.len()
+        || index
+            .conversations
+            .iter()
+            .zip(stored_items.iter())
+            .any(|(existing, stored)| {
+                existing.id != stored.id
+                    || !chat_index_item_mismatch_fields(existing, stored).is_empty()
+            });
+    if changed {
+        index.conversations = stored_items;
+        runtime_log_info(format!(
+            "[会话索引恢复] 完成，任务=chat_index_recover_from_storage，conversation_count={}",
+            index.conversations.len()
+        ));
+    }
+    Ok(changed)
+}
+
 fn ensure_conversation_chat_index_item_consistent(
     state: &AppState,
     conversation: &Conversation,
@@ -189,52 +303,6 @@ fn ensure_conversation_chat_index_item_consistent(
         .conversations
         .iter()
         .find(|item| item.id == conversation.id);
-    if !conversation_visible_in_foreground_lists(conversation) || !conversation.summary.trim().is_empty() {
-        if initial_existing.is_none() {
-            return Ok(());
-        }
-        let before_log = format_chat_index_item_log(initial_existing);
-        let started = std::time::Instant::now();
-        eprintln!(
-            "[会话索引自愈] 状态=开始，conversation_id={}，触发原因={}，修复原因=chat_index_stale_hidden_item，修复前={}",
-            conversation.id, trigger_reason, before_log
-        );
-
-        let repair_gate = conversation_index_repair_gate(state, &conversation.id)?;
-        let _repair_guard = repair_gate
-            .lock()
-            .map_err(|err| format!("Failed to lock conversation index repair gate: {err}"))?;
-
-        let mut chat_index = state_read_chat_index_cached(state)?;
-        let existing_after_lock = chat_index
-            .conversations
-            .iter()
-            .find(|item| item.id == conversation.id)
-            .cloned();
-        if existing_after_lock.is_none() {
-            eprintln!(
-                "[会话索引自愈] 状态=跳过，conversation_id={}，触发原因={}，修复原因=chat_index_stale_hidden_item，修复前={}，修复后={}，duration_ms={}",
-                conversation.id,
-                trigger_reason,
-                before_log,
-                format_chat_index_item_log(None),
-                started.elapsed().as_millis()
-            );
-            return Ok(());
-        }
-
-        remove_chat_index_conversation(&mut chat_index, &conversation.id);
-        state_write_chat_index_cached(state, &chat_index)?;
-        eprintln!(
-            "[会话索引自愈] 状态=完成，conversation_id={}，触发原因={}，修复原因=chat_index_stale_hidden_item，修复前={}，修复后={}，duration_ms={}",
-            conversation.id,
-            trigger_reason,
-            before_log,
-            format_chat_index_item_log(None),
-            started.elapsed().as_millis()
-        );
-        return Ok(());
-    }
     let initial_mismatch_fields = initial_existing
         .map(|existing| chat_index_item_mismatch_fields(existing, &expected))
         .unwrap_or_else(Vec::new);
@@ -607,7 +675,11 @@ fn state_read_chat_index_cached(state: &AppState) -> Result<ChatIndexFile, Strin
             }
         }
     }
-    let index = read_chat_index_shard(&state.data_path)?;
+    let mut index = read_chat_index_shard(&state.data_path)?;
+    if repair_chat_index_from_storage_snapshot(state, &mut index)? {
+        state_write_chat_index_cached(state, &index)?;
+        return Ok(index);
+    }
     *state
         .cached_chat_index
         .lock()

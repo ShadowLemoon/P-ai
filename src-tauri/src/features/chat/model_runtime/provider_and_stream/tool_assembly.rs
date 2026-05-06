@@ -71,11 +71,25 @@ fn build_global_tool_schema_cache(state: &AppState) -> Vec<ProviderToolDefinitio
     let preview_session_id = "__tool_schema_cache__".to_string();
     let preview_api_id = "__tool_schema_cache__".to_string();
     let preview_agent_id = DEFAULT_AGENT_ID.to_string();
+    let preview_memory_context = build_memory_agent_context(&preview_agent_id, false)
+        .unwrap_or(MemoryAgentContext {
+            owner_agent_id: None,
+            effective_agent_id: preview_agent_id.clone(),
+            private_memory_enabled: false,
+        });
     let mut definitions = vec![
         BuiltinFetchTool { app_state: state.clone() }.provider_tool_definition(),
         BuiltinBingSearchTool { app_state: state.clone() }.provider_tool_definition(),
-        BuiltinRememberTool { app_state: state.clone() }.provider_tool_definition(),
-        BuiltinRecallTool { app_state: state.clone() }.provider_tool_definition(),
+        BuiltinRememberTool {
+            app_state: state.clone(),
+            memory_context: preview_memory_context.clone(),
+        }
+        .provider_tool_definition(),
+        BuiltinRecallTool {
+            app_state: state.clone(),
+            memory_context: preview_memory_context,
+        }
+        .provider_tool_definition(),
         operate_provider_tool_definition(),
         BuiltinReloadTool { app_state: state.clone() }.provider_tool_definition(),
         BuiltinOrganizeContextTool {
@@ -235,7 +249,7 @@ async fn assemble_runtime_tools(
             &mut tools,
             app_state,
             selected_api.id.as_str(),
-            agent.id.as_str(),
+            agent,
             tool_session_id,
             delegate_unavailable_reason.is_none(),
         )?;
@@ -252,17 +266,24 @@ fn push_runtime_tool_executors(
     tools: &mut Vec<Box<dyn RuntimeToolDyn>>,
     app_state: Option<&AppState>,
     api_config_id: &str,
-    agent_id: &str,
+    agent: &AgentProfile,
     tool_session_id: &str,
     enable_delegate: bool,
 ) -> Result<(), String> {
     let state = app_state
         .ok_or_else(|| "runtime tool execution requires app state".to_string())?
         .clone();
+    let memory_context = memory_agent_context_from_agent(agent)?;
     tools.push(Box::new(BuiltinFetchTool { app_state: state.clone() }));
     tools.push(Box::new(BuiltinBingSearchTool { app_state: state.clone() }));
-    tools.push(Box::new(BuiltinRememberTool { app_state: state.clone() }));
-    tools.push(Box::new(BuiltinRecallTool { app_state: state.clone() }));
+    tools.push(Box::new(BuiltinRememberTool {
+        app_state: state.clone(),
+        memory_context: memory_context.clone(),
+    }));
+    tools.push(Box::new(BuiltinRecallTool {
+        app_state: state.clone(),
+        memory_context,
+    }));
     tools.push(Box::new(LazyOperateMcpTool {
         app_state: state.clone(),
     }));
@@ -271,7 +292,7 @@ fn push_runtime_tool_executors(
         app_state: state.clone(),
         session_id: tool_session_id.to_string(),
         api_config_id: api_config_id.to_string(),
-        agent_id: agent_id.to_string(),
+        agent_id: agent.id.to_string(),
     }));
     tools.push(Box::new(BuiltinWaitTool));
     tools.push(Box::new(LazyReadFileMcpTool {

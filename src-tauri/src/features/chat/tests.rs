@@ -439,6 +439,176 @@
     }
 
     #[test]
+    fn builtin_memory_save_should_use_current_tool_agent_as_owner() {
+        let state = test_chat_runtime_state();
+        let mut assistant = default_agent();
+        assistant.private_memory_enabled = true;
+        let mut worker = default_agent();
+        worker.id = "worker-agent".to_string();
+        worker.name = "执行者".to_string();
+        worker.private_memory_enabled = true;
+        let worker_memory_context =
+            memory_agent_context_from_agent(&worker).expect("worker memory context");
+        state_write_agents_cached(
+            &state,
+            &[assistant.clone(), worker.clone(), default_user_persona()],
+        )
+        .expect("seed agents");
+
+        let result = builtin_memory_save(
+            &state,
+            &worker_memory_context,
+            serde_json::json!({
+                "memoryType": "knowledge",
+                "judgment": "当前任务由执行者人格负责",
+                "reasoning": "回归测试",
+                "tags": ["执行者", "回归"]
+            }),
+        )
+        .expect("save memory");
+
+        assert_eq!(result.get("saved").and_then(Value::as_bool), Some(true));
+        let memories = memory_store_list_memories(&state.data_path).expect("list memories");
+        assert_eq!(memories.len(), 1);
+        assert_eq!(memories[0].owner_agent_id.as_deref(), Some(worker.id.as_str()));
+        assert_eq!(memories[0].judgment, "当前任务由执行者人格负责");
+    }
+
+    #[test]
+    fn builtin_recall_should_read_memories_for_current_tool_agent_only() {
+        let state = test_chat_runtime_state();
+        let mut assistant = default_agent();
+        assistant.private_memory_enabled = true;
+        let mut worker = default_agent();
+        worker.id = "worker-agent".to_string();
+        worker.name = "执行者".to_string();
+        worker.private_memory_enabled = true;
+        let worker_memory_context =
+            memory_agent_context_from_agent(&worker).expect("worker memory context");
+        state_write_agents_cached(
+            &state,
+            &[assistant.clone(), worker.clone(), default_user_persona()],
+        )
+        .expect("seed agents");
+        memory_store_upsert_drafts(
+            &state.data_path,
+            &[
+                MemoryDraftInput {
+                    memory_type: "knowledge".to_string(),
+                    judgment: "这是主助理的私有记忆".to_string(),
+                    reasoning: "回归测试".to_string(),
+                    tags: vec!["共享线索".to_string()],
+                    owner_agent_id: Some(assistant.id.clone()),
+                },
+                MemoryDraftInput {
+                    memory_type: "knowledge".to_string(),
+                    judgment: "这是执行者的私有记忆".to_string(),
+                    reasoning: "回归测试".to_string(),
+                    tags: vec!["共享线索".to_string()],
+                    owner_agent_id: Some(worker.id.clone()),
+                },
+            ],
+        )
+        .expect("seed memories");
+
+        let result = builtin_recall(&state, &worker_memory_context, "共享线索")
+            .expect("recall current agent memories");
+        let memory_board = result
+            .get("memoryBoard")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert_eq!(result.get("count").and_then(Value::as_u64), Some(1));
+        assert!(memory_board.contains("这是执行者的私有记忆"));
+        assert!(!memory_board.contains("这是主助理的私有记忆"));
+    }
+
+    #[test]
+    fn builtin_memory_tools_should_accept_deputy_agent_as_current_persona() {
+        let state = test_chat_runtime_state();
+        let assistant = default_agent();
+        let deputy = default_deputy_agent();
+        let deputy_memory_context =
+            memory_agent_context_from_agent(&deputy).expect("deputy memory context");
+        state_write_agents_cached(
+            &state,
+            &[assistant, deputy.clone(), default_user_persona(), default_system_persona()],
+        )
+        .expect("seed agents");
+
+        let save_result = builtin_memory_save(
+            &state,
+            &deputy_memory_context,
+            serde_json::json!({
+                "memoryType": "knowledge",
+                "judgment": "这是副手人格记录的共享记忆",
+                "reasoning": "回归测试",
+                "tags": ["副手回归", "共享"]
+            }),
+        )
+        .expect("save deputy memory");
+
+        assert_eq!(save_result.get("saved").and_then(Value::as_bool), Some(true));
+
+        let recall_result = builtin_recall(&state, &deputy_memory_context, "副手回归")
+            .expect("recall deputy memory");
+        let memory_board = recall_result
+            .get("memoryBoard")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert_eq!(recall_result.get("count").and_then(Value::as_u64), Some(1));
+        assert!(memory_board.contains("这是副手人格记录的共享记忆"));
+    }
+
+    #[test]
+    fn builtin_memory_tools_should_accept_private_workspace_runtime_agent() {
+        let state = test_chat_runtime_state();
+        let now = now_iso();
+        let private_worker = AgentProfile {
+            id: "private-worker".to_string(),
+            name: "私人执行者".to_string(),
+            system_prompt: "你是谁：你是私人执行者。\n台词技巧：直接。\n性格画像：可靠。".to_string(),
+            tools: default_agent_tools(),
+            created_at: now.clone(),
+            updated_at: now,
+            avatar_path: None,
+            avatar_updated_at: None,
+            is_built_in_user: false,
+            is_built_in_system: false,
+            private_memory_enabled: false,
+            source: default_private_workspace_source(),
+            scope: default_assistant_private_scope(),
+        };
+        let private_worker_memory_context =
+            memory_agent_context_from_agent(&private_worker).expect("private worker memory context");
+
+        let save_result = builtin_memory_save(
+            &state,
+            &private_worker_memory_context,
+            serde_json::json!({
+                "memoryType": "knowledge",
+                "judgment": "这是私有工作区人格记录的共享记忆",
+                "reasoning": "回归测试",
+                "tags": ["私有回归", "共享"]
+            }),
+        )
+        .expect("save private workspace memory");
+
+        assert_eq!(save_result.get("saved").and_then(Value::as_bool), Some(true));
+
+        let recall_result = builtin_recall(&state, &private_worker_memory_context, "私有回归")
+            .expect("recall private workspace memory");
+        let memory_board = recall_result
+            .get("memoryBoard")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        assert_eq!(recall_result.get("count").and_then(Value::as_u64), Some(1));
+        assert!(memory_board.contains("这是私有工作区人格记录的共享记忆"));
+    }
+
+    #[test]
     fn build_prompt_user_meta_text_should_skip_compaction_message_metadata() {
         let now = now_iso();
         let mut message = test_text_message(

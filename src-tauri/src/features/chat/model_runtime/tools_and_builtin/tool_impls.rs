@@ -98,6 +98,7 @@ impl RuntimeJsonTool for BuiltinBingSearchTool {
 #[derive(Debug, Clone)]
 struct BuiltinRememberTool {
     app_state: AppState,
+    memory_context: MemoryAgentContext,
 }
 
 impl RuntimeToolMetadata for BuiltinRememberTool {
@@ -154,7 +155,8 @@ impl RuntimeJsonTool for BuiltinRememberTool {
             "[TOOL-DEBUG] execute_builtin_tool.start name=remember args={}",
             debug_value_snippet(&args_json, 240)
         ));
-        let result = builtin_memory_save(&self.app_state, args_json).map_err(ToolInvokeError::from);
+        let result = builtin_memory_save(&self.app_state, &self.memory_context, args_json)
+            .map_err(ToolInvokeError::from);
         match &result {
             Ok(v) => runtime_log_debug(format!(
                 "[TOOL-DEBUG] execute_builtin_tool.ok name=remember result={}",
@@ -172,6 +174,7 @@ impl RuntimeJsonTool for BuiltinRememberTool {
 #[derive(Debug, Clone)]
 struct BuiltinRecallTool {
     app_state: AppState,
+    memory_context: MemoryAgentContext,
 }
 
 impl RuntimeToolMetadata for BuiltinRecallTool {
@@ -202,7 +205,8 @@ impl RuntimeJsonTool for BuiltinRecallTool {
             "[TOOL-DEBUG] execute_builtin_tool.start name=recall args={}",
             debug_value_snippet(&args_json, 240)
         ));
-        let result = builtin_recall(&self.app_state, &args.query).map_err(ToolInvokeError::from);
+        let result = builtin_recall(&self.app_state, &self.memory_context, &args.query)
+            .map_err(ToolInvokeError::from);
         match &result {
             Ok(v) => runtime_log_debug(format!(
                 "[TOOL-DEBUG] execute_builtin_tool.ok name=recall result={}",

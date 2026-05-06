@@ -69,12 +69,6 @@ struct DelegateContextResolution {
     thread_context: Option<DelegateRuntimeThread>,
 }
 
-struct AssistantMemoryContext {
-    owner_agent_id: Option<String>,
-    assistant_department_agent_id: String,
-    private_memory_enabled: bool,
-}
-
 struct SwitchActiveConversationSnapshotMutationResult {
     snapshot: ForegroundConversationSnapshotCore,
     unarchived_conversations: Vec<UnarchivedConversationSummary>,
@@ -139,4 +133,3 @@ fn conversation_service() -> &'static ConversationService {
     static SERVICE: OnceLock<ConversationService> = OnceLock::new();
     SERVICE.get_or_init(ConversationService::default)
 }
-

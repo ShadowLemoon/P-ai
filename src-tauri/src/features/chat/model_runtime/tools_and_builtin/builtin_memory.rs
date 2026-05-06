@@ -88,13 +88,40 @@ fn parse_memory_save_draft(
     })
 }
 
+#[derive(Debug, Clone)]
+struct MemoryAgentContext {
+    owner_agent_id: Option<String>,
+    effective_agent_id: String,
+    private_memory_enabled: bool,
+}
+
+fn build_memory_agent_context(
+    agent_id: &str,
+    private_memory_enabled: bool,
+) -> Result<MemoryAgentContext, String> {
+    let effective_agent_id = agent_id.trim();
+    if effective_agent_id.is_empty() {
+        return Err("缺少当前人格 ID，无法读写记忆。".to_string());
+    }
+    Ok(MemoryAgentContext {
+        owner_agent_id: private_memory_enabled.then_some(effective_agent_id.to_string()),
+        effective_agent_id: effective_agent_id.to_string(),
+        private_memory_enabled,
+    })
+}
+
+fn memory_agent_context_from_agent(agent: &AgentProfile) -> Result<MemoryAgentContext, String> {
+    if agent.is_built_in_user {
+        return Err(format!("当前人格不支持读写记忆：agent_id={}", agent.id));
+    }
+    build_memory_agent_context(&agent.id, agent.private_memory_enabled)
+}
+
 fn upsert_memories(
     app_state: &AppState,
+    memory_context: &MemoryAgentContext,
     drafts: &[MemorySaveDraft],
 ) -> Result<(Vec<MemorySaveUpsertItemResult>, usize), String> {
-    let owner_agent_id = conversation_service()
-        .read_assistant_memory_context(app_state)?
-        .owner_agent_id;
     let inputs = drafts
         .iter()
         .map(|d| MemoryDraftInput {
@@ -102,7 +129,7 @@ fn upsert_memories(
             judgment: d.judgment.clone(),
             reasoning: d.reasoning.clone(),
             tags: d.tags.clone(),
-            owner_agent_id: owner_agent_id.clone(),
+            owner_agent_id: memory_context.owner_agent_id.clone(),
         })
         .collect::<Vec<_>>();
     let (results, total_memories) = memory_store_upsert_drafts(&app_state.data_path, &inputs)?;
@@ -132,7 +159,11 @@ fn upsert_memories(
     Ok((results, total_memories))
 }
 
-fn builtin_memory_save(app_state: &AppState, args: Value) -> Result<Value, String> {
+fn builtin_memory_save(
+    app_state: &AppState,
+    memory_context: &MemoryAgentContext,
+    args: Value,
+) -> Result<Value, String> {
     let memory_type = args
         .get("memory_type")
         .or_else(|| args.get("memoryType"))
@@ -173,7 +204,7 @@ fn builtin_memory_save(app_state: &AppState, args: Value) -> Result<Value, Strin
           "totalMemories": Value::Null
         }));
     }
-    let (results, total_memories) = upsert_memories(app_state, &[draft])?;
+    let (results, total_memories) = upsert_memories(app_state, memory_context, &[draft])?;
     let first = results
         .into_iter()
         .next()
@@ -189,16 +220,18 @@ fn builtin_memory_save(app_state: &AppState, args: Value) -> Result<Value, Strin
     }))
 }
 
-fn builtin_recall(app_state: &AppState, query: &str) -> Result<Value, String> {
+fn builtin_recall(
+    app_state: &AppState,
+    memory_context: &MemoryAgentContext,
+    query: &str,
+) -> Result<Value, String> {
     let trimmed_query = query.trim();
     if trimmed_query.is_empty() {
         return Err("recall.query is required".to_string());
     }
-
-    let memory_context = conversation_service().read_assistant_memory_context(app_state)?;
     let memories = memory_store_list_memories_visible_for_agent(
         &app_state.data_path,
-        &memory_context.assistant_department_agent_id,
+        &memory_context.effective_agent_id,
         memory_context.private_memory_enabled,
     )?;
 

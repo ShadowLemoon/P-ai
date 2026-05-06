@@ -120,6 +120,12 @@ async fn builtin_tool_definitions_for_frontend(
     let preview_session_id = "__frontend_tool_preview__".to_string();
     let preview_api_id = "__frontend_tool_preview__".to_string();
     let preview_agent_id = DEFAULT_AGENT_ID.to_string();
+    let preview_memory_context = build_memory_agent_context(&preview_agent_id, false)
+        .unwrap_or(MemoryAgentContext {
+            owner_agent_id: None,
+            effective_agent_id: preview_agent_id.clone(),
+            private_memory_enabled: false,
+        });
     let operate_definition = match frontend_operate_tool_definition().await {
         Ok(definition) => Some(definition),
         Err(err) => {
@@ -158,12 +164,14 @@ async fn builtin_tool_definitions_for_frontend(
         frontend_tool_definition(
             BuiltinRememberTool {
                 app_state: state.clone(),
+                memory_context: preview_memory_context.clone(),
             }
             .provider_tool_definition(),
         ),
         frontend_tool_definition(
             BuiltinRecallTool {
                 app_state: state.clone(),
+                memory_context: preview_memory_context.clone(),
             }
             .provider_tool_definition(),
         ),

@@ -85,39 +85,6 @@ fn build_foreground_snapshot_recent_messages(
 }
 
 impl ConversationService {
-    fn read_assistant_memory_context(
-        &self,
-        app_state: &AppState,
-    ) -> Result<AssistantMemoryContext, String> {
-        let guard = app_state
-            .conversation_lock
-            .lock()
-            .map_err(|err| format!("Failed to lock state mutex at {}:{} {}: {err}", file!(), line!(), module_path!()))?;
-        let runtime = state_read_runtime_state_cached(app_state)?;
-        let agents = state_read_agents_cached(app_state)?;
-        let assistant_department_agent_id = runtime.assistant_department_agent_id.clone();
-        let owner_agent_id = agents
-            .iter()
-            .find(|a| {
-                a.id == assistant_department_agent_id
-                    && !a.is_built_in_user
-                    && a.private_memory_enabled
-            })
-            .map(|a| a.id.clone());
-        let private_memory_enabled = agents
-            .iter()
-            .find(|a| a.id == assistant_department_agent_id)
-            .map(|a| a.private_memory_enabled)
-            .unwrap_or(false);
-        drop(guard);
-        Ok(AssistantMemoryContext {
-            owner_agent_id,
-            assistant_department_agent_id,
-            private_memory_enabled,
-        })
-    }
-
-
     fn persist_conversation_with_chat_index(
         &self,
         state: &AppState,

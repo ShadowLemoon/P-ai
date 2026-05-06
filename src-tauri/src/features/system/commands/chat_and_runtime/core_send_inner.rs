@@ -745,6 +745,136 @@ fn spawn_remote_im_auto_send_contact_assistant_reply(
     });
 }
 
+fn should_schedule_conversation_auto_title_generation(conversation: &Conversation) -> bool {
+    conversation_is_local_normal_chat(conversation)
+        && conversation.title.trim().is_empty()
+        && conversation_real_user_messages(conversation).len() == 5
+}
+
+fn build_auto_conversation_title_prepared_prompt(user_messages: &[String]) -> PreparedPrompt {
+    let history_block = user_messages
+        .iter()
+        .enumerate()
+        .map(|(idx, text)| format!("{}. {}", idx + 1, text.trim()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    PreparedPrompt {
+        preamble: "你是会话标题生成器。请根据用户前 5 次发言生成一个简洁标题。\
+只输出标题本身，不要解释，不要引号，不要句号或其他收尾标点。\
+标题要准确概括当前主题，尽量控制在 10 个汉字以内，绝不要超过 20 个字。\
+请使用当前用户本轮使用的语言。"
+            .to_string(),
+        history_messages: Vec::new(),
+        latest_user_text: format!(
+            "以下是当前会话截至目前的前 5 次用户发言：\n{}\n\n请直接输出一个标题。",
+            history_block
+        ),
+        latest_user_meta_text: String::new(),
+        latest_user_extra_text: String::new(),
+        latest_user_extra_blocks: Vec::new(),
+        latest_images: Vec::new(),
+        latest_audios: Vec::new(),
+    }
+}
+
+async fn run_auto_conversation_title_generation(
+    state: &AppState,
+    user_messages: &[String],
+) -> Result<String, String> {
+    let review_api_config_id = current_tool_review_api_config_id(state)?
+        .ok_or_else(|| "未配置快速模型".to_string())?;
+    let app_config = state_read_config_cached(state)?;
+    let selected_api = resolve_selected_api_config(&app_config, Some(&review_api_config_id))
+        .ok_or_else(|| format!("快速模型配置不存在：{}", review_api_config_id))?;
+    if !selected_api.enable_text || !selected_api.request_format.is_chat_text() {
+        return Err("快速模型不支持文本对话".to_string());
+    }
+    let resolved_api = resolve_api_config(&app_config, Some(&review_api_config_id))?;
+    let model_name = if selected_api.model.trim().is_empty() {
+        resolved_api.model.clone()
+    } else {
+        selected_api.model.trim().to_string()
+    };
+    let execution = invoke_model_with_policy(
+        &resolved_api,
+        &model_name,
+        build_auto_conversation_title_prepared_prompt(user_messages),
+        CallPolicy {
+            scene: "Conversation auto title",
+            timeout_secs: Some(12),
+            json_only: false,
+        },
+        Some(state),
+    )
+    .await;
+    push_model_call_log_parts(Some(state), &execution);
+    let reply = execution.result?;
+    let candidate = if reply.final_response_text.trim().is_empty() {
+        reply.assistant_text.trim()
+    } else {
+        reply.final_response_text.trim()
+    };
+    normalize_summary_context_title(candidate)
+        .ok_or_else(|| "快速模型未返回有效标题".to_string())
+}
+
+fn spawn_conversation_auto_title_generation(
+    state: AppState,
+    conversation_id: String,
+    user_messages: Vec<String>,
+) {
+    tauri::async_runtime::spawn(async move {
+        let started_at = std::time::Instant::now();
+        let conversation_id = conversation_id.trim().to_string();
+        if conversation_id.is_empty() || user_messages.len() != 5 {
+            return;
+        }
+        match run_auto_conversation_title_generation(&state, &user_messages).await {
+            Ok(title) => match conversation_service().update_unarchived_conversation_latest_summary_title(
+                &state,
+                &conversation_id,
+                &title,
+            ) {
+                Ok(changed) => {
+                    if changed {
+                        if let Err(err) =
+                            emit_unarchived_conversation_overview_updated_from_state(&state)
+                        {
+                            runtime_log_warn(format!(
+                                "[会话标题] 警告，任务=刷新会话概览，conversation_id={}，error={}",
+                                conversation_id, err
+                            ));
+                        }
+                    }
+                    runtime_log_info(format!(
+                        "[会话标题] 完成，任务=自动生成标题，conversation_id={}，title={}，changed={}，elapsed_ms={}",
+                        conversation_id,
+                        title,
+                        changed,
+                        started_at.elapsed().as_millis()
+                    ));
+                }
+                Err(err) => {
+                    runtime_log_warn(format!(
+                        "[会话标题] 失败，任务=回写摘要标题，conversation_id={}，error={}，elapsed_ms={}",
+                        conversation_id,
+                        err,
+                        started_at.elapsed().as_millis()
+                    ));
+                }
+            },
+            Err(err) => {
+                runtime_log_warn(format!(
+                    "[会话标题] 跳过，任务=自动生成标题，conversation_id={}，error={}，elapsed_ms={}",
+                    conversation_id,
+                    err,
+                    started_at.elapsed().as_millis()
+                ));
+            }
+        }
+    });
+}
+
 fn update_remote_im_reply_decision_for_message(
     state: &AppState,
     conversation_id: &str,
@@ -2188,6 +2318,16 @@ async fn send_chat_message_inner(
                 updated_conversation
             }
         };
+        if should_schedule_conversation_auto_title_generation(&storage_conversation) {
+            let user_messages = conversation_real_user_message_texts(&storage_conversation);
+            if user_messages.len() == 5 {
+                spawn_conversation_auto_title_generation(
+                    state.clone(),
+                    storage_conversation.id.clone(),
+                    user_messages,
+                );
+            }
+        }
         let conversation = trim_conversation_for_prompt_request(&storage_conversation);
         let latest_user_text = if trigger_only {
             conversation

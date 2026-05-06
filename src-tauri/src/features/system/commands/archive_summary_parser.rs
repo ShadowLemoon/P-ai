@@ -75,6 +75,8 @@ struct ArchiveProfileMemoryDraft {
 #[serde(rename_all = "camelCase")]
 struct MemoryCurationDraft {
     #[serde(default)]
+    title: String,
+    #[serde(default)]
     summary: String,
     #[serde(default, deserialize_with = "deserialize_stringish_ids")]
     useful_memory_ids: Vec<String>,
@@ -89,6 +91,7 @@ struct MemoryCurationDraft {
 fn parse_memory_curation_draft_from_value(value: serde_json::Value) -> Option<MemoryCurationDraft> {
     let obj = value.as_object()?;
     let has_any_useful_key = obj.contains_key("usefulMemoryIds")
+        || obj.contains_key("title")
         || obj.contains_key("summary")
         || obj.contains_key("useful_memory_ids")
         || obj.contains_key("newMemories")
@@ -101,6 +104,13 @@ fn parse_memory_curation_draft_from_value(value: serde_json::Value) -> Option<Me
     if !has_any_useful_key {
         return None;
     }
+
+    let title = obj
+        .get("title")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_string();
 
     let summary = obj
         .get("summary")
@@ -169,6 +179,7 @@ fn parse_memory_curation_draft_from_value(value: serde_json::Value) -> Option<Me
         .unwrap_or_default();
 
     Some(MemoryCurationDraft {
+        title,
         summary,
         useful_memory_ids,
         new_memories,

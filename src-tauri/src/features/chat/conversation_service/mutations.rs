@@ -594,9 +594,6 @@ impl ConversationService {
             return Err("conversationId is required.".to_string());
         }
         let normalized_title = next_title.trim();
-        if normalized_title.is_empty() {
-            return Err("title is required.".to_string());
-        }
         let guard = state
             .conversation_lock
             .lock()
@@ -627,6 +624,21 @@ impl ConversationService {
         state_schedule_conversation_persist(state, &conversation, false)?;
         drop(guard);
         Ok(normalized_title.to_string())
+    }
+
+    fn update_unarchived_conversation_latest_summary_title(
+        &self,
+        state: &AppState,
+        conversation_id: &str,
+        next_title: &str,
+    ) -> Result<bool, String> {
+        self.update_unarchived_conversation_by_id(state, conversation_id, |conversation| {
+            let _ = conversation_ensure_summary_context_seed(conversation);
+            Ok(conversation_update_latest_summary_title(
+                conversation,
+                Some(next_title),
+            ))
+        })
     }
 
     fn create_unarchived_conversation(
@@ -1275,6 +1287,7 @@ fn build_unarchived_conversation_record_from_runtime(
         last_archive_summary.as_deref(),
         user_profile_snapshot.as_deref(),
         Some(&conversation.current_todos),
+        None,
     );
     conversation.last_user_at = Some(summary_message.created_at.clone());
     conversation.updated_at = summary_message.created_at.clone();
@@ -1367,6 +1380,7 @@ fn build_branch_conversation_record_from_selection_runtime(
             None,
             user_profile_snapshot.as_deref(),
             Some(&conversation.current_todos),
+            None,
         ));
     }
     conversation.messages.extend(

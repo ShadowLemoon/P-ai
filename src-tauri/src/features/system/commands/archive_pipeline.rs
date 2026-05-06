@@ -446,10 +446,12 @@ fn build_archive_delivery_message(
     archive_id: &str,
     summary: &str,
 ) -> ChatMessage {
-    let source_title = if source.title.trim().is_empty() {
-        conversation_preview_title(source)
-    } else {
+    let source_title = if !source.title.trim().is_empty() {
         source.title.trim().to_string()
+    } else if let Some(summary_title) = conversation_latest_summary_title(source) {
+        summary_title
+    } else {
+        conversation_preview_title(source)
     };
     let text = format!(
         "[归档汇报]\n来源会话：{}\n\n{}",
@@ -659,6 +661,7 @@ async fn summarize_archived_conversation_with_model_v2(
     }
     let id_alias_map = memory_curation_id_alias_map(memories);
     Ok(MemoryCurationDraft {
+        title: normalize_summary_context_title(&parsed.title).unwrap_or_default(),
         summary,
         useful_memory_ids: resolve_memory_curation_ids(&parsed.useful_memory_ids, &id_alias_map),
         new_memories: parsed.new_memories.into_iter().take(7).collect::<Vec<_>>(),
@@ -694,6 +697,7 @@ fn build_summary_context_requirement_block(scene: SummaryContextScene) -> String
             "你正在执行一次“上下文检查点压缩（Context Checkpoint Compaction）”。\n\
              请为另一个将继续当前任务的语言模型生成一份交接摘要。\n\
              你的工具都已经被禁用，你只能生成 JSON 完成任务。\n\
+             title 表示“当前会话标题”，应概括本轮主题，尽量控制在 10 个汉字以内。\n\
              请包含以下内容：\n\
              - 当前进展，以及已经做出的关键决策\n\
              - 重要上下文、约束条件、或用户偏好\n\
@@ -705,6 +709,7 @@ fn build_summary_context_requirement_block(scene: SummaryContextScene) -> String
         SummaryContextScene::Archive => {
             "你现在正在执行一次正式归档。\n\
              你的工具都已经被禁用，你只能生成 JSON 完成任务。\n\
+             title 表示“当前会话标题”，应概括本轮主题，尽量控制在 10 个汉字以内。\n\
              请不要复述完整过程，而是输出一份面向后续回看的结论汇报，核心回答：我们最终得出了什么结论。\n\
              summary 必须包含：\n\
              - 本轮最终结论与明确产出\n\
@@ -744,8 +749,9 @@ fn build_summary_context_json_contract_block(scene: SummaryContextScene) -> Stri
     prompt_xml_block(
         "json_contract",
         format!(
-            "你必须输出合法 JSON，且只能包含以下五个字段：summary/usefulMemoryIds/newMemories/mergeGroups/profileMemories。\n\
+            "你必须输出合法 JSON，且只能包含以下六个字段：title/summary/usefulMemoryIds/newMemories/mergeGroups/profileMemories。\n\
              不得输出 markdown、代码块、解释性前后缀。\n\
+             title 必须是当前会话标题，只输出一句短标题，尽量控制在 10 个汉字以内，本地最多接受 20 个字。\n\
              {}\n\
              下面是唯一合法的 JSON 形状示例：\n{}",
             summary_rule,
@@ -1079,6 +1085,7 @@ fn delete_main_conversation_and_activate_latest(
 
 fn build_compaction_message(
     summary: &str,
+    title: Option<&str>,
     compaction_reason: &str,
     user_profile_snapshot: Option<&str>,
     current_todos: Option<&[ConversationTodoItem]>,
@@ -1116,8 +1123,13 @@ fn build_compaction_message(
         .filter(|value| !value.is_empty())
         .map(normalize_multiline_block)
         .unwrap_or_else(|| "（暂无保留对话）".to_string());
+    let normalized_title = title.and_then(normalize_summary_context_title);
+    let title_text = normalized_title
+        .clone()
+        .unwrap_or_else(|| "（当前会话标题暂未生成）".to_string());
     let text = format!(
-        "[上下文整理]\n\n用户画像：\n{}\n\n摘要说明：\n{}\n\n摘要正文：\n{}\n\n保留对话：\n{}",
+        "[上下文整理]\n\n当前会话标题：\n{}\n\n用户画像：\n{}\n\n摘要说明：\n{}\n\n摘要正文：\n{}\n\n保留对话：\n{}",
+        title_text,
         user_profile_block,
         clean_text(summary_note.trim()),
         clean_compaction_summary_text(summary),
@@ -1134,7 +1146,9 @@ fn build_compaction_message(
             "message_meta": {
                 "kind": "context_compaction",
                 "scene": "compaction",
+                "schemaVersion": SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION,
                 "reason": reason,
+                "title": normalized_title,
             }
         })),
         tool_call: None,
@@ -1168,17 +1182,21 @@ fn build_initial_summary_context_message(
     last_archive_summary: Option<&str>,
     user_profile_snapshot: Option<&str>,
     current_todos: Option<&[ConversationTodoItem]>,
+    title: Option<&str>,
 ) -> ChatMessage {
     let summary = last_archive_summary
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .unwrap_or("（暂无历史归档摘要）");
     let mut message =
-        build_compaction_message(summary, "", user_profile_snapshot, current_todos, None);
+        build_compaction_message(summary, title, "", user_profile_snapshot, current_todos, None);
+    let normalized_title = title.and_then(normalize_summary_context_title);
     message.provider_meta = Some(serde_json::json!({
         "message_meta": {
             "kind": "summary_context_seed",
             "scene": "seed",
+            "schemaVersion": SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION,
+            "title": normalized_title,
         }
     }));
     message
@@ -1278,6 +1296,7 @@ async fn summarize_archive_summary_with_fallback(
         Ok(draft) => (draft, None),
         Err(err) => (
             MemoryCurationDraft {
+                title: String::new(),
                 summary: build_archive_summary_from_last_three_rounds(reporting_source),
                 useful_memory_ids: Vec::new(),
                 new_memories: Vec::new(),
@@ -1315,6 +1334,7 @@ async fn summarize_compaction_with_fallback(
             Err(err) => {
                 return (
                     MemoryCurationDraft {
+                        title: String::new(),
                         summary: String::new(),
                         useful_memory_ids: Vec::new(),
                         new_memories: Vec::new(),
@@ -1366,6 +1386,7 @@ async fn summarize_compaction_with_fallback(
     );
     (
         MemoryCurationDraft {
+            title: String::new(),
             summary: String::new(),
             useful_memory_ids: Vec::new(),
             new_memories: Vec::new(),
@@ -1772,6 +1793,7 @@ async fn run_context_compaction_pipeline_inner(
 
     let compression_message = build_compaction_message(
         &summary_with_pending_plan,
+        Some(summary_draft.title.as_str()),
         compaction_reason,
         user_profile_snapshot.as_deref(),
         Some(&source.current_todos),

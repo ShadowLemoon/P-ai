@@ -559,6 +559,7 @@ fn remote_im_build_presence_boundary_message(
             "message_meta": {
                 "kind": "context_compaction",
                 "scene": "remote_im_presence_boundary",
+                "schemaVersion": SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION,
                 "contactId": contact.id,
                 "processingMode": normalize_contact_processing_mode(&contact.processing_mode),
             }

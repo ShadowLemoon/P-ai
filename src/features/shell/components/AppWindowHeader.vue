@@ -343,6 +343,7 @@ import MarkdownRender, { enableKatex, enableMermaid, getMarkdown, parseMarkdownT
 import { Download, FoldVertical, History, Minus, ScrollText, Search, Settings, Square, SquarePen, TextAlignJustify, X } from "lucide-vue-next";
 import type { ChatConversationOverviewItem } from "../../../types/app";
 import ChatConversationListCard from "../../chat/components/ChatConversationListCard.vue";
+import { resolveConversationDisplayTitle } from "../../chat/utils/conversation-title";
 import { registerChatMarkstreamComponents } from "../../chat/markdown/register-chat-markstream";
 import type { ConfigSearchResult, ConfigSearchTab } from "../../config/search/config-search";
 import { isDarkAppTheme } from "../composables/use-app-theme";
@@ -450,7 +451,7 @@ const emit = defineEmits<{
   (e: "update-to-latest"): void;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const conversationListOpen = ref(false);
 
 const circumference = RING_CIRCUMFERENCE;
@@ -469,8 +470,10 @@ const currentConversationTitle = computed(() => {
   if (!activeId) return "";
   const item = props.conversationItems.find((i) => i.conversationId === activeId);
   if (!item) return "";
-  if (item.isMainConversation) return t("chat.mainConversation");
-  return item.title || "";
+  return resolveConversationDisplayTitle(item, {
+    locale: locale.value,
+    untitledLabel: t("chat.untitledConversation"),
+  });
 });
 
 const currentConversationDepartmentName = computed(() => {

@@ -489,6 +489,7 @@ import { normalizeLocale } from "./i18n";
 import { searchConfigTabs, type ConfigSearchResult, type ConfigSearchTab } from "./features/config/search/config-search";
 import { departmentDirectChildIds } from "./features/config/utils/department-graph";
 import { ensureConversationMessageIds } from "./features/chat/utils/message-id";
+import { resolveConversationDisplayTitle } from "./features/chat/utils/conversation-title";
 
 const props = withDefaults(defineProps<{ fixedViewMode?: "chat" | "archives" | "config" }>(), {
   fixedViewMode: undefined,
@@ -1647,6 +1648,7 @@ const chatUnarchivedConversationItems = computed(() => {
     .map((item) => ({
       conversationId: item.conversationId,
       title: item.title,
+      summaryTitle: item.summaryTitle,
       kind: "local_unarchived" as const,
       messageCount: Number(item.messageCount || 0),
       unreadCount: Number(item.unreadCount || 0),
@@ -3831,7 +3833,7 @@ async function userAsyncDelegateFromSelection(payload: {
 async function renameCurrentConversation(payload: { conversationId: string; title: string }) {
   const conversationId = String(payload?.conversationId || "").trim();
   const title = String(payload?.title || "").trim();
-  if (!conversationId || !title) return;
+  if (!conversationId) return;
   if (conversationId !== String(currentChatConversationId.value || "").trim()) return;
   try {
     const result = await invokeTauri<{ conversationId: string; title: string }>("rename_unarchived_conversation", {
@@ -3840,7 +3842,7 @@ async function renameCurrentConversation(payload: { conversationId: string; titl
         title,
       },
     });
-    const nextTitle = String(result?.title || "").trim() || title;
+    const nextTitle = String(result?.title || "").trim();
     unarchivedConversations.value = unarchivedConversations.value.map((item) =>
       String(item.conversationId || "").trim() === conversationId
         ? {

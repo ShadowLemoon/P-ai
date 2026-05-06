@@ -158,6 +158,523 @@ fn conversation_visible_in_foreground_lists(conversation: &Conversation) -> bool
         && !conversation_is_remote_im_contact(conversation)
 }
 
+const SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION: u64 = 2;
+const SUMMARY_CONTEXT_TITLE_MAX_CHARS: usize = 20;
+
+fn conversation_is_local_normal_chat(conversation: &Conversation) -> bool {
+    conversation.conversation_kind.trim() == CONVERSATION_KIND_CHAT
+        && !conversation_is_delegate(conversation)
+        && !conversation_is_remote_im_contact(conversation)
+}
+
+fn summary_context_message_kind(message: &ChatMessage) -> Option<&str> {
+    let meta = message.provider_meta.as_ref()?;
+    meta.get("message_meta")
+        .and_then(|value| value.get("kind"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| {
+            meta.get("messageMeta")
+                .and_then(|value| value.get("kind"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+        .or_else(|| {
+            meta.get("messageKind")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        })
+}
+
+fn is_summary_context_message_kind(kind: &str) -> bool {
+    matches!(kind.trim(), "context_compaction" | "summary_context_seed")
+}
+
+fn normalize_summary_context_title(raw: &str) -> Option<String> {
+    let first_line = raw
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or_default();
+    let stripped = first_line
+        .trim_matches(|ch| {
+            matches!(
+                ch,
+                '"' | '\''
+                    | '`'
+                    | '“'
+                    | '”'
+                    | '‘'
+                    | '’'
+                    | '《'
+                    | '》'
+                    | '「'
+                    | '」'
+                    | '『'
+                    | '』'
+            )
+        })
+        .trim_matches(|ch| matches!(ch, '。' | '！' | '？' | '!' | '?' | '，' | ',' | '；' | ';' | '：' | ':' | '、'))
+        .trim();
+    let cleaned = clean_text(stripped);
+    if cleaned.is_empty() {
+        return None;
+    }
+    Some(
+        cleaned
+            .chars()
+            .take(SUMMARY_CONTEXT_TITLE_MAX_CHARS)
+            .collect::<String>(),
+    )
+}
+
+fn summary_context_message_title(message: &ChatMessage) -> Option<String> {
+    let kind = summary_context_message_kind(message)?;
+    if !is_summary_context_message_kind(kind) {
+        return None;
+    }
+    let meta = message.provider_meta.as_ref()?;
+    meta.get("message_meta")
+        .and_then(|value| value.get("title"))
+        .and_then(Value::as_str)
+        .and_then(normalize_summary_context_title)
+        .or_else(|| {
+            meta.get("messageMeta")
+                .and_then(|value| value.get("title"))
+                .and_then(Value::as_str)
+                .and_then(normalize_summary_context_title)
+        })
+}
+
+fn ensure_summary_context_message_meta_object_mut(
+    message: &mut ChatMessage,
+) -> Option<&mut serde_json::Map<String, Value>> {
+    let provider_meta = message
+        .provider_meta
+        .get_or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !provider_meta.is_object() {
+        *provider_meta = Value::Object(serde_json::Map::new());
+    }
+    let Some(root) = provider_meta.as_object_mut() else {
+        return None;
+    };
+    let message_meta = root
+        .entry("message_meta".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !message_meta.is_object() {
+        *message_meta = Value::Object(serde_json::Map::new());
+    }
+    message_meta.as_object_mut()
+}
+
+fn conversation_update_latest_summary_title(
+    conversation: &mut Conversation,
+    next_title: Option<&str>,
+) -> bool {
+    let normalized_title = next_title.and_then(normalize_summary_context_title);
+    let Some(message) = conversation
+        .messages
+        .iter_mut()
+        .rev()
+        .find(|message| {
+            summary_context_message_kind(message)
+                .map(is_summary_context_message_kind)
+                .unwrap_or(false)
+        })
+    else {
+        return false;
+    };
+    let Some(message_meta) = ensure_summary_context_message_meta_object_mut(message) else {
+        return false;
+    };
+    let mut changed = false;
+    if message_meta.get("schemaVersion").and_then(Value::as_u64)
+        != Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION)
+    {
+        message_meta.insert(
+            "schemaVersion".to_string(),
+            Value::Number(serde_json::Number::from(
+                SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION,
+            )),
+        );
+        changed = true;
+    }
+    let previous_title = message_meta
+        .get("title")
+        .and_then(Value::as_str)
+        .and_then(normalize_summary_context_title);
+    match normalized_title {
+        Some(title) => {
+            if previous_title.as_deref() != Some(title.as_str()) {
+                message_meta.insert("title".to_string(), Value::String(title));
+                changed = true;
+            }
+        }
+        None => {
+            if message_meta.remove("title").is_some() {
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+fn conversation_latest_summary_title(conversation: &Conversation) -> Option<String> {
+    conversation
+        .messages
+        .iter()
+        .rev()
+        .find_map(summary_context_message_title)
+}
+
+fn conversation_has_summary_context_message(conversation: &Conversation) -> bool {
+    conversation.messages.iter().any(|message| {
+        summary_context_message_kind(message)
+            .map(is_summary_context_message_kind)
+            .unwrap_or(false)
+    })
+}
+
+fn conversation_ensure_summary_context_seed(conversation: &mut Conversation) -> bool {
+    if !conversation_is_local_normal_chat(conversation)
+        || conversation_has_summary_context_message(conversation)
+    {
+        return false;
+    }
+    let mut summary_message = build_initial_summary_context_message(
+        None,
+        if conversation.user_profile_snapshot.trim().is_empty() {
+            None
+        } else {
+            Some(conversation.user_profile_snapshot.as_str())
+        },
+        Some(&conversation.current_todos),
+        None,
+    );
+    summary_message.created_at = conversation
+        .messages
+        .first()
+        .map(|message| message.created_at.clone())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| conversation.created_at.clone());
+    conversation.messages.insert(0, summary_message);
+    true
+}
+
+fn cleanup_legacy_summary_context_messages(conversation: &mut Conversation) -> bool {
+    let mut changed = false;
+    for message in conversation.messages.iter_mut() {
+        let Some(kind) = summary_context_message_kind(message) else {
+            continue;
+        };
+        if !is_summary_context_message_kind(kind) {
+            continue;
+        }
+        let Some(message_meta) = ensure_summary_context_message_meta_object_mut(message) else {
+            continue;
+        };
+        let schema_backfilled = message_meta.get("schemaVersion").and_then(Value::as_u64)
+            != Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION)
+        ;
+        if schema_backfilled {
+            message_meta.insert(
+                "schemaVersion".to_string(),
+                Value::Number(serde_json::Number::from(
+                    SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION,
+                )),
+            );
+            changed = true;
+        }
+        if schema_backfilled {
+            message_meta.insert("title".to_string(), Value::String(String::new()));
+            changed = true;
+        } else if !message_meta.contains_key("title") {
+            message_meta.insert("title".to_string(), Value::String(String::new()));
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn conversation_real_user_messages<'a>(conversation: &'a Conversation) -> Vec<&'a ChatMessage> {
+    conversation
+        .messages
+        .iter()
+        .filter(|message| {
+            message.role.trim().eq_ignore_ascii_case("user")
+                && !is_context_compaction_message(message, "user")
+                && message
+                    .speaker_agent_id
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    != Some(SYSTEM_PERSONA_ID)
+        })
+        .collect::<Vec<_>>()
+}
+
+fn conversation_real_user_message_texts(conversation: &Conversation) -> Vec<String> {
+    conversation_real_user_messages(conversation)
+        .into_iter()
+        .map(render_message_content_for_model)
+        .map(|text| clean_text(text.trim()))
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+}
+
+#[cfg(test)]
+mod summary_context_title_tests {
+    use super::*;
+
+    fn test_chat_message(
+        id: &str,
+        role: &str,
+        speaker_agent_id: Option<&str>,
+        text: &str,
+        provider_meta: Option<Value>,
+    ) -> ChatMessage {
+        ChatMessage {
+            id: id.to_string(),
+            role: role.to_string(),
+            created_at: "2026-05-06T10:00:00Z".to_string(),
+            speaker_agent_id: speaker_agent_id.map(ToOwned::to_owned),
+            parts: vec![MessagePart::Text {
+                text: text.to_string(),
+            }],
+            extra_text_blocks: Vec::new(),
+            provider_meta,
+            tool_call: None,
+            mcp_call: None,
+        }
+    }
+
+    fn test_summary_meta(kind: &str, title: Option<&str>, schema_version: Option<u64>) -> Value {
+        let mut message_meta = serde_json::Map::new();
+        message_meta.insert("kind".to_string(), Value::String(kind.to_string()));
+        message_meta.insert("scene".to_string(), Value::String("test".to_string()));
+        if let Some(title) = title {
+            message_meta.insert("title".to_string(), Value::String(title.to_string()));
+        }
+        if let Some(schema_version) = schema_version {
+            message_meta.insert(
+                "schemaVersion".to_string(),
+                Value::Number(serde_json::Number::from(schema_version)),
+            );
+        }
+        Value::Object(serde_json::Map::from_iter([(
+            "message_meta".to_string(),
+            Value::Object(message_meta),
+        )]))
+    }
+
+    fn test_conversation(messages: Vec<ChatMessage>) -> Conversation {
+        Conversation {
+            id: "conversation-a".to_string(),
+            title: String::new(),
+            agent_id: "agent-a".to_string(),
+            department_id: "dept-a".to_string(),
+            bound_conversation_id: None,
+            parent_conversation_id: None,
+            child_conversation_ids: Vec::new(),
+            fork_message_cursor: None,
+            unread_count: 0,
+            conversation_kind: CONVERSATION_KIND_CHAT.to_string(),
+            root_conversation_id: None,
+            delegate_id: None,
+            created_at: "2026-05-06T10:00:00Z".to_string(),
+            updated_at: "2026-05-06T10:00:00Z".to_string(),
+            last_user_at: None,
+            last_assistant_at: None,
+            status: "active".to_string(),
+            summary: String::new(),
+            user_profile_snapshot: String::new(),
+            shell_workspace_path: None,
+            shell_workspaces: Vec::new(),
+            shell_autonomous_mode: false,
+            archived_at: None,
+            messages,
+            current_todos: Vec::new(),
+            memory_recall_table: Vec::new(),
+            plan_mode_enabled: false,
+        }
+    }
+
+    #[test]
+    fn cleanup_legacy_summary_context_messages_should_backfill_legacy_message_meta() {
+        let mut conversation = test_conversation(vec![
+            test_chat_message("u1", "user", Some(USER_PERSONA_ID), "正常消息", None),
+            test_chat_message(
+                "legacy",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "旧压缩",
+                Some(test_summary_meta("context_compaction", Some("旧标题"), None)),
+            ),
+            test_chat_message(
+                "seed",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "新摘要",
+                Some(test_summary_meta(
+                    "summary_context_seed",
+                    Some("新标题"),
+                    Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION),
+                )),
+            ),
+            test_chat_message("a1", "assistant", Some("agent-a"), "回复", None),
+        ]);
+
+        assert!(cleanup_legacy_summary_context_messages(&mut conversation));
+        let remaining_ids = conversation
+            .messages
+            .iter()
+            .map(|message| message.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(remaining_ids, vec!["u1", "legacy", "seed", "a1"]);
+        let legacy_meta = conversation
+            .messages
+            .iter()
+            .find(|message| message.id == "legacy")
+            .and_then(|message| message.provider_meta.as_ref())
+            .and_then(|meta| meta.get("message_meta"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            legacy_meta.get("schemaVersion").and_then(Value::as_u64),
+            Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            legacy_meta.get("title").and_then(Value::as_str),
+            Some("")
+        );
+        assert_eq!(
+            conversation_latest_summary_title(&conversation).as_deref(),
+            Some("新标题")
+        );
+    }
+
+    #[test]
+    fn conversation_real_user_message_texts_should_skip_summary_context_and_system_user_messages() {
+        let conversation = test_conversation(vec![
+            test_chat_message(
+                "seed",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "不要计入",
+                Some(test_summary_meta(
+                    "summary_context_seed",
+                    Some("摘要标题"),
+                    Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION),
+                )),
+            ),
+            test_chat_message("u1", "user", Some(USER_PERSONA_ID), "第一问", None),
+            test_chat_message("sys", "user", Some(SYSTEM_PERSONA_ID), "伪造系统用户", None),
+            test_chat_message(
+                "compact",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "不要计入二",
+                Some(test_summary_meta(
+                    "context_compaction",
+                    Some("压缩标题"),
+                    Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION),
+                )),
+            ),
+            test_chat_message("u2", "user", Some(USER_PERSONA_ID), "第二问", None),
+            test_chat_message("a1", "assistant", Some("agent-a"), "回复", None),
+        ]);
+
+        assert_eq!(
+            conversation_real_user_message_texts(&conversation),
+            vec!["第一问".to_string(), "第二问".to_string()]
+        );
+    }
+
+    #[test]
+    fn conversation_update_latest_summary_title_should_update_latest_summary_message() {
+        let mut conversation = test_conversation(vec![
+            test_chat_message(
+                "seed",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "摘要",
+                Some(test_summary_meta(
+                    "summary_context_seed",
+                    Some("旧标题"),
+                    Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION),
+                )),
+            ),
+            test_chat_message(
+                "compact",
+                "user",
+                Some(SYSTEM_PERSONA_ID),
+                "压缩",
+                Some(test_summary_meta(
+                    "context_compaction",
+                    None,
+                    Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION),
+                )),
+            ),
+        ]);
+
+        assert!(conversation_update_latest_summary_title(
+            &mut conversation,
+            Some(" “新的标题。” "),
+        ));
+        assert_eq!(
+            conversation_latest_summary_title(&conversation).as_deref(),
+            Some("新的标题")
+        );
+        let latest_meta = conversation
+            .messages
+            .last()
+            .and_then(|message| message.provider_meta.as_ref())
+            .and_then(|meta| meta.get("message_meta"))
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            latest_meta
+                .get("schemaVersion")
+                .and_then(Value::as_u64),
+            Some(SUMMARY_CONTEXT_MESSAGE_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            latest_meta
+                .get("title")
+                .and_then(Value::as_str),
+            Some("新的标题")
+        );
+    }
+
+    #[test]
+    fn conversation_ensure_summary_context_seed_should_backfill_when_missing() {
+        let mut conversation = test_conversation(vec![
+            test_chat_message("u1", "user", Some(USER_PERSONA_ID), "第一问", None),
+            test_chat_message("a1", "assistant", Some("agent-a"), "回答", None),
+        ]);
+        conversation.user_profile_snapshot = "<user profile snapshot>\n测试画像\n</user profile snapshot>".to_string();
+
+        assert!(conversation_ensure_summary_context_seed(&mut conversation));
+        assert!(conversation_has_summary_context_message(&conversation));
+        assert_eq!(
+            conversation
+                .messages
+                .first()
+                .and_then(summary_context_message_kind),
+            Some("summary_context_seed")
+        );
+        assert_eq!(
+            conversation.messages.get(1).map(|message| message.id.as_str()),
+            Some("u1")
+        );
+    }
+}
+
 fn sanitize_tool_history_events(events: &[Value]) -> Vec<Value> {
     let mut sanitized = Vec::<Value>::new();
     let mut pending_assistant_index: Option<usize> = None;
@@ -209,11 +726,7 @@ fn build_conversation_record(
     let now = now_iso();
     Conversation {
         id: Uuid::new_v4().to_string(),
-        title: if title.trim().is_empty() {
-            format!("Chat {}", &now.chars().take(16).collect::<String>())
-        } else {
-            title.trim().to_string()
-        },
+        title: title.trim().to_string(),
         agent_id: agent_id.to_string(),
         department_id: department_id.trim().to_string(),
         bound_conversation_id: None,
@@ -291,6 +804,7 @@ fn build_foreground_chat_conversation_record(
         last_archive_summary,
         user_profile_snapshot.as_deref(),
         Some(&conversation.current_todos),
+        None,
     );
     conversation.last_user_at = Some(summary_message.created_at.clone());
     conversation.updated_at = summary_message.created_at.clone();

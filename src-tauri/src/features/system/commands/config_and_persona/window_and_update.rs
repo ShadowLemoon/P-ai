@@ -135,10 +135,12 @@ fn detach_current_conversation_to_window(
         );
         return Err("只能独立打开未归档前台会话或远程联系人会话。".to_string());
     }
-    let title = if conversation.title.trim().is_empty() {
-        conversation_preview_title(&conversation)
-    } else {
+    let title = if !conversation.title.trim().is_empty() {
         conversation.title.clone()
+    } else if let Some(summary_title) = conversation_latest_summary_title(&conversation) {
+        summary_title
+    } else {
+        conversation_preview_title(&conversation)
     };
     eprintln!(
         "[独立聊天窗口] 准备创建窗口：conversation_id={}，title={}",

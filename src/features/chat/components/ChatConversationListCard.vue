@@ -155,6 +155,7 @@ import { useI18n } from "vue-i18n";
 import { Pin, PinOff } from "lucide-vue-next";
 import type { ChatConversationOverviewItem, ConversationPreviewMessage } from "../../../types/app";
 import { formatConversationListTime } from "../utils/conversation-time";
+import { resolveConversationDisplayTitle } from "../utils/conversation-title";
 import ChatConversationFloatingScroll from "./ChatConversationFloatingScroll.vue";
 import ChatConversationListHeader from "./ChatConversationListHeader.vue";
 
@@ -329,11 +330,10 @@ function toggleConversationPin(item: ChatConversationOverviewItem) {
 }
 
 function conversationDisplayTitle(item: ChatConversationOverviewItem): string {
-  if (item.kind === "remote_im_contact") {
-    return String(item.remoteContactDisplayName || item.title || "").trim() || t("chat.untitledConversation");
-  }
-  if (item.isMainConversation) return t("chat.mainConversation");
-  return item.title || t("chat.untitledConversation");
+  return resolveConversationDisplayTitle(item, {
+    locale: locale.value,
+    untitledLabel: t("chat.untitledConversation"),
+  });
 }
 
 async function startConversationTitleEdit(item: ChatConversationOverviewItem) {
@@ -354,7 +354,7 @@ function commitConversationTitleEdit(item: ChatConversationOverviewItem) {
   const conversationId = String(item.conversationId || "").trim();
   const currentTitle = String(item.title || "").trim();
   const nextTitle = String(editingTitleDraft.value || "").trim();
-  if (!conversationId || !nextTitle || nextTitle === currentTitle) {
+  if (!conversationId || nextTitle === currentTitle) {
     resetConversationTitleEdit();
     return;
   }

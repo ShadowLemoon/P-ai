@@ -854,9 +854,13 @@ fn read_app_data(path: &PathBuf) -> Result<AppData, String> {
     let migrated = migrate_app_data_inline_media_to_refs(path, &mut parsed);
     let main_conversation_marker_changed = normalize_main_conversation_marker(&mut parsed, "");
     let mut tool_review_legacy_cleaned = false;
+    let mut summary_context_legacy_cleaned = false;
     for conversation in parsed.conversations.iter_mut() {
         if tool_review_cleanup_legacy_artifacts(path, conversation)? {
             tool_review_legacy_cleaned = true;
+        }
+        if cleanup_legacy_summary_context_messages(conversation) {
+            summary_context_legacy_cleaned = true;
         }
     }
     if conversation_metadata_filled
@@ -866,6 +870,7 @@ fn read_app_data(path: &PathBuf) -> Result<AppData, String> {
         || merged_archives
         || migrated
         || tool_review_legacy_cleaned
+        || summary_context_legacy_cleaned
         || main_conversation_marker_changed
         || !app_layout_exists(path)
     {

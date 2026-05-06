@@ -394,6 +394,7 @@ import type { ApiConfigItem, ChatConversationOverviewItem, ChatMentionTarget, Pr
 import { invokeTauri } from "../../../services/tauri-api";
 import ChatQueuePreview from "./ChatQueuePreview.vue";
 import { useChatQueue } from "../composables/use-chat-queue";
+import { resolveConversationDisplayTitle } from "../utils/conversation-title";
 
 type BinaryAttachment = { mime: string; bytesBase64: string };
 type QueuedAttachmentNotice = { id: string; fileName: string; relativePath: string; mime: string };
@@ -465,7 +466,7 @@ const emit = defineEmits<{
   (e: "stopChat"): void;
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const { queueEvents, sessionState, recallQueueEvent, markGuided } = useChatQueue();
 
 const visibleQueueEvents = computed(() => {
@@ -584,7 +585,10 @@ const selectionDeliverTargetOptions = computed(() =>
     .filter((item) => String(item.conversationId || "").trim() !== String(props.activeConversationId || "").trim())
     .map((item) => ({
       conversationId: String(item.conversationId || "").trim(),
-      title: String(item.title || "").trim() || "未命名会话",
+      title: resolveConversationDisplayTitle(item, {
+        locale: locale.value,
+        untitledLabel: t("chat.untitledConversation"),
+      }),
       departmentName: String(item.departmentName || "").trim() || undefined,
       runtimeState: item.runtimeState,
     }))

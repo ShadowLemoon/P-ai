@@ -377,6 +377,7 @@ fn build_branch_conversation_record_from_selection(
             None,
             user_profile_snapshot.as_deref(),
             Some(&conversation.current_todos),
+            None,
         ));
     }
     conversation.messages.extend(
@@ -542,9 +543,6 @@ fn rename_unarchived_conversation(
         return Err("conversationId 不能为空".to_string());
     }
     let next_title = clean_text(input.title.trim());
-    if next_title.is_empty() {
-        return Err("会话标题不能为空".to_string());
-    }
     let next_title = conversation_service().rename_unarchived_conversation(
         state.inner(),
         conversation_id,
@@ -2101,7 +2099,7 @@ mod unarchived_conversations_tests {
         let mut source = build_test_conversation();
         source.messages.insert(
             0,
-            build_initial_summary_context_message(Some("历史摘要"), None, None),
+            build_initial_summary_context_message(Some("历史摘要"), None, None, None),
         );
         let (selected, first_selected_ordinal) = collect_selected_messages_for_branch(
             &source,

@@ -4,7 +4,7 @@ export type DepartmentDefaultSeed = Pick<DepartmentConfig, "name" | "summary" | 
 
 export const REMOTE_CUSTOMER_SERVICE_DEPARTMENT_DEFAULT: DepartmentDefaultSeed = {
   name: "远程客服",
-  summary: "负责承接远程 IM 联系人的消息，按“只在被明确需要时回应”的原则完成观察、判断与回复决策。",
+  summary: "当用户不满意时，请把当前语境和想要怎么回答的难题对我提问。",
   guide: `行为准则
 
 回应原则

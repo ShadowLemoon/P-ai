@@ -689,15 +689,15 @@ impl RuntimeToolMetadata for BuiltinDelegateTool {
     fn provider_tool_definition(&self) -> ProviderToolDefinition {
         ProviderToolDefinition::new(
             "delegate",
-            "当需要大范围模糊搜索、调查或比对，并从大量线索中收敛出精准目标/结论时，向目标部门的子代理咨询。子代理只返回内容，不执行危险操作；默认 sync 等待结果，只有主会话中才允许 async 后台写回。若目标岗位由你本人兼任，或当前已经在委托线程中，只能使用 sync。",
+            "在下级部门开启一个子代理，协助处理当前工作。当当前任务与某个下级部门的职责或能力更吻合时，应优先向该下级部门发起委托。",
             serde_json::json!({
               "type": "object",
               "properties": {
-                "department_id": { "type": "string", "description": "目标部门 ID" },
-                "mode": { "type": "string", "enum": ["async", "sync"], "description": "默认 sync；只有主会话中才允许 async。", "default": "sync" },
-                "background": { "type": "string", "description": "已有背景" },
-                "question": { "type": "string", "description": "要子代理查清的问题" },
-                "focus": { "type": "string", "description": "搜索/调查重点" }
+                "department_id": { "type": "string", "description": "要委托给哪个下级部门的 ID。应选择与当前任务最匹配的直接下级部门。" },
+                "mode": { "type": "string", "enum": ["async", "sync"], "description": "委托方式。sync 会等待子代理返回结果；async 会后台执行并稍后写回当前主会话。默认 sync。", "default": "sync" },
+                "background": { "type": "string", "description": "提供给子代理的背景信息、已知事实、已有线索或上下文，帮助它更快进入问题。" },
+                "question": { "type": "string", "description": "这次委托要子代理查清的核心问题，最好写成明确的调查目标或待回答的问题。" },
+                "focus": { "type": "string", "description": "告诉子代理优先关注哪些方向、关键词、对象或比对点；用于缩小搜索范围、避免跑偏。" }
               },
               "required": ["department_id", "background", "question", "focus"]
             }),

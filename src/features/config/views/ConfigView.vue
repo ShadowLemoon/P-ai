@@ -158,6 +158,7 @@
           @update:persona-editor-id="$emit('update:personaEditorId', $event)"
           @add-persona="$emit('addPersona')"
           @remove-selected-persona="$emit('removeSelectedPersona')"
+          @reset-personas="$emit('resetPersonas')"
           @open-avatar-editor="openAvatarEditorForSelected"
           @import-persona-memories="$emit('importPersonaMemories', $event)"
           @save-personas="$emit('savePersonas')"
@@ -463,6 +464,7 @@ const emit = defineEmits<{
   (e: "saveApiConfig"): void;
   (e: "addPersona"): void;
   (e: "removeSelectedPersona"): void;
+  (e: "resetPersonas"): void;
   (e: "savePersonas"): void;
   (e: "importPersonaMemories", value: { agentId: string; file: File }): void;
   (e: "openCurrentHistory"): void;

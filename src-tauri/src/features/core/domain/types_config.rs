@@ -189,7 +189,7 @@ fn default_assistant_department(api_config_id: &str) -> DepartmentConfig {
     DepartmentConfig {
         id: ASSISTANT_DEPARTMENT_ID.to_string(),
         name: "助理部门".to_string(),
-        summary: "负责直接与用户对话，承接主会话与统筹调度。".to_string(),
+        summary: "当复杂任务难度超出了你部门的职责时，请把任务委托给我。".to_string(),
         guide: "你是助理部门，负责作为主负责人理解用户需求、决定是否需要委派、汇总结果并继续推进主对话。".to_string(),
         api_config_ids: if api_config_id.is_empty() {
             Vec::new()
@@ -198,7 +198,7 @@ fn default_assistant_department(api_config_id: &str) -> DepartmentConfig {
         },
         api_config_id,
         agent_ids: vec![DEFAULT_AGENT_ID.to_string()],
-        child_department_ids: Vec::new(),
+        child_department_ids: vec![DEPUTY_DEPARTMENT_ID.to_string()],
         created_at: now.clone(),
         updated_at: now,
         order_index: 1,
@@ -217,7 +217,7 @@ fn default_deputy_department(api_config_id: &str) -> DepartmentConfig {
     DepartmentConfig {
         id: DEPUTY_DEPARTMENT_ID.to_string(),
         name: "副手".to_string(),
-        summary: "负责快速执行上级派发的明确任务，强调最小行动与严格边界。".to_string(),
+        summary: "当任务目标明确、边界清晰、需要快速执行，或需要在严格限制下完成具体动作时，立刻使用 delegate 工具对我发起委托。".to_string(),
         guide: "你是副手部门。你的核心原则是严格不越权、不擅自扩展需求、不多想。收到上级派发的任务后，用最少的工具调用、最快的速度完成明确目标；若信息不足或任务超出指令边界，就直接说明缺口并等待主部门继续决策。".to_string(),
         api_config_ids: if api_config_id.is_empty() {
             Vec::new()
@@ -231,7 +231,7 @@ fn default_deputy_department(api_config_id: &str) -> DepartmentConfig {
         updated_at: now,
         order_index: 2,
         is_built_in_assistant: false,
-        is_deputy: true,
+        is_deputy: false,
         source: default_main_source(),
         scope: default_global_scope(),
         permission_control: DepartmentPermissionControl::default(),
@@ -276,14 +276,16 @@ fn default_assistant_department_name(ui_language: &str) -> String {
 fn built_in_department_rank(id: &str) -> i32 {
     match id.trim() {
         ASSISTANT_DEPARTMENT_ID => 0,
-        REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID => 1,
-        _ => 2,
+        DEPUTY_DEPARTMENT_ID => 1,
+        REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID => 2,
+        _ => 3,
     }
 }
 
 fn default_departments(api_config_id: &str) -> Vec<DepartmentConfig> {
     vec![
         default_assistant_department(api_config_id),
+        default_deputy_department(api_config_id),
         default_remote_customer_service_department(api_config_id),
     ]
 }

@@ -11,7 +11,7 @@ fn default_agent() -> AgentProfile {
     AgentProfile {
         id: DEFAULT_AGENT_ID.to_string(),
         name: "助理".to_string(),
-        system_prompt: "你是一个耐心、友善的助理。请用短信聊天的口吻与用户交流，优先自然、简短、有人味的表达。除非用户明确要求，否则不要使用结构化输出（如分点、表格、章节）和过度正式语气。面对截图相关问题时，先结合用户上下文给出直接可执行的建议，再补充必要说明。".to_string(),
+        system_prompt: "你是谁：你是助理，是用户默认会先对话的助手。\n台词技巧：表达自然、直接、有人味；先给结论，再补必要说明；少空话，少套话。\n性格画像：耐心、友善、靠谱、利落。".to_string(),
         tools: default_agent_tools(),
         created_at: now.clone(),
         updated_at: now,
@@ -31,7 +31,7 @@ fn default_deputy_agent() -> AgentProfile {
     AgentProfile {
         id: DEPUTY_AGENT_ID.to_string(),
         name: "副手".to_string(),
-        system_prompt: "你是副手人格。你必须严格按照收到的任务行动，只完成被明确委托的目标；不要主动扩展需求，不发表无关意见，不替上级做额外决策。请用尽可能快的方式完成任务，并在结束时给出详细、结构化、可核查的汇报，包含完成情况、关键步骤、产出、风险或未完成原因。".to_string(),
+        system_prompt: "你是谁：你是副手，是一个偏执行、偏推进的助手分身。\n台词技巧：短句作答，直给重点，少铺垫，少客套。\n性格画像：简洁、干脆、克制、利落。".to_string(),
         tools: default_agent_tools(),
         created_at: now.clone(),
         updated_at: now,
@@ -69,7 +69,7 @@ fn default_system_persona() -> AgentProfile {
     AgentProfile {
         id: SYSTEM_PERSONA_ID.to_string(),
         name: "pai system".to_string(),
-        system_prompt: "我是系统人格，负责代表任务中心与系统调度向当前助手传达信息。".to_string(),
+        system_prompt: "你是谁：你是 pai system，是系统消息与状态播报使用的人格。\n台词技巧：用词明确、稳定、客观，像系统通知，不抒情，不延展。\n性格画像：冷静、克制、严谨。".to_string(),
         tools: default_agent_tools(),
         created_at: now.clone(),
         updated_at: now,
@@ -125,6 +125,10 @@ fn ensure_required_builtin_agents(data: &mut AppData) -> bool {
     let mut changed = false;
     if !data.agents.iter().any(|agent| agent.id == DEFAULT_AGENT_ID) {
         data.agents.push(default_agent());
+        changed = true;
+    }
+    if !data.agents.iter().any(|agent| agent.id == DEPUTY_AGENT_ID) {
+        data.agents.push(default_deputy_agent());
         changed = true;
     }
     if !data.agents.iter().any(|agent| agent.id == USER_PERSONA_ID) {

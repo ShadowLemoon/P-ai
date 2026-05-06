@@ -428,6 +428,7 @@ const { t } = useI18n();
 const selectedDepartmentId = ref("assistant-department");
 const SYSTEM_DEPARTMENT_IDS = new Set([
   "assistant-department",
+  "deputy-department",
   "remote-customer-service-department",
 ]);
 
@@ -527,7 +528,8 @@ const permissionCatalogError = ref("");
 
 const sortedDepartments = computed(() =>
   [...departmentDrafts.value].sort((a, b) => {
-    const rank = (id: string) => id === "assistant-department" ? 0 : id === "remote-customer-service-department" ? 1 : 2;
+    const rank = (id: string) =>
+      id === "assistant-department" ? 0 : id === "deputy-department" ? 1 : id === "remote-customer-service-department" ? 2 : 3;
     const aRank = rank(String(a.id || "").trim());
     const bRank = rank(String(b.id || "").trim());
     return aRank - bRank || a.orderIndex - b.orderIndex;
@@ -876,6 +878,9 @@ function addDepartment() {
   const now = new Date().toISOString();
   const id = `department-${Date.now()}`;
   const maxOrderIndex = departmentDrafts.value.reduce((max, item) => Math.max(max, Number(item.orderIndex || 0)), 0);
+  const defaultChildDepartmentIds = departmentDrafts.value.some((item) => String(item.id || "").trim() === "deputy-department")
+    ? ["deputy-department"]
+    : [];
   departmentDrafts.value.push({
     id,
     name: nextDepartmentName(),
@@ -884,7 +889,7 @@ function addDepartment() {
     apiConfigId: "",
     apiConfigIds: [],
     agentIds: [],
-    childDepartmentIds: [],
+    childDepartmentIds: defaultChildDepartmentIds,
     createdAt: now,
     updatedAt: now,
     orderIndex: maxOrderIndex + 1,
@@ -911,14 +916,14 @@ function departmentDefaultSeed(department: DepartmentConfig | null | undefined):
   if (id === "assistant-department" || department?.isBuiltInAssistant) {
     return {
       name: "助理部门",
-      summary: "负责直接与用户对话，承接主会话与统筹调度。",
+      summary: "当复杂任务难度超出了你部门的职责时，请把任务委托给我。",
       guide: "你是助理部门，负责作为主负责人理解用户需求、决定是否需要委派、汇总结果并继续推进主对话。",
     };
   }
   if (id === "deputy-department") {
     return {
       name: "副手",
-      summary: "负责快速执行上级派发的明确任务，强调最小行动与严格边界。",
+      summary: "当任务目标明确、边界清晰、需要快速执行，或需要在严格限制下完成具体动作时，立刻使用 delegate 工具对我发起委托。",
       guide: "你是副手部门。你的核心原则是严格不越权、不擅自扩展需求、不多想。收到上级派发的任务后，用最少的工具调用、最快的速度完成明确目标；若信息不足或任务超出指令边界，就直接说明缺口并等待主部门继续决策。",
     };
   }

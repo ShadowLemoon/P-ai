@@ -233,6 +233,7 @@
       :remove-selected-api-config="removeSelectedApiConfig"
       :add-persona="addPersona"
       :remove-selected-persona="removeSelectedPersona"
+      :reset-personas="loadPersonas"
       :save-personas="savePersonas"
       :import-persona-memories="importPersonaMemories"
       :open-current-history="openCurrentHistory"

@@ -1,5 +1,5 @@
 const REMOTE_CUSTOMER_SERVICE_DEPARTMENT_SUMMARY: &str =
-    "负责承接远程 IM 联系人的消息，按“只在被明确需要时回应”的原则完成观察、判断与回复决策。";
+    "当用户不满意时，请把当前语境和想要怎么回答的难题对我提问。";
 
 const REMOTE_CUSTOMER_SERVICE_DEPARTMENT_GUIDE: &str = r#"行为准则
 

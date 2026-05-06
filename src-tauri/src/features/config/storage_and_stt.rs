@@ -922,6 +922,11 @@ fn normalize_departments(config: &mut AppConfig) {
     if !out.iter().any(|item| item.is_built_in_assistant || item.id == ASSISTANT_DEPARTMENT_ID) {
         out.push(default_assistant_department(&fallback_api_id));
     }
+    let injected_missing_deputy =
+        !out.iter().any(|item| item.id == DEPUTY_DEPARTMENT_ID);
+    if injected_missing_deputy {
+        out.push(default_deputy_department(&fallback_api_id));
+    }
     if !out
         .iter()
         .any(|item| item.id == REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID)
@@ -952,6 +957,21 @@ fn normalize_departments(config: &mut AppConfig) {
             normalize_department_api_bindings(item, &valid_text_chat_api_ids);
             if item.agent_ids.is_empty() {
                 item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
+            }
+        } else if item.id == DEPUTY_DEPARTMENT_ID {
+            item.is_deputy = false;
+            if item.name.trim().is_empty() {
+                item.name = "副手".to_string();
+            }
+            if item.summary.trim().is_empty() {
+                item.summary = default_deputy_department(&fallback_api_id).summary;
+            }
+            if item.guide.trim().is_empty() {
+                item.guide = default_deputy_department(&fallback_api_id).guide;
+            }
+            normalize_department_api_bindings(item, &valid_text_chat_api_ids);
+            if item.agent_ids.is_empty() {
+                item.agent_ids = vec![DEPUTY_AGENT_ID.to_string()];
             }
         } else if item.id == REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID {
             item.is_deputy = false;
@@ -988,6 +1008,26 @@ fn normalize_departments(config: &mut AppConfig) {
             && item.agent_ids.is_empty()
         {
             item.agent_ids = vec![DEFAULT_AGENT_ID.to_string()];
+        }
+    }
+    if injected_missing_deputy {
+        if let Some(assistant) = out
+            .iter_mut()
+            .find(|item| item.id == ASSISTANT_DEPARTMENT_ID || item.is_built_in_assistant)
+        {
+            if !assistant
+                .child_department_ids
+                .iter()
+                .any(|id| id.trim() == DEPUTY_DEPARTMENT_ID)
+            {
+                assistant
+                    .child_department_ids
+                    .push(DEPUTY_DEPARTMENT_ID.to_string());
+                assistant.child_department_ids = normalize_department_child_ids(
+                    &assistant.child_department_ids,
+                    &assistant.id,
+                );
+            }
         }
     }
 

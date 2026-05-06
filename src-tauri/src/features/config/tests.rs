@@ -380,6 +380,48 @@
     }
 
     #[test]
+    fn normalize_app_config_should_restore_deputy_department_and_attach_to_assistant() {
+        let mut cfg = AppConfig::default();
+        cfg.departments
+            .retain(|item| item.id != DEPUTY_DEPARTMENT_ID);
+        if let Some(assistant) = cfg
+            .departments
+            .iter_mut()
+            .find(|item| item.id == ASSISTANT_DEPARTMENT_ID || item.is_built_in_assistant)
+        {
+            assistant.child_department_ids.clear();
+        }
+
+        normalize_app_config(&mut cfg);
+
+        let deputy = cfg
+            .departments
+            .iter()
+            .find(|item| item.id == DEPUTY_DEPARTMENT_ID)
+            .expect("deputy department");
+        assert!(!deputy.is_deputy);
+        assert_eq!(deputy.agent_ids, vec![DEPUTY_AGENT_ID.to_string()]);
+
+        let assistant = cfg
+            .departments
+            .iter()
+            .find(|item| item.id == ASSISTANT_DEPARTMENT_ID || item.is_built_in_assistant)
+            .expect("assistant department");
+        assert!(
+            assistant
+                .child_department_ids
+                .iter()
+                .any(|id| id == DEPUTY_DEPARTMENT_ID)
+        );
+    }
+
+    #[test]
+    fn app_data_default_should_include_deputy_agent() {
+        let data = AppData::default();
+        assert!(data.agents.iter().any(|agent| agent.id == DEPUTY_AGENT_ID));
+    }
+
+    #[test]
     fn normalize_app_config_should_drop_invalid_department_models_without_frontend_fallback() {
         let mut cfg = AppConfig {
             hotkey: "Alt+·".to_string(),

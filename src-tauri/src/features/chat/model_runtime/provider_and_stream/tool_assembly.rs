@@ -170,6 +170,35 @@ fn read_global_tool_schema_cache(_state: Option<&AppState>) -> Vec<ProviderToolD
     Vec::new()
 }
 
+fn resolve_runtime_tool_current_department<'a>(
+    app_config: &'a AppConfig,
+    app_state: Option<&AppState>,
+    agent: &AgentProfile,
+    tool_session_id: &str,
+) -> Option<&'a DepartmentConfig> {
+    let conversation_department_id = app_state.and_then(|state| {
+        let (_, _, conversation_id) = delegate_parse_session_parts(tool_session_id);
+        let conversation_id = conversation_id?;
+        if let Ok(Some(conversation)) = delegate_runtime_thread_conversation_get(&state, &conversation_id) {
+            let department_id = conversation.department_id.trim();
+            if !department_id.is_empty() {
+                return Some(department_id.to_string());
+            }
+        }
+        let conversation = state_read_conversation_cached(state, &conversation_id).ok()?;
+        let department_id = conversation.department_id.trim();
+        if department_id.is_empty() {
+            None
+        } else {
+            Some(department_id.to_string())
+        }
+    });
+    conversation_department_id
+        .as_deref()
+        .and_then(|department_id| department_by_id(app_config, department_id))
+        .or_else(|| department_for_agent_id(app_config, &agent.id))
+}
+
 async fn assemble_runtime_tools(
     app_config: &AppConfig,
     selected_api: &ApiConfig,
@@ -177,11 +206,29 @@ async fn assemble_runtime_tools(
     app_state: Option<&AppState>,
     tool_session_id: &str,
 ) -> Result<RuntimeToolAssembly, String> {
-    let tool_definitions = read_global_tool_schema_cache(app_state);
-    let tool_manifest = tool_definitions
+    let current_department =
+        resolve_runtime_tool_current_department(app_config, app_state, agent, tool_session_id);
+    let delegate_unavailable_reason =
+        delegate_builtin_tool_unavailable_reason(app_config, current_department);
+    let tool_definitions = read_global_tool_schema_cache(app_state)
+        .into_iter()
+        .filter(|definition| {
+            definition.name != "delegate" || delegate_unavailable_reason.is_none()
+        })
+        .collect::<Vec<_>>();
+    let mut tool_manifest = tool_definitions
         .iter()
         .map(tool_schema_definition_to_manifest_item)
         .collect::<Vec<_>>();
+    if let Some(reason) = delegate_unavailable_reason.clone() {
+        tool_manifest.push(tool_manifest_item(
+            "runtime_policy",
+            "delegate",
+            false,
+            false,
+            Some(reason),
+        ));
+    }
     let mut tools: Vec<Box<dyn RuntimeToolDyn>> = Vec::new();
     if selected_api.enable_tools {
         push_runtime_tool_executors(
@@ -190,10 +237,9 @@ async fn assemble_runtime_tools(
             selected_api.id.as_str(),
             agent.id.as_str(),
             tool_session_id,
+            delegate_unavailable_reason.is_none(),
         )?;
     }
-    let _ = app_config;
-    let _ = agent;
     Ok(RuntimeToolAssembly {
         tools,
         tool_definitions,
@@ -208,6 +254,7 @@ fn push_runtime_tool_executors(
     api_config_id: &str,
     agent_id: &str,
     tool_session_id: &str,
+    enable_delegate: bool,
 ) -> Result<(), String> {
     let state = app_state
         .ok_or_else(|| "runtime tool execution requires app state".to_string())?
@@ -249,10 +296,12 @@ fn push_runtime_tool_executors(
         app_state: state.clone(),
         session_id: tool_session_id.to_string(),
     }));
-    tools.push(Box::new(BuiltinDelegateTool {
-        app_state: state.clone(),
-        session_id: tool_session_id.to_string(),
-    }));
+    if enable_delegate {
+        tools.push(Box::new(BuiltinDelegateTool {
+            app_state: state.clone(),
+            session_id: tool_session_id.to_string(),
+        }));
+    }
     tools.push(Box::new(BuiltinMemeTool { app_state: state.clone() }));
     tools.push(Box::new(BuiltinContactReplyTool {
         app_state: state.clone(),

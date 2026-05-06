@@ -79,8 +79,42 @@ impl ConversationService {
             &mut config,
             &mut agents,
         )?;
-        let source_department = department_for_agent_id(&config, source_agent_id)
-            .cloned()
+        let requested_source_conversation_id = source_conversation_id
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let thread_context = if let Some(conversation_id) = requested_source_conversation_id {
+            delegate_runtime_thread_get(app_state, conversation_id)?
+        } else {
+            None
+        };
+        let source_conversation = if let Some(thread) = thread_context.as_ref() {
+            Some(thread.conversation.clone())
+        } else if let Some(conversation_id) = requested_source_conversation_id {
+            Some(
+                state_read_conversation_cached(app_state, conversation_id)
+                    .ok()
+                    .filter(|conversation| {
+                        conversation.summary.trim().is_empty()
+                            && !conversation_is_delegate(conversation)
+                    })
+                    .ok_or_else(|| {
+                        format!("未找到指定主会话，conversationId={conversation_id}")
+                    })?,
+            )
+        } else {
+            None
+        };
+        let source_department = source_conversation
+            .as_ref()
+            .and_then(|conversation| {
+                let department_id = conversation.department_id.trim();
+                if department_id.is_empty() {
+                    None
+                } else {
+                    department_by_id(&config, department_id).cloned()
+                }
+            })
+            .or_else(|| department_for_agent_id(&config, source_agent_id).cloned())
             .ok_or_else(|| format!("未找到发起部门，agentId={source_agent_id}"))?;
         let target_department = department_by_id(&config, target_department_id)
             .cloned()
@@ -105,26 +139,13 @@ impl ConversationService {
             drop(guard);
             return Err(format!("目标委任人不存在，agentId={target_agent_id}"));
         }
-        let thread_context = if let Some(conversation_id) = source_conversation_id {
-            delegate_runtime_thread_get(app_state, conversation_id)?
-        } else {
-            None
-        };
         let source_conversation_id = if let Some(thread) = thread_context.as_ref() {
             thread.root_conversation_id.clone()
         } else {
-            let requested_conversation_id = source_conversation_id
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| "主代理缺少当前会话 ID，无法发起委托".to_string())?;
-            state_read_conversation_cached(app_state, requested_conversation_id)
-                .ok()
-                .filter(|conversation| {
-                    conversation.summary.trim().is_empty()
-                        && !conversation_is_delegate(conversation)
-                })
-                .map(|conversation| conversation.id)
-                .ok_or_else(|| format!("未找到指定主会话，conversationId={requested_conversation_id}"))?
+            source_conversation
+                .as_ref()
+                .map(|conversation| conversation.id.clone())
+                .ok_or_else(|| "主代理缺少当前会话 ID，无法发起委托".to_string())?
         };
         drop(guard);
         Ok(DelegateContextResolution {

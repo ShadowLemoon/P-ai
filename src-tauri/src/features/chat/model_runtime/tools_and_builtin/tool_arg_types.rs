@@ -76,12 +76,23 @@ enum DelegateMode {
 
 fn parse_delegate_mode(raw: Option<&str>) -> Result<DelegateMode, String> {
     match raw.map(str::trim).filter(|value| !value.is_empty()) {
-        None => Ok(DelegateMode::Async),
+        None => Ok(DelegateMode::Sync),
         Some("async") => Ok(DelegateMode::Async),
         Some("sync") => Ok(DelegateMode::Sync),
         Some(other) => Err(format!(
             "delegate.mode 必须是 `async` 或 `sync`，当前收到：{other}"
         )),
+    }
+}
+
+#[cfg(test)]
+mod tool_arg_types_tests {
+    use super::*;
+
+    #[test]
+    fn parse_delegate_mode_should_default_to_sync() {
+        assert_eq!(parse_delegate_mode(None).expect("default mode"), DelegateMode::Sync);
+        assert_eq!(parse_delegate_mode(Some("")).expect("empty mode"), DelegateMode::Sync);
     }
 }
 

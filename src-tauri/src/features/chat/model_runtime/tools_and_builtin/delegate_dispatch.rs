@@ -80,6 +80,39 @@ fn delegate_failed_result(reason: impl Into<String>) -> Value {
     })
 }
 
+const SAME_PERSONA_ASYNC_DELEGATE_REASON: &str =
+    "你同时担任这个职位，只能发起同步委托";
+const DELEGATE_THREAD_ASYNC_ONLY_REASON: &str = "委托线程中只能发起同步委托";
+
+fn same_persona_async_delegate_block_reason(
+    source_agent_id: &str,
+    target_agent_id: &str,
+) -> Option<&'static str> {
+    let source_agent_id = source_agent_id.trim();
+    let target_agent_id = target_agent_id.trim();
+    if source_agent_id.is_empty() || target_agent_id.is_empty() {
+        return None;
+    }
+    (source_agent_id == target_agent_id).then_some(SAME_PERSONA_ASYNC_DELEGATE_REASON)
+}
+
+#[cfg(test)]
+mod delegate_dispatch_tests {
+    use super::*;
+
+    #[test]
+    fn same_persona_async_delegate_block_reason_should_only_block_same_agent() {
+        assert_eq!(
+            same_persona_async_delegate_block_reason("agent-a", "agent-a"),
+            Some(SAME_PERSONA_ASYNC_DELEGATE_REASON)
+        );
+        assert_eq!(
+            same_persona_async_delegate_block_reason("agent-a", "agent-b"),
+            None
+        );
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ValidatedDelegateArgs {
     mode: DelegateMode,
@@ -323,7 +356,13 @@ async fn builtin_delegate(
             "[工具][委托] 委托线程内禁止再次调用 delegate：mode=async, session_id={}",
             session_id
         );
-        return Ok(delegate_failed_result("委托线程中禁止再次调用 delegate"));
+        return Ok(delegate_failed_result(DELEGATE_THREAD_ASYNC_ONLY_REASON));
+    }
+    if let Some(reason) = same_persona_async_delegate_block_reason(
+        &source_agent_id,
+        &preflight.target_agent_id,
+    ) {
+        return Ok(delegate_failed_result(reason));
     }
     let call_stack = match resolve_delegate_call_stack(
         preflight.current_thread.as_ref(),
@@ -394,14 +433,6 @@ async fn delegate_execute_sync(
         Ok(value) => value,
         Err(err) => return Ok(delegate_failed_result(err)),
     };
-
-    if preflight.current_thread.is_some() {
-        eprintln!(
-            "[工具][委托] 委托线程内禁止再次调用 delegate：mode=sync, session_id={}",
-            session_id
-        );
-        return Ok(delegate_failed_result("委托线程中禁止再次调用 delegate"));
-    }
 
     let call_stack = match resolve_delegate_call_stack(
         preflight.current_thread.as_ref(),

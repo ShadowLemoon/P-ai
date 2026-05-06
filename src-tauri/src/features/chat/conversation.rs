@@ -1600,14 +1600,6 @@ fn prompt_department_context_from_provider_meta(
     let mut available = department_direct_child_departments(&temp_config, current_department)
         .into_iter()
         .filter(|department| department.id != current_department.id)
-        .filter(|department| {
-            department
-                .agent_ids
-                .iter()
-                .find(|id| !id.trim().is_empty())
-                .map(|id| id.trim() != agent.id.trim())
-                .unwrap_or(true)
-        })
         .filter(|department| !call_stack.contains(department.id.as_str()))
         .map(|department| prompt_department_card_from_config(department, empty_summary))
         .collect::<Vec<_>>();
@@ -1635,13 +1627,6 @@ fn build_departments_prompt_block(
         available: department_direct_child_departments(&config, department)
             .into_iter()
             .filter(|item| item.id != department.id)
-            .filter(|item| {
-                item.agent_ids
-                    .iter()
-                    .find(|id| !id.trim().is_empty())
-                    .map(|id| id.trim() != agent.id.trim())
-                    .unwrap_or(true)
-            })
             .map(|item| prompt_department_card_from_config(item, labels.empty_summary))
             .collect::<Vec<_>>(),
     });
@@ -1713,7 +1698,7 @@ fn build_builtin_tool_rule_block(tool_id: &str) -> Option<String> {
             "delegate tool rule",
             "何时必须用：当子任务过于模糊，需要先探索再收敛结论时，可以使用 delegate。模糊探索既可以是本地探索，也可以是网络探索。\n\
              何时不要用：如果主线程立刻需要这个结果来继续下一步，通常不要委托；边界明确、可直接动手的任务，也不要滥用 delegate。\n\
-             如何使用：先快速扫描少量关键文件或关键信息形成初步理解；先写骨架计划并尽早和用户完成第一轮对齐；不要在和用户建立共识前做穷尽式探索。质量优先于数量，最多只允许有限数量的 explore 代理，一般应尽量少，通常一个就够。\n\
+             如何使用：delegate 默认走 sync；只有主会话中才允许显式使用 async。若目标岗位由你本人兼任，只允许使用 sync。若当前已经在委托线程中，再次委托时也只允许 sync。先快速扫描少量关键文件或关键信息形成初步理解；先写骨架计划并尽早和用户完成第一轮对齐；不要在和用户建立共识前做穷尽式探索。质量优先于数量，最多只允许有限数量的 explore 代理，一般应尽量少，通常一个就够。\n\
              为什么：delegate 负责高不确定性的探索任务，不是把核心决策责任直接甩出去。",
         ),
         "task" => (
@@ -1768,13 +1753,14 @@ fn build_builtin_tool_rule_block(tool_id: &str) -> Option<String> {
 }
 
 fn department_builtin_tool_enabled(
+    department_config: &AppConfig,
     current_department: Option<&DepartmentConfig>,
     id: &str,
 ) -> bool {
     if !builtin_tool_is_department_controlled(id) {
         return false;
     }
-    if tool_restricted_by_department(current_department, id).is_some() {
+    if builtin_tool_unavailable_reason(department_config, current_department, id).is_some() {
         return false;
     }
     if tool_forced_by_department(current_department, id) {
@@ -1802,7 +1788,7 @@ fn build_system_tools_rule_blocks(
     let mut blocks = Vec::<String>::new();
     let mut any_builtin_enabled = false;
     for tool_id in ["delegate", "task", "exec", "apply_patch"] {
-        if department_builtin_tool_enabled(current_department, tool_id) {
+        if department_builtin_tool_enabled(&department_config, current_department, tool_id) {
             any_builtin_enabled = true;
             if let Some(block) = build_builtin_tool_rule_block(tool_id) {
                 blocks.push(block);
@@ -1811,7 +1797,7 @@ fn build_system_tools_rule_blocks(
     }
     if ["exec", "read_file", "apply_patch"]
         .into_iter()
-        .any(|tool_id| department_builtin_tool_enabled(current_department, tool_id))
+        .any(|tool_id| department_builtin_tool_enabled(&department_config, current_department, tool_id))
     {
         any_builtin_enabled = true;
         if let Some(block) = build_builtin_tool_rule_block("file_reference") {

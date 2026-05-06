@@ -22,6 +22,8 @@ fn check_tools_status(
         .ok_or_else(|| format!("未找到人格：{target_agent_id}"))?;
     let selected_tools = default_agent_tools();
     let current_department = department_for_agent_id(&config, &target_agent_id);
+    let delegate_unavailable_reason =
+        delegate_builtin_tool_unavailable_reason(&config, current_department);
 
     let effective_api_id = department_for_agent_id(&config, &target_agent_id)
         .map(|item| item.api_config_id.clone())
@@ -34,7 +36,11 @@ fn check_tools_status(
         return Ok(selected_tools
             .iter()
             .map(|tool| {
-                let restricted_reason = tool_restricted_by_department(current_department, &tool.id);
+                let restricted_reason = if tool.id == "delegate" {
+                    delegate_unavailable_reason.clone()
+                } else {
+                    builtin_tool_unavailable_reason(&config, current_department, &tool.id)
+                };
                 let forced_by_department = tool_forced_by_department(current_department, &tool.id);
                 let detail = if let Some(reason) = restricted_reason.clone() {
                     reason
@@ -80,7 +86,12 @@ fn check_tools_status(
     let mut statuses = Vec::new();
     for tool in selected_tools {
         let forced_by_department = tool_forced_by_department(current_department, &tool.id);
-        if let Some(reason) = tool_restricted_by_department(current_department, &tool.id) {
+        let restricted_reason = if tool.id == "delegate" {
+            delegate_unavailable_reason.clone()
+        } else {
+            builtin_tool_unavailable_reason(&config, current_department, &tool.id)
+        };
+        if let Some(reason) = restricted_reason {
             statuses.push(ToolLoadStatus {
                 id: tool.id,
                 status: "unavailable".to_string(),
@@ -192,4 +203,3 @@ fn clear_image_text_cache(state: State<'_, AppState>) -> Result<ImageTextCacheSt
         latest_updated_at: None,
     })
 }
-

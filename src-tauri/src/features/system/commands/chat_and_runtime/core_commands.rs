@@ -498,6 +498,14 @@ fn build_user_mention_dispatch_plans(
             continue;
         }
         if target_agent_id == source_agent_id {
+            mention_failures.push(UserMentionFailurePlan {
+                root_conversation_id: conversation.id.clone(),
+                source_agent_id: source_agent_id.to_string(),
+                target_department_id: target_department_id.clone(),
+                target_agent_id: target_agent_id.clone(),
+                target_agent_name: target_agent_name.clone(),
+                reason: SAME_PERSONA_ASYNC_DELEGATE_REASON.to_string(),
+            });
             continue;
         }
         let Some(target_department) = department_by_id(app_config, &target_department_id) else {
@@ -757,7 +765,7 @@ fn resolve_user_async_delegate_plan(
         .map(|id| id.trim().to_string())
         .ok_or_else(|| format!("目标部门没有可用委任人，departmentId={target_department_id}"))?;
     if target_agent_id == source_agent_id {
-        return Err("委托目标不能是当前会话人格".to_string());
+        return Err(SAME_PERSONA_ASYNC_DELEGATE_REASON.to_string());
     }
     let target_agent = agents
         .iter()

@@ -590,15 +590,6 @@ const selectionDeliverTargetOptions = computed(() =>
     }))
     .filter((item) => !!item.conversationId),
 );
-const activeConversationAgentId = computed(() => {
-  const activeConversationId = String(props.activeConversationId || "").trim();
-  if (!activeConversationId) return "";
-  return String(
-    (props.unarchivedConversationItems || []).find(
-      (item) => String(item.conversationId || "").trim() === activeConversationId,
-    )?.agentId || "",
-  ).trim();
-});
 const allowedDelegateDepartmentIds = computed(() =>
   new Set(
     (Array.isArray(props.delegateDepartmentIds) ? props.delegateDepartmentIds : [])
@@ -616,12 +607,7 @@ const delegateDepartmentOptions = computed(() =>
       providerName: String(item.providerName || "").trim() || undefined,
       modelName: String(item.modelName || "").trim() || undefined,
     }))
-    .filter((item) => {
-      if (!item.id) return false;
-      if (!allowedDelegateDepartmentIds.value.has(item.id)) return false;
-      const activeAgentId = activeConversationAgentId.value;
-      return !activeAgentId || item.ownerAgentId !== activeAgentId;
-    }),
+    .filter((item) => !!item.id && allowedDelegateDepartmentIds.value.has(item.id)),
 );
 const preferredDelegateDepartmentId = computed(() => {
   return String(delegateDepartmentOptions.value[0]?.id || "").trim();

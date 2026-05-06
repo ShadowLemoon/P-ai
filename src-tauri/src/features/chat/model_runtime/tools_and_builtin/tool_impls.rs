@@ -689,12 +689,12 @@ impl RuntimeToolMetadata for BuiltinDelegateTool {
     fn provider_tool_definition(&self) -> ProviderToolDefinition {
         ProviderToolDefinition::new(
             "delegate",
-            "当需要大范围模糊搜索、调查或比对，并从大量线索中收敛出精准目标/结论时，向目标部门的子代理咨询。子代理只返回内容，不执行危险操作；async 后台写回，sync 等待结果。",
+            "当需要大范围模糊搜索、调查或比对，并从大量线索中收敛出精准目标/结论时，向目标部门的子代理咨询。子代理只返回内容，不执行危险操作；默认 sync 等待结果，只有主会话中才允许 async 后台写回。若目标岗位由你本人兼任，或当前已经在委托线程中，只能使用 sync。",
             serde_json::json!({
               "type": "object",
               "properties": {
                 "department_id": { "type": "string", "description": "目标部门 ID" },
-                "mode": { "type": "string", "enum": ["async", "sync"], "description": "async 后台写回；sync 等待结果。", "default": "async" },
+                "mode": { "type": "string", "enum": ["async", "sync"], "description": "默认 sync；只有主会话中才允许 async。", "default": "sync" },
                 "background": { "type": "string", "description": "已有背景" },
                 "question": { "type": "string", "description": "要子代理查清的问题" },
                 "focus": { "type": "string", "description": "搜索/调查重点" }

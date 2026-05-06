@@ -3153,6 +3153,182 @@
     }
 
     #[test]
+    fn assemble_runtime_tools_should_gate_delegate_by_session_conversation_department() {
+        let state = test_chat_runtime_state();
+        let mut shared_agent = default_agent();
+        shared_agent.id = "shared-agent".to_string();
+        shared_agent.name = "共享人格".to_string();
+
+        let mut selected_api = ApiConfig::default();
+        selected_api.id = "api-a".to_string();
+        selected_api.name = "测试模型".to_string();
+        selected_api.request_format = RequestFormat::OpenAI;
+        selected_api.enable_text = true;
+        selected_api.enable_tools = true;
+        selected_api.base_url = "https://api.openai.com/v1".to_string();
+        selected_api.api_key = "k".to_string();
+        selected_api.model = "gpt-4o-mini".to_string();
+
+        let mut parent = default_assistant_department(&selected_api.id);
+        parent.id = "dept-parent".to_string();
+        parent.name = "父部门".to_string();
+        parent.is_built_in_assistant = false;
+        parent.agent_ids = vec![shared_agent.id.clone()];
+        parent.child_department_ids = vec!["dept-child".to_string()];
+
+        let mut child = default_assistant_department(&selected_api.id);
+        child.id = "dept-child".to_string();
+        child.name = "子部门".to_string();
+        child.is_built_in_assistant = false;
+        child.agent_ids = vec![shared_agent.id.clone()];
+        child.child_department_ids = Vec::new();
+
+        let config = AppConfig {
+            departments: vec![parent, child],
+            api_configs: vec![selected_api.clone()],
+            api_providers: Vec::new(),
+            ..AppConfig::default()
+        };
+        write_config(&state.config_path, &config).expect("write config");
+        state_write_agents_cached(&state, &[shared_agent.clone(), default_user_persona()])
+            .expect("write agents");
+
+        let conversation = build_conversation_record(
+            &selected_api.id,
+            &shared_agent.id,
+            "dept-child",
+            "叶子部门会话",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
+        state_schedule_conversation_persist(&state, &conversation, false)
+            .expect("persist conversation");
+        refresh_global_tool_schema_cache(&state);
+
+        let session_id = format!("{}::{}", shared_agent.id, conversation.id);
+        let assembly = test_runtime()
+            .block_on(assemble_runtime_tools(
+                &config,
+                &selected_api,
+                &shared_agent,
+                Some(&state),
+                &session_id,
+            ))
+            .expect("assemble runtime tools");
+
+        assert!(assembly.tool_manifest.iter().any(|item| {
+            item.get("source").and_then(Value::as_str) == Some("runtime_policy")
+                && item.get("name").and_then(Value::as_str) == Some("delegate")
+                && item.get("enabled").and_then(Value::as_bool) == Some(false)
+                && item.get("reason").and_then(Value::as_str)
+                    == Some("当前部门没有直接下级，无法使用委托")
+        }));
+        assert!(!assembly.tools.iter().any(|tool| tool.name() == "delegate"));
+    }
+
+    #[test]
+    fn common_delegate_preflight_should_resolve_source_department_from_delegate_thread() {
+        let state = test_chat_runtime_state();
+        let mut shared_agent = default_agent();
+        shared_agent.id = "shared-agent".to_string();
+        shared_agent.name = "共享人格".to_string();
+
+        let mut target_agent = default_agent();
+        target_agent.id = "target-agent".to_string();
+        target_agent.name = "孙部门人格".to_string();
+
+        let mut parent = default_assistant_department("api-a");
+        parent.id = "dept-parent".to_string();
+        parent.name = "父部门".to_string();
+        parent.is_built_in_assistant = false;
+        parent.agent_ids = vec![shared_agent.id.clone()];
+        parent.child_department_ids = vec!["dept-child".to_string()];
+
+        let mut child = default_assistant_department("api-a");
+        child.id = "dept-child".to_string();
+        child.name = "子部门".to_string();
+        child.is_built_in_assistant = false;
+        child.agent_ids = vec![shared_agent.id.clone()];
+        child.child_department_ids = vec!["dept-grandchild".to_string()];
+
+        let mut grandchild = default_assistant_department("api-a");
+        grandchild.id = "dept-grandchild".to_string();
+        grandchild.name = "孙部门".to_string();
+        grandchild.is_built_in_assistant = false;
+        grandchild.agent_ids = vec![target_agent.id.clone()];
+        grandchild.child_department_ids = Vec::new();
+
+        let config = AppConfig {
+            departments: vec![parent, child, grandchild],
+            ..AppConfig::default()
+        };
+        write_config(&state.config_path, &config).expect("write config");
+        state_write_agents_cached(
+            &state,
+            &[
+                shared_agent.clone(),
+                target_agent.clone(),
+                default_user_persona(),
+            ],
+        )
+        .expect("write agents");
+
+        let mut delegate_conversation = build_conversation_record(
+            "api-a",
+            &shared_agent.id,
+            "dept-child",
+            "子部门委托线程",
+            CONVERSATION_KIND_DELEGATE,
+            Some("conversation-root".to_string()),
+            Some("delegate-child".to_string()),
+        );
+        delegate_conversation.id = "delegate-child".to_string();
+        let thread = DelegateRuntimeThread {
+            delegate_id: "delegate-child".to_string(),
+            root_conversation_id: "conversation-root".to_string(),
+            target_agent_id: shared_agent.id.clone(),
+            title: "子部门委托线程".to_string(),
+            call_stack: vec!["dept-parent".to_string(), "dept-child".to_string()],
+            parent_chat_session_key: Some(format!("{}::conversation-root", shared_agent.id)),
+            archived_at: None,
+            conversation: delegate_conversation,
+        };
+        state
+            .delegate_runtime_threads
+            .lock()
+            .expect("delegate runtime threads")
+            .insert(thread.delegate_id.clone(), thread);
+
+        let preflight = common_delegate_preflight(
+            &state,
+            &shared_agent.id,
+            Some("delegate-child"),
+            "dept-grandchild",
+        )
+        .expect("resolve nested sync delegate preflight");
+        let call_stack = resolve_delegate_call_stack(
+            preflight.current_thread.as_ref(),
+            &preflight.source_department,
+            &preflight.target_department,
+        )
+        .expect("resolve call stack");
+
+        assert_eq!(preflight.source_department.id, "dept-child");
+        assert_eq!(preflight.target_department.id, "dept-grandchild");
+        assert_eq!(preflight.target_agent_id, target_agent.id);
+        assert_eq!(preflight.root_conversation_id, "conversation-root");
+        assert_eq!(
+            call_stack,
+            vec![
+                "dept-parent".to_string(),
+                "dept-child".to_string(),
+                "dept-grandchild".to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn delegate_target_chat_api_config_ids_should_only_keep_current_department_models() {
         let app_config = AppConfig {
             api_configs: vec![ApiConfig {
@@ -3203,6 +3379,42 @@
         let resolved = delegate_target_chat_api_config_ids(&app_config, &department);
 
         assert_eq!(resolved, vec!["provider-a::model-a".to_string()]);
+    }
+
+    #[test]
+    fn build_departments_prompt_block_should_keep_same_persona_child_departments() {
+        let agent = default_agent();
+        let conversation = build_conversation_record(
+            "测试会话",
+            &agent.id,
+            "dept-parent",
+            "",
+            CONVERSATION_KIND_CHAT,
+            None,
+            None,
+        );
+
+        let mut parent = default_assistant_department("api-a");
+        parent.id = "dept-parent".to_string();
+        parent.name = "父部门".to_string();
+        parent.is_built_in_assistant = false;
+        parent.agent_ids = vec![agent.id.clone()];
+        parent.child_department_ids = vec!["dept-child".to_string()];
+
+        let mut child = default_assistant_department("api-a");
+        child.id = "dept-child".to_string();
+        child.name = "同人格子部门".to_string();
+        child.is_built_in_assistant = false;
+        child.agent_ids = vec![agent.id.clone()];
+
+        let block = build_departments_prompt_block(
+            &conversation,
+            &agent,
+            &[parent, child],
+            "zh-CN",
+        );
+
+        assert!(block.contains("同人格子部门"));
     }
 
     #[test]

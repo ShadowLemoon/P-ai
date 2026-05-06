@@ -1,5 +1,3 @@
-use std::path::{Path, PathBuf};
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdeContextReferenceInput {
@@ -9,6 +7,7 @@ struct IdeContextReferenceInput {
     start_line: Option<u32>,
     #[serde(default)]
     end_line: Option<u32>,
+    #[serde(default)]
     content: String,
     #[serde(default)]
     language_id: Option<String>,
@@ -80,6 +79,10 @@ struct IdeContextQueryResultOutput {
     groups: Vec<IdeContextWorkspaceGroupOutput>,
     updated_at: String,
 }
+
+const IDE_CONTEXT_BRIDGE_ADDR: &str = "127.0.0.1:43129";
+const IDE_CONTEXT_BRIDGE_PATH: &str = "/ide-context";
+static IDE_CONTEXT_BRIDGE_STARTED: AtomicBool = AtomicBool::new(false);
 
 fn ide_context_compare_key(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -158,6 +161,9 @@ fn ide_context_line_suffix(start_line: Option<u32>, end_line: Option<u32>) -> St
 }
 
 fn ide_context_text_block(display_path: &str, reference: &IdeContextReference) -> String {
+    if reference.source.trim() == "active_file" {
+        return ["[IDE 上下文引用]".to_string(), format!("文件: {display_path}")].join("\n");
+    }
     let mut lines = vec!["[IDE 上下文引用]".to_string(), format!("文件: {display_path}")];
     if reference.start_line.is_some() || reference.end_line.is_some() {
         let line_text = match (reference.start_line, reference.end_line) {
@@ -191,10 +197,9 @@ fn ide_context_text_block(display_path: &str, reference: &IdeContextReference) -
     lines.join("\n")
 }
 
-#[tauri::command]
-fn upsert_ide_context_snapshot(
+fn upsert_ide_context_snapshot_internal(
     input: UpsertIdeContextSnapshotInput,
-    state: State<'_, AppState>,
+    state: &AppState,
 ) -> Result<(), String> {
     let client_id = input.client_id.trim().to_string();
     if client_id.is_empty() {
@@ -223,7 +228,9 @@ fn upsert_ide_context_snapshot(
                 let id = reference.id.trim().to_string();
                 let file_path = ide_context_display_path(&reference.file_path);
                 let content = reference.content.trim().to_string();
-                if id.is_empty() || file_path.is_empty() || content.is_empty() {
+                let source = reference.source.trim().to_string();
+                let allow_empty_content = source == "active_file";
+                if id.is_empty() || file_path.is_empty() || (!allow_empty_content && content.is_empty()) {
                     return None;
                 }
                 Some(IdeContextReference {
@@ -236,7 +243,7 @@ fn upsert_ide_context_snapshot(
                         .language_id
                         .map(|value| value.trim().to_string())
                         .filter(|value| !value.is_empty()),
-                    source: reference.source.trim().to_string(),
+                    source,
                     captured_at: {
                         let captured_at = reference.captured_at.trim();
                         if captured_at.is_empty() {
@@ -262,6 +269,14 @@ fn upsert_ide_context_snapshot(
         .map_err(|_| "Failed to lock ide context snapshots".to_string())?;
     snapshots.insert(client_id, snapshot);
     Ok(())
+}
+
+#[tauri::command]
+fn upsert_ide_context_snapshot(
+    input: UpsertIdeContextSnapshotInput,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    upsert_ide_context_snapshot_internal(input, &state)
 }
 
 #[tauri::command]
@@ -354,4 +369,112 @@ fn query_ide_context_references(
         groups,
         updated_at: latest_updated_at,
     })
+}
+
+fn start_ide_context_bridge_server(state: AppState) {
+    if IDE_CONTEXT_BRIDGE_STARTED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let listener = match tokio::net::TcpListener::bind(IDE_CONTEXT_BRIDGE_ADDR).await {
+            Ok(listener) => listener,
+            Err(err) => {
+                eprintln!("[IDE 上下文桥] 监听失败 {}: {}", IDE_CONTEXT_BRIDGE_ADDR, err);
+                return;
+            }
+        };
+        eprintln!("[IDE 上下文桥] 已监听 ws://{}{}", IDE_CONTEXT_BRIDGE_ADDR, IDE_CONTEXT_BRIDGE_PATH);
+        loop {
+            let (stream, peer_addr) = match listener.accept().await {
+                Ok(result) => result,
+                Err(err) => {
+                    eprintln!("[IDE 上下文桥] 接收连接失败: {}", err);
+                    continue;
+                }
+            };
+            let state_clone = state.clone();
+            tauri::async_runtime::spawn(async move {
+                ide_context_ws_handle_connection(stream, peer_addr, state_clone).await;
+            });
+        }
+    });
+}
+
+async fn ide_context_ws_handle_connection(
+    stream: tokio::net::TcpStream,
+    peer_addr: std::net::SocketAddr,
+    state: AppState,
+) {
+    let path_holder = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    let path_holder_clone = path_holder.clone();
+    let ws_stream = match accept_hdr_async(stream, move |request: &Request, response: Response| {
+        if let Ok(mut slot) = path_holder_clone.lock() {
+            *slot = request.uri().path().to_string();
+        }
+        Ok(response)
+    })
+    .await
+    {
+        Ok(ws_stream) => ws_stream,
+        Err(err) => {
+            eprintln!("[IDE 上下文桥] WebSocket 握手失败 {}: {}", peer_addr, err);
+            return;
+        }
+    };
+    let path = path_holder.lock().map(|value| value.clone()).unwrap_or_default();
+    if path != IDE_CONTEXT_BRIDGE_PATH {
+        eprintln!("[IDE 上下文桥] 非法路径 {} from {}", path, peer_addr);
+        return;
+    }
+    eprintln!("[IDE 上下文桥] 客户端已连接: {}", peer_addr);
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+    let _ = ws_sender
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            serde_json::json!({"type": "ready", "path": IDE_CONTEXT_BRIDGE_PATH}).to_string().into(),
+        ))
+        .await;
+    while let Some(message) = ws_receiver.next().await {
+        match message {
+            Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
+                match serde_json::from_str::<UpsertIdeContextSnapshotInput>(&text) {
+                    Ok(input) => match upsert_ide_context_snapshot_internal(input, &state) {
+                        Ok(()) => {
+                            let _ = ws_sender
+                                .send(tokio_tungstenite::tungstenite::Message::Text(
+                                    serde_json::json!({"type": "ack", "ok": true}).to_string().into(),
+                                ))
+                                .await;
+                        }
+                        Err(err) => {
+                            let _ = ws_sender
+                                .send(tokio_tungstenite::tungstenite::Message::Text(
+                                    serde_json::json!({"type": "ack", "ok": false, "error": err}).to_string().into(),
+                                ))
+                                .await;
+                        }
+                    },
+                    Err(err) => {
+                        let _ = ws_sender
+                            .send(tokio_tungstenite::tungstenite::Message::Text(
+                                serde_json::json!({"type": "ack", "ok": false, "error": format!("invalid json: {err}")}).to_string().into(),
+                            ))
+                            .await;
+                    }
+                }
+            }
+            Ok(tokio_tungstenite::tungstenite::Message::Ping(payload)) => {
+                let _ = ws_sender.send(tokio_tungstenite::tungstenite::Message::Pong(payload)).await;
+            }
+            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
+            Ok(_) => {}
+            Err(err) => {
+                eprintln!("[IDE 上下文桥] 客户端消息错误 {}: {}", peer_addr, err);
+                break;
+            }
+        }
+    }
+    eprintln!("[IDE 上下文桥] 客户端已断开: {}", peer_addr);
 }

@@ -631,6 +631,7 @@ let chatConversationMessagesAfterSyncedUnlisten: UnlistenFn | null = null;
 let chatConversationMessageAppendedUnlisten: UnlistenFn | null = null;
 let chatConversationTodosUpdatedUnlisten: UnlistenFn | null = null;
 let chatConversationPinUpdatedUnlisten: UnlistenFn | null = null;
+let chatConversationRuntimeStateUpdatedUnlisten: UnlistenFn | null = null;
 let chatConversationOverviewUpdatedUnlisten: UnlistenFn | null = null;
 let foregroundPaintTraceSeq = 0;
 let chatWindowActiveSyncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1609,6 +1610,11 @@ type ConversationPinUpdatedPayload = {
   pinIndex?: number | null;
 };
 
+type ConversationRuntimeStateUpdatedPayload = {
+  conversationId?: string;
+  runtimeState?: "idle" | "assistant_streaming" | "organizing_context";
+};
+
 type ConversationOverviewUpdatedPayload = {
   unarchivedConversations?: UnarchivedConversationSummary[];
   preferredConversationId?: string | null;
@@ -2332,6 +2338,12 @@ const chatRuntime = useChatRuntime({
   setStatusError,
   setChatError: (text) => {
     chatErrorText.value = text;
+  },
+  setConversationRuntimeState: (conversationId, runtimeState) => {
+    applyConversationRuntimeStateUpdated({
+      conversationId,
+      runtimeState,
+    });
   },
   activeChatApiConfigId: currentForegroundApiConfigId,
   assistantDepartmentAgentId: currentForegroundAgentId,
@@ -3351,6 +3363,31 @@ function applyConversationPinUpdated(payload?: ConversationPinUpdatedPayload | n
   unarchivedConversations.value = sortUnarchivedConversationOverviewItems(nextItems);
 }
 
+function applyConversationRuntimeStateUpdated(payload?: ConversationRuntimeStateUpdatedPayload | null) {
+  const conversationId = String(payload?.conversationId || "").trim();
+  const runtimeState = String(payload?.runtimeState || "").trim() as SwitchConversationSnapshot["runtimeState"];
+  if (!conversationId) return;
+  if (runtimeState !== "idle" && runtimeState !== "assistant_streaming" && runtimeState !== "organizing_context") {
+    return;
+  }
+  let changed = false;
+  const nextItems = unarchivedConversations.value.map((item) => {
+    if (String(item.conversationId || "").trim() !== conversationId) {
+      return item;
+    }
+    if (item.runtimeState === runtimeState) {
+      return item;
+    }
+    changed = true;
+    return {
+      ...item,
+      runtimeState,
+    };
+  });
+  if (!changed) return;
+  unarchivedConversations.value = nextItems;
+}
+
 function isOverviewDraftMessage(message?: ChatMessage): boolean {
   const messageId = String(message?.id || "").trim();
   return messageId.startsWith(DRAFT_ASSISTANT_ID_PREFIX) || messageId.startsWith("__draft_user__:");
@@ -4358,6 +4395,15 @@ onMounted(() => {
       .catch((error) => {
         console.error("[会话置顶] 监听器注册失败", error);
       });
+    void listen<ConversationRuntimeStateUpdatedPayload>("easy-call:conversation-runtime-state-updated", (event) => {
+      applyConversationRuntimeStateUpdated(event.payload);
+    })
+      .then((unlisten) => {
+        chatConversationRuntimeStateUpdatedUnlisten = unlisten;
+      })
+      .catch((error) => {
+        console.error("[会话运行态] 监听器注册失败", error);
+      });
     void listen<ConversationOverviewUpdatedPayload>("easy-call:conversation-overview-updated", (event) => {
       applyConversationOverviewUpdated(event.payload);
     })
@@ -4490,6 +4536,10 @@ onBeforeUnmount(() => {
   if (chatConversationPinUpdatedUnlisten) {
     chatConversationPinUpdatedUnlisten();
     chatConversationPinUpdatedUnlisten = null;
+  }
+  if (chatConversationRuntimeStateUpdatedUnlisten) {
+    chatConversationRuntimeStateUpdatedUnlisten();
+    chatConversationRuntimeStateUpdatedUnlisten = null;
   }
   if (chatConversationOverviewUpdatedUnlisten) {
     chatConversationOverviewUpdatedUnlisten();

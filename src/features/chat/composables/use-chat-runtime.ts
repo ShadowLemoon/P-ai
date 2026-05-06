@@ -24,6 +24,7 @@ type UseChatRuntimeOptions = {
   setStatus: (text: string) => void;
   setStatusError: (key: string, error: unknown) => void;
   setChatError: (text: string) => void;
+  setConversationRuntimeState?: (conversationId: string, runtimeState: "idle" | "assistant_streaming" | "organizing_context") => void;
   activeChatApiConfigId: Ref<string>;
   assistantDepartmentAgentId: Ref<string>;
   currentConversationId?: Ref<string>;
@@ -127,6 +128,9 @@ export function useChatRuntime(options: UseChatRuntimeOptions) {
         options.currentConversationId.value = activeConversationId;
       }
       if (result.reasonCode === "background_started") {
+        if (action.lockForeground && sourceConversationId && options.setConversationRuntimeState) {
+          options.setConversationRuntimeState(sourceConversationId, "organizing_context");
+        }
         options.setStatus(options.t(action.runningKey));
         options.setChatError("");
       } else if (result.warning) {

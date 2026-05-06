@@ -34,9 +34,8 @@ impl OnebotV11WsManager {
         let mut logs = self.channel_logs.write().await;
         let channel_logs = logs.entry(channel_id.to_string()).or_insert_with(Vec::new);
         channel_logs.push(entry);
-        // 只保留最近 100 条日志
-        if channel_logs.len() > 100 {
-            let start = channel_logs.len() - 100;
+        if channel_logs.len() > CHANNEL_LOG_LIMIT {
+            let start = channel_logs.len() - CHANNEL_LOG_LIMIT;
             channel_logs.drain(0..start);
         }
     }

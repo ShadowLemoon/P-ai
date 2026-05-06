@@ -723,6 +723,15 @@ fn spawn_remote_im_auto_send_contact_assistant_reply(
                     activation_source.remote_contact_id,
                     started.elapsed().as_millis()
                 );
+                remote_im_append_channel_log(
+                    &activation_source.channel_id,
+                    "info",
+                    format!(
+                        "[联系人消息] 发出跳过: contact={}, action=reply_async, conversation_id={}, reason=empty_reply",
+                        remote_im_activation_source_log_label(&activation_source),
+                        conversation_id
+                    ),
+                );
             }
             Err(err) => {
                 let _ = remote_im_finalize_async_send_result(

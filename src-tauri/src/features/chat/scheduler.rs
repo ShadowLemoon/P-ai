@@ -1615,6 +1615,16 @@ async fn process_conversation_batch(
                             "[远程联系人秘书] 判断失败，降级为始终回复: conversation_id={}, contact_id={}, error={}",
                             conversation_id, contact.id, err
                         ));
+                        remote_im_append_channel_log(
+                            &contact.channel_id,
+                            "warn",
+                            format!(
+                                "[联系人秘书] 智能判断失败: contact={}, conversation_id={}, strategy=smart_judge, fallback=always_reply, error={}",
+                                remote_im_contact_log_label(&contact),
+                                conversation_id,
+                                err
+                            ),
+                        );
                         RemoteImSecretaryDecision {
                             should_reply: true,
                             reason: format!("秘书判断失败，已降级为始终回复：{err}"),
@@ -1633,6 +1643,24 @@ async fn process_conversation_batch(
                         decision.model_name.as_str()
                     },
                     decision.reason
+                );
+                remote_im_append_channel_log(
+                    &contact.channel_id,
+                    "info",
+                    format!(
+                        "[联系人秘书] 智能判断: contact={}, conversation_id={}, result={}, model={}, history_count={}, new_count={}, reason={}",
+                        remote_im_contact_log_label(&contact),
+                        conversation_id,
+                        if decision.should_reply { "回复" } else { "不回复" },
+                        if decision.model_name.trim().is_empty() {
+                            "fallback"
+                        } else {
+                            decision.model_name.as_str()
+                        },
+                        secretary_recent_history.len(),
+                        secretary_new_batch_messages.len(),
+                        decision.reason
+                    ),
                 );
                 if !decision.should_reply {
                     should_activate = false;

@@ -256,6 +256,7 @@ async fn remote_im_send_content_payload(
     if content.is_empty() {
         return Err("发送内容不能为空".to_string());
     }
+    let content_digest = remote_im_outbound_content_digest(&content);
     let payload = serde_json::json!({
         "channel_id": contact.channel_id,
         "contact_record_id": contact.id,
@@ -264,7 +265,44 @@ async fn remote_im_send_content_payload(
         "contact_id": contact.remote_contact_id,
         "content": content,
     });
-    let platform_message_id = remote_im_send_via_sdk(channel, contact, &payload).await?;
+    let platform_message_id = match remote_im_send_via_sdk(channel, contact, &payload).await {
+        Ok(value) => value,
+        Err(err) => {
+            remote_im_append_channel_log_async(
+                &contact.channel_id,
+                "warn",
+                format!(
+                    "[联系人消息] 发出失败: contact={}, action={}, text_count={}, image_count={}, file_count={}, other_count={}, preview={}, error={}",
+                    remote_im_contact_log_label(contact),
+                    action.trim(),
+                    content_digest.text_count,
+                    content_digest.image_count,
+                    content_digest.file_count,
+                    content_digest.other_count,
+                    content_digest.text_preview,
+                    err
+                ),
+            )
+            .await;
+            return Err(err);
+        }
+    };
+    remote_im_append_channel_log_async(
+        &contact.channel_id,
+        "info",
+        format!(
+            "[联系人消息] 发出: contact={}, action={}, text_count={}, image_count={}, file_count={}, other_count={}, platform_message_id={}, preview={}",
+            remote_im_contact_log_label(contact),
+            action.trim(),
+            content_digest.text_count,
+            content_digest.image_count,
+            content_digest.file_count,
+            content_digest.other_count,
+            platform_message_id,
+            content_digest.text_preview
+        ),
+    )
+    .await;
     Ok(serde_json::json!({
         "ok": true,
         "action": action.trim(),

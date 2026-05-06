@@ -465,6 +465,9 @@ fn remote_im_prepare_enqueue_runtime_state(
 ) -> Result<(bool, String), String> {
     let mut runtime_states = lock_remote_im_contact_runtime_states(state)?;
     let runtime = remote_im_contact_runtime_state_mut(&mut runtime_states, &contact.id);
+    let previous_presence = runtime.presence_state;
+    let previous_work = runtime.work_state;
+    let previous_pending = runtime.has_pending;
     let (activate_assistant, reason) = match runtime.presence_state {
         RemoteImPresenceState::Away => {
             let (activate, reason) = remote_im_should_activate_while_away(contact, message_text);
@@ -505,6 +508,22 @@ fn remote_im_prepare_enqueue_runtime_state(
         runtime.has_pending,
         activate_assistant,
         reason
+    );
+    remote_im_append_channel_log(
+        &contact.channel_id,
+        "info",
+        format!(
+            "[联系人状态] 入站判定: contact={}, presence={} -> {}, work={} -> {}, pending={} -> {}, activate={}, reason={}",
+            remote_im_contact_log_label(contact),
+            remote_im_presence_state_label(previous_presence),
+            remote_im_presence_state_label(runtime.presence_state),
+            remote_im_work_state_label(previous_work),
+            remote_im_work_state_label(runtime.work_state),
+            remote_im_yes_no(previous_pending),
+            remote_im_yes_no(runtime.has_pending),
+            remote_im_yes_no(activate_assistant),
+            reason
+        ),
     );
     Ok((activate_assistant, reason))
 }
@@ -994,15 +1013,27 @@ fn remote_im_handle_persisted_event_after_history_flush_runtime(
 
     let mut should_activate = false;
     let mut should_apply_boundary = false;
-    {
+    let (
+        previous_presence,
+        previous_work,
+        previous_pending,
+        current_presence,
+        current_work,
+        current_pending,
+        state_reason,
+    ) = {
         let mut runtime_states = lock_remote_im_contact_runtime_states(state)?;
         let runtime = remote_im_contact_runtime_state_mut(&mut runtime_states, &contact.id);
-        match runtime.presence_state {
+        let previous_presence = runtime.presence_state;
+        let previous_work = runtime.work_state;
+        let previous_pending = runtime.has_pending;
+        let state_reason = match runtime.presence_state {
             RemoteImPresenceState::Away => {
                 eprintln!(
                     "[远程联系人状态机] 历史落地后跳过: contact_id={}, reason=still_away",
                     contact.id
                 );
+                "still_away".to_string()
             }
             RemoteImPresenceState::Present => {
                 if runtime.work_state == RemoteImWorkState::Busy {
@@ -1011,16 +1042,27 @@ fn remote_im_handle_persisted_event_after_history_flush_runtime(
                         "[远程联系人状态机] 历史落地后待办: contact_id={}, reason=busy_mark_pending",
                         contact.id
                     );
+                    "busy_mark_pending".to_string()
                 } else {
                     should_apply_boundary = runtime.needs_boundary;
                     runtime.needs_boundary = false;
                     runtime.work_state = RemoteImWorkState::Busy;
                     runtime.has_pending = false;
                     should_activate = true;
+                    "activate_now".to_string()
                 }
             }
-        }
-    }
+        };
+        (
+            previous_presence,
+            previous_work,
+            previous_pending,
+            runtime.presence_state,
+            runtime.work_state,
+            runtime.has_pending,
+            state_reason,
+        )
+    };
 
     if should_apply_boundary {
         if !conversation_is_remote_im_contact(conversation) {
@@ -1047,6 +1089,24 @@ fn remote_im_handle_persisted_event_after_history_flush_runtime(
             should_apply_boundary
         );
     }
+    remote_im_append_channel_log(
+        &contact.channel_id,
+        "info",
+        format!(
+            "[联系人状态] 历史落地: contact={}, conversation_id={}, presence={} -> {}, work={} -> {}, pending={} -> {}, activate={}, boundary={}, reason={}",
+            remote_im_contact_log_label(&contact),
+            conversation.id,
+            remote_im_presence_state_label(previous_presence),
+            remote_im_presence_state_label(current_presence),
+            remote_im_work_state_label(previous_work),
+            remote_im_work_state_label(current_work),
+            remote_im_yes_no(previous_pending),
+            remote_im_yes_no(current_pending),
+            remote_im_yes_no(should_activate),
+            remote_im_yes_no(should_apply_boundary),
+            state_reason
+        ),
+    );
     Ok(should_activate)
 }
 
@@ -1135,10 +1195,15 @@ fn remote_im_finalize_round_completion(
             continue;
         };
         let runtime = remote_im_contact_runtime_state_mut(&mut runtime_states, &contact.id);
-        runtime.work_state = RemoteImWorkState::Idle;
         let previous_presence = runtime.presence_state;
+        let previous_work = runtime.work_state;
         let previous_pending = runtime.has_pending;
         let previous_no_reply_count = runtime.consecutive_no_reply_count;
+        runtime.work_state = RemoteImWorkState::Idle;
+        let decision_label = match reply_decision.unwrap_or("").trim() {
+            "" => "send_async",
+            value => value,
+        };
         if let Some(error) = failed_error {
             eprintln!(
                 "[远程联系人状态机] 轮次结束 失败: contact_id={}, presence={:?}->{:?}, pending={}, error={}",
@@ -1148,10 +1213,26 @@ fn remote_im_finalize_round_completion(
                 previous_pending,
                 error
             );
+            remote_im_append_channel_log(
+                &contact.channel_id,
+                "warn",
+                format!(
+                    "[联系人状态] 轮次收尾失败: contact={}, decision={}, presence={} -> {}, work={} -> {}, pending={} -> {}, error={}",
+                    remote_im_contact_log_label(contact),
+                    decision_label,
+                    remote_im_presence_state_label(previous_presence),
+                    remote_im_presence_state_label(runtime.presence_state),
+                    remote_im_work_state_label(previous_work),
+                    remote_im_work_state_label(runtime.work_state),
+                    remote_im_yes_no(previous_pending),
+                    remote_im_yes_no(runtime.has_pending),
+                    error
+                ),
+            );
             continue;
         }
         let should_follow_up_after_round = previous_pending;
-        match reply_decision.unwrap_or("") {
+        match decision_label {
             "reply" | "send_files" | "send" | "reply_async" => {
                 let target_matched = reply_target
                     .map(|target| remote_im_contact_matches_reply_target(source, target))
@@ -1196,7 +1277,7 @@ fn remote_im_finalize_round_completion(
         eprintln!(
             "[远程联系人状态机] 轮次结束 完成: contact_id={}, decision={}, presence={:?}->{:?}, pending={}->{}, no_reply_count={}->{}, follow_up={}, last_success_reply_at={}",
             contact.id,
-            reply_decision.unwrap_or(""),
+            decision_label,
             previous_presence,
             runtime.presence_state,
             previous_pending,
@@ -1205,6 +1286,25 @@ fn remote_im_finalize_round_completion(
             runtime.consecutive_no_reply_count,
             should_follow_up_after_round,
             runtime.last_success_reply_at.as_deref().unwrap_or("")
+        );
+        remote_im_append_channel_log(
+            &contact.channel_id,
+            "info",
+            format!(
+                "[联系人状态] 轮次结束: contact={}, decision={}, presence={} -> {}, work={} -> {}, pending={} -> {}, no_reply_count={} -> {}, follow_up={}, last_success_reply_at={}",
+                remote_im_contact_log_label(contact),
+                decision_label,
+                remote_im_presence_state_label(previous_presence),
+                remote_im_presence_state_label(runtime.presence_state),
+                remote_im_work_state_label(previous_work),
+                remote_im_work_state_label(runtime.work_state),
+                remote_im_yes_no(previous_pending),
+                remote_im_yes_no(runtime.has_pending),
+                previous_no_reply_count,
+                runtime.consecutive_no_reply_count,
+                remote_im_yes_no(should_follow_up_after_round),
+                runtime.last_success_reply_at.as_deref().unwrap_or("")
+            ),
         );
     }
     Ok(follow_up_sources)
@@ -1225,6 +1325,8 @@ fn remote_im_finalize_async_send_result(
     };
     let mut runtime_states = lock_remote_im_contact_runtime_states(state)?;
     let runtime = remote_im_contact_runtime_state_mut(&mut runtime_states, &contact.id);
+    let previous_presence = runtime.presence_state;
+    let previous_no_reply_count = runtime.consecutive_no_reply_count;
     runtime.presence_state = RemoteImPresenceState::Present;
     runtime.consecutive_no_reply_count = 0;
     if send_ok {
@@ -1236,6 +1338,21 @@ fn remote_im_finalize_async_send_result(
         contact.id,
         runtime.last_success_reply_at.as_deref().unwrap_or(""),
         error.unwrap_or("")
+    );
+    remote_im_append_channel_log(
+        &contact.channel_id,
+        if send_ok { "info" } else { "warn" },
+        format!(
+            "[联系人状态] 异步发送收尾: contact={}, result={}, presence={} -> {}, no_reply_count={} -> {}, last_success_reply_at={}, error={}",
+            remote_im_contact_log_label(&contact),
+            if send_ok { "成功" } else { "失败" },
+            remote_im_presence_state_label(previous_presence),
+            remote_im_presence_state_label(runtime.presence_state),
+            previous_no_reply_count,
+            runtime.consecutive_no_reply_count,
+            runtime.last_success_reply_at.as_deref().unwrap_or(""),
+            error.unwrap_or("")
+        ),
     );
     Ok(())
 }
@@ -1250,6 +1367,175 @@ fn remote_im_contact_display_name(contact: &RemoteImContact) -> String {
         return remote_name.to_string();
     }
     contact.remote_contact_id.trim().to_string()
+}
+
+#[derive(Debug, Clone)]
+struct RemoteImOutboundContentDigest {
+    text_preview: String,
+    text_count: usize,
+    image_count: usize,
+    file_count: usize,
+    other_count: usize,
+}
+
+fn remote_im_presence_state_label(state: RemoteImPresenceState) -> &'static str {
+    match state {
+        RemoteImPresenceState::Away => "离场",
+        RemoteImPresenceState::Present => "在场",
+    }
+}
+
+fn remote_im_work_state_label(state: RemoteImWorkState) -> &'static str {
+    match state {
+        RemoteImWorkState::Idle => "空闲",
+        RemoteImWorkState::Busy => "忙碌",
+    }
+}
+
+fn remote_im_yes_no(value: bool) -> &'static str {
+    if value { "是" } else { "否" }
+}
+
+fn remote_im_preview_text(text: &str, max_chars: usize) -> String {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return "（无文本）".to_string();
+    }
+    if normalized.chars().count() <= max_chars {
+        return normalized;
+    }
+    format!(
+        "{}...",
+        normalized.chars().take(max_chars).collect::<String>()
+    )
+}
+
+fn remote_im_contact_log_label(contact: &RemoteImContact) -> String {
+    format!(
+        "{}[{}:{}]",
+        remote_im_contact_display_name(contact),
+        contact.remote_contact_type.trim(),
+        contact.remote_contact_id.trim()
+    )
+}
+
+fn remote_im_activation_source_log_label(source: &RemoteImActivationSource) -> String {
+    let display_name = source.remote_contact_name.trim();
+    let name = if display_name.is_empty() {
+        source.remote_contact_id.trim()
+    } else {
+        display_name
+    };
+    format!(
+        "{}[{}:{}]",
+        name,
+        source.remote_contact_type.trim(),
+        source.remote_contact_id.trim()
+    )
+}
+
+fn remote_im_outbound_content_digest(content: &[Value]) -> RemoteImOutboundContentDigest {
+    let mut text_count = 0usize;
+    let mut image_count = 0usize;
+    let mut file_count = 0usize;
+    let mut other_count = 0usize;
+    let mut text_fragments = Vec::<String>::new();
+    let mut asset_names = Vec::<String>::new();
+    for item in content {
+        match item.get("type").and_then(Value::as_str).unwrap_or("") {
+            "text" => {
+                text_count += 1;
+                let text = item
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or("");
+                if !text.is_empty() {
+                    text_fragments.push(text.to_string());
+                }
+            }
+            "image" => {
+                image_count += 1;
+                if let Some(name) = item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    asset_names.push(name.to_string());
+                }
+            }
+            "file" => {
+                file_count += 1;
+                if let Some(name) = item
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                {
+                    asset_names.push(name.to_string());
+                }
+            }
+            _ => {
+                other_count += 1;
+            }
+        }
+    }
+    let preview_source = if !text_fragments.is_empty() {
+        text_fragments.join(" / ")
+    } else if !asset_names.is_empty() {
+        asset_names.join(", ")
+    } else if image_count + file_count + other_count > 0 {
+        format!("附件 {} 个", image_count + file_count + other_count)
+    } else {
+        String::new()
+    };
+    RemoteImOutboundContentDigest {
+        text_preview: remote_im_preview_text(&preview_source, 100),
+        text_count,
+        image_count,
+        file_count,
+        other_count,
+    }
+}
+
+#[cfg(not(test))]
+fn remote_im_append_channel_log(channel_id: &str, level: &str, message: String) {
+    let channel_id = channel_id.trim().to_string();
+    let level = level.trim().to_string();
+    let message = message.trim().to_string();
+    if channel_id.is_empty() || level.is_empty() || message.is_empty() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        onebot_v11_ws_manager()
+            .add_log(&channel_id, &level, &message)
+            .await;
+    });
+}
+
+#[cfg(test)]
+fn remote_im_append_channel_log(channel_id: &str, level: &str, message: String) {
+    let _ = (channel_id, level, message);
+}
+
+#[cfg(not(test))]
+async fn remote_im_append_channel_log_async(channel_id: &str, level: &str, message: String) {
+    let channel_id = channel_id.trim().to_string();
+    let level = level.trim().to_string();
+    let message = message.trim().to_string();
+    if channel_id.is_empty() || level.is_empty() || message.is_empty() {
+        return;
+    }
+    onebot_v11_ws_manager()
+        .add_log(&channel_id, &level, &message)
+        .await;
+}
+
+#[cfg(test)]
+async fn remote_im_append_channel_log_async(channel_id: &str, level: &str, message: String) {
+    let _ = (channel_id, level, message);
 }
 
 fn remote_im_resolve_effective_route_mode(
@@ -2164,6 +2450,22 @@ pub(crate) fn remote_im_enqueue_message_internal(
         runtime.remote_im_contacts[contact_idx] = detached_contact;
         resolved
     };
+    let contact_for_log = runtime
+        .remote_im_contacts
+        .get(contact_idx)
+        .cloned()
+        .ok_or_else(|| format!("联系人不存在: {contact_id}"))?;
+    let sender_label = {
+        let sender_name = input.sender_name.trim();
+        let sender_id = input.sender_id.trim();
+        if sender_name.is_empty() {
+            sender_id.to_string()
+        } else if sender_id.is_empty() {
+            sender_name.to_string()
+        } else {
+            format!("{}({})", sender_name, sender_id)
+        }
+    };
     eprintln!(
         "[远程IM] 入站消息路由完成: contact_id={}, channel_id={}, department_id={}, agent_id={}, conversation_id={}, route_mode={}, processing_mode={}",
         contact_id,
@@ -2185,6 +2487,21 @@ pub(crate) fn remote_im_enqueue_message_internal(
         attachments.len(),
         attachments.iter().map(|item| item.file_name.clone()).collect::<Vec<_>>()
     );
+    remote_im_append_channel_log(
+        input.channel_id.trim(),
+        "info",
+        format!(
+            "[联系人消息] 收到: contact={}, sender={}, conversation_id={}, text_len={}, image_count={}, audio_count={}, attachment_count={}, preview={}",
+            remote_im_contact_log_label(&contact_for_log),
+            sender_label,
+            conversation_id,
+            text.chars().count(),
+            images.len(),
+            audios.len(),
+            attachments.len(),
+            remote_im_preview_text(&text, 100)
+        ),
+    );
     if let Some(platform_message_id) = input
         .platform_message_id
         .as_deref()
@@ -2205,6 +2522,17 @@ pub(crate) fn remote_im_enqueue_message_internal(
                 input.remote_contact_id.trim(),
                 conversation_id,
                 platform_message_id
+            );
+            remote_im_append_channel_log(
+                input.channel_id.trim(),
+                "info",
+                format!(
+                    "[联系人消息] 去重跳过: contact={}, conversation_id={}, platform_message_id={}, preview={}",
+                    remote_im_contact_log_label(&contact_for_log),
+                    conversation_id,
+                    platform_message_id,
+                    remote_im_preview_text(&text, 100)
+                ),
             );
             state_write_runtime_state_cached(state, &runtime)?;
             return Ok(RemoteImEnqueueResult {
@@ -2261,6 +2589,24 @@ pub(crate) fn remote_im_enqueue_message_internal(
         },
     );
     let ingress = ingress_chat_event(state, event)?;
+    let ingress_mode = match &ingress {
+        ChatEventIngress::Direct(_) => "direct",
+        ChatEventIngress::Queued { .. } => "queued",
+        ChatEventIngress::Duplicate { .. } => "duplicate",
+    };
+    remote_im_append_channel_log(
+        input.channel_id.trim(),
+        "info",
+        format!(
+            "[联系人消息] 入队: contact={}, conversation_id={}, event_id={}, mode={}, activate={}, reason={}",
+            remote_im_contact_log_label(&contact_for_log),
+            conversation_id,
+            event_id,
+            ingress_mode,
+            remote_im_yes_no(activate_assistant),
+            state_reason
+        ),
+    );
     state_write_runtime_state_cached(state, &runtime)?;
     trigger_chat_event_after_ingress(state, ingress);
     Ok(RemoteImEnqueueResult {

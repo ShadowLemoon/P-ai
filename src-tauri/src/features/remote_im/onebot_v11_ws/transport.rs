@@ -50,12 +50,15 @@ async fn append_channel_log(
     message: String,
 ) {
     let mut logs = channel_logs.write().await;
-    if let Some(entries) = logs.get_mut(channel_id) {
-        entries.push(ChannelLogEntry {
-            timestamp: Utc::now(),
-            level: level.to_string(),
-            message,
-        });
+    let entries = logs.entry(channel_id.to_string()).or_insert_with(Vec::new);
+    entries.push(ChannelLogEntry {
+        timestamp: Utc::now(),
+        level: level.to_string(),
+        message,
+    });
+    if entries.len() > CHANNEL_LOG_LIMIT {
+        let start = entries.len() - CHANNEL_LOG_LIMIT;
+        entries.drain(0..start);
     }
 }
 

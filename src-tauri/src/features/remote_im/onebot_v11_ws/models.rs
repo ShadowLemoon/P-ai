@@ -14,6 +14,8 @@ use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 use tokio_tungstenite::tungstenite::http::Response as HttpResponse;
 use tokio_tungstenite::tungstenite::Message;
 
+const CHANNEL_LOG_LIMIT: usize = 300;
+
 /// 渠道日志条目
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

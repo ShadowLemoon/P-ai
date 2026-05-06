@@ -52,6 +52,7 @@ struct IdeContextReferenceItemOutput {
     workspace_name: String,
     file_path: String,
     file_name: String,
+    relative_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     start_line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -326,7 +327,7 @@ fn query_ide_context_references(
                     .and_then(|value| value.to_str())
                     .map(ToOwned::to_owned)
                     .unwrap_or_else(|| file_path.clone());
-                let _relative_path = ide_context_relative_display_path(&file_path, &group.workspace_path);
+                let relative_path = ide_context_relative_display_path(&file_path, &group.workspace_path);
                 let display_label = format!(
                     "{}{}",
                     file_name,
@@ -339,6 +340,7 @@ fn query_ide_context_references(
                     workspace_name: group.workspace_name.clone(),
                     file_path,
                     file_name,
+                    relative_path,
                     start_line: reference.start_line,
                     end_line: reference.end_line,
                     display_label,

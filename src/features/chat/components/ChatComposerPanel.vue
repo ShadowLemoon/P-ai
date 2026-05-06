@@ -247,7 +247,7 @@
             class="gap-1 py-3 max-w-full"
             :class="isIdeContextAttached(item.id) ? 'badge badge-primary' : 'badge badge-ghost'"
             :disabled="chatting || frozen"
-            :title="item.displayLabel"
+            :title="ideContextReferenceTitle(item)"
             @click="toggleIdeContextReference(item)"
           >
             <Minus v-if="isIdeContextAttached(item.id)" class="h-3.5 w-3.5" />
@@ -654,6 +654,20 @@ function toggleIdeContextReference(item: IdeContextReferenceItem) {
     return;
   }
   emit("attachIdeContextReference", item);
+}
+
+function ideContextReferenceTitle(item: IdeContextReferenceItem): string {
+  const relativePath = String(item.relativePath || "").trim();
+  const startLine = Number(item.startLine || 0);
+  const endLine = Number(item.endLine || 0);
+  if (!relativePath) return String(item.displayLabel || "").trim();
+  if (startLine > 0 && endLine > startLine) {
+    return `${relativePath}:${startLine}-${endLine}`;
+  }
+  if (startLine > 0) {
+    return `${relativePath}:${startLine}`;
+  }
+  return relativePath;
 }
 
 const showStopAction = computed(() =>

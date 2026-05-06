@@ -340,16 +340,16 @@ impl ConversationService {
             .conversation_lock
             .lock()
             .map_err(|err| state_lock_error_with_panic(file!(), line!(), module_path!(), &err))?;
-        let runtime = state_read_runtime_state_cached(state)?;
-        let Some(contact) = runtime
+        let mut runtime = state_read_runtime_state_cached(state)?;
+        let Some(contact_index) = runtime
             .remote_im_contacts
             .iter()
-            .find(|item| item.id == normalized_contact_id)
-            .cloned()
+            .position(|item| item.id == normalized_contact_id)
         else {
             drop(guard);
             return Err(format!("未找到远程联系人：{normalized_contact_id}"));
         };
+        let contact = runtime.remote_im_contacts[contact_index].clone();
         let conversation_id = contact
             .bound_conversation_id
             .as_deref()
@@ -394,7 +394,7 @@ impl ConversationService {
             drop(guard);
             return Ok(false);
         };
-        let mut conversation = match state_read_conversation_cached(state, &conversation_id) {
+        let conversation = match state_read_conversation_cached(state, &conversation_id) {
             Ok(conversation)
                 if conversation.summary.trim().is_empty()
                     && conversation_is_remote_im_contact(&conversation) =>
@@ -407,17 +407,12 @@ impl ConversationService {
             }
         };
 
-        conversation.messages.clear();
-        conversation.memory_recall_table.clear();
-        conversation.last_user_at = None;
-        conversation.last_assistant_at = None;
-        conversation.status = "inactive".to_string();
-        conversation.updated_at = now_iso();
-
-        if let Err(err) = state_schedule_conversation_persist(state, &conversation, false) {
-            drop(guard);
-            return Err(err);
-        }
+        runtime.remote_im_contacts[contact_index].bound_conversation_id = None;
+        runtime
+            .remote_im_contact_checkpoints
+            .retain(|item| item.contact_id.trim() != normalized_contact_id);
+        state_write_runtime_state_cached(state, &runtime)?;
+        state_schedule_conversation_delete(state, &conversation.id, true)?;
         drop(guard);
         Ok(true)
     }

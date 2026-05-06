@@ -479,7 +479,7 @@ export function useArchivesView(options: UseArchivesViewOptions) {
       await invokeTauri<boolean>("remote_im_clear_contact_conversation", {
         input: { contactId },
       });
-      options.setStatus("联系人会话已清空。");
+      options.setStatus("联系人会话已删除。");
       await loadRemoteImContactConversations();
     } catch (e) {
       options.setStatusError("status.deleteUnarchivedConversationFailed", e);

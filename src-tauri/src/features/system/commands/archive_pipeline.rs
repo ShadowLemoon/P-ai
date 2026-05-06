@@ -1475,6 +1475,14 @@ async fn force_archive_current(
                     "[ARCHIVE-FORCE] 警告，任务=background_force_archive_reset_state，conversation_id={}，error={}",
                     source_cloned.id, err
                 );
+            } else {
+                emit_conversation_runtime_state_updated_payload(
+                    &state_cloned,
+                    &ConversationRuntimeStateUpdatedPayload {
+                        conversation_id: source_cloned.id.clone(),
+                        runtime_state: MainSessionState::Idle,
+                    },
+                );
             }
             trigger_chat_queue_processing(&state_cloned);
         }
@@ -1595,6 +1603,13 @@ pub(crate) async fn run_archive_pipeline(
 
     // 设置状态为 OrganizingContext（仅影响所属会话）
     set_conversation_runtime_state(state, &source.id, MainSessionState::OrganizingContext)?;
+    emit_conversation_runtime_state_updated_payload(
+        state,
+        &ConversationRuntimeStateUpdatedPayload {
+            conversation_id: source.id.clone(),
+            runtime_state: MainSessionState::OrganizingContext,
+        },
+    );
     eprintln!(
         "[ARCHIVE-PIPELINE] 开始: task=archive_pipeline, trace_id={}, agent_id={}, api_id={}, started_at={}",
         trace_id, effective_agent_id, selected_api.id, started_at.elapsed().as_millis()
@@ -1626,6 +1641,13 @@ pub(crate) async fn run_archive_pipeline(
             trace_id, elapsed_ms, state_err
         );
     } else {
+        emit_conversation_runtime_state_updated_payload(
+            state,
+            &ConversationRuntimeStateUpdatedPayload {
+                conversation_id: source.id.clone(),
+                runtime_state: MainSessionState::Idle,
+            },
+        );
         eprintln!(
             "[ARCHIVE-PIPELINE] 完成: task=archive_pipeline, trace_id={}, agent_id={}, api_id={}, elapsed_ms={}",
             trace_id, effective_agent_id, selected_api.id, elapsed_ms

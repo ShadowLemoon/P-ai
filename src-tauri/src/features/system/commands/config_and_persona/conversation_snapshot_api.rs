@@ -572,6 +572,13 @@ struct ConversationPinUpdatedPayload {
     pin_index: Option<usize>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ConversationRuntimeStateUpdatedPayload {
+    conversation_id: String,
+    runtime_state: MainSessionState,
+}
+
 fn emit_unarchived_conversation_overview_updated_payload(
     state: &AppState,
     payload: &UnarchivedConversationOverviewUpdatedPayload,
@@ -649,6 +656,46 @@ fn emit_conversation_pin_updated_payload(
     if let Err(err) = app_handle.emit("easy-call:conversation-pin-updated", payload) {
         eprintln!("[会话置顶] 推送失败：错误={}", err);
     }
+}
+
+fn emit_conversation_runtime_state_updated_payload(
+    state: &AppState,
+    payload: &ConversationRuntimeStateUpdatedPayload,
+) {
+    let started_at = std::time::Instant::now();
+    let app_handle = match state.app_handle.lock() {
+        Ok(guard) => guard.as_ref().cloned(),
+        Err(err) => {
+            runtime_log_error(format!(
+                "[会话运行态] 失败，任务=推送会话运行态，阶段=获取app_handle，conversation_id={}，error={:?}",
+                payload.conversation_id, err
+            ));
+            None
+        }
+    };
+    let Some(app_handle) = app_handle else {
+        runtime_log_warn(format!(
+            "[会话运行态] 跳过，任务=推送会话运行态，conversation_id={}，原因=app_handle_missing",
+            payload.conversation_id
+        ));
+        return;
+    };
+    if let Err(err) = app_handle.emit("easy-call:conversation-runtime-state-updated", payload) {
+        runtime_log_error(format!(
+            "[会话运行态] 失败，任务=推送会话运行态，conversation_id={}，state={:?}，error={}，duration_ms={}",
+            payload.conversation_id,
+            payload.runtime_state,
+            err,
+            started_at.elapsed().as_millis()
+        ));
+        return;
+    }
+    runtime_log_info(format!(
+        "[会话运行态] 完成，任务=推送会话运行态，conversation_id={}，state={:?}，duration_ms={}",
+        payload.conversation_id,
+        payload.runtime_state,
+        started_at.elapsed().as_millis()
+    ));
 }
 
 fn normalize_conversation_todos(

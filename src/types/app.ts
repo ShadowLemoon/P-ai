@@ -275,6 +275,8 @@ export type RemoteImContact = {
   activationKeywords: string[];
   patienceSeconds: number;
   activationCooldownSeconds: number;
+  responseStrategy?: "always_reply" | "smart_judge";
+  responseGuidance?: string;
   routeMode?: "main_session" | "dedicated_contact_conversation";
   boundDepartmentId?: string;
   boundConversationId?: string;

@@ -650,13 +650,13 @@
       "serverNotStarted": "伺服器未啟動",
       "channelLogs": "渠道日誌",
       "noLogs": "暫無日誌",
-      "activateMode": "啟動方式",
-      "activateModeAlways": "始終啟動",
-      "activateModeNever": "不啟動",
-      "activateModeKeyword": "關鍵詞啟動",
+      "activateMode": "入場時機",
+      "activateModeAlways": "始終入場",
+      "activateModeNever": "不入場",
+      "activateModeKeyword": "關鍵詞入場",
       "activateCooldown": "啟動冷卻時間",
       "seconds": "秒",
-      "activateKeywords": "啟動關鍵詞",
+      "activateKeywords": "入場關鍵詞",
       "activateKeywordsPlaceholder": "關鍵詞1, 關鍵詞2"
     },
     "task": {

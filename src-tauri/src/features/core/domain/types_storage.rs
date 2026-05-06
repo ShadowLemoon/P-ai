@@ -189,6 +189,10 @@ struct RemoteImContact {
     bound_conversation_id: Option<String>,
     #[serde(default = "default_remote_im_contact_processing_mode")]
     processing_mode: String,
+    #[serde(default = "default_remote_im_contact_response_strategy")]
+    response_strategy: String,
+    #[serde(default = "default_remote_im_contact_response_guidance")]
+    response_guidance: String,
     #[serde(default)]
     last_activated_at: Option<String>,
     #[serde(default)]
@@ -233,6 +237,14 @@ fn default_remote_im_contact_route_mode() -> String {
 
 fn default_remote_im_contact_processing_mode() -> String {
     "continuous".to_string()
+}
+
+fn default_remote_im_contact_response_strategy() -> String {
+    "always_reply".to_string()
+}
+
+fn default_remote_im_contact_response_guidance() -> String {
+    "当对方在直接提问、请求帮助、请求执行操作、要求确认、追问上一轮未完成事项、明确点名需要你回应、或消息明显期待继续互动时，应该回答。\n当消息只是简单通知、同步信息、表情或寒暄、重复内容、无需你继续推进的收尾回复，或对方明显不期待你介入时，可以不回答。\n如果无法确定，倾向于回答。".to_string()
 }
 
 fn default_user_alias() -> String {

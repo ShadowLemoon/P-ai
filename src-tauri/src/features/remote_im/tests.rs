@@ -202,6 +202,8 @@
             bound_department_id: None,
             bound_conversation_id: None,
             processing_mode: "continuous".to_string(),
+            response_strategy: default_remote_im_contact_response_strategy(),
+            response_guidance: default_remote_im_contact_response_guidance(),
             last_activated_at: None,
             last_message_at: None,
             dingtalk_session_webhook: None,
@@ -340,6 +342,8 @@
             bound_department_id: None,
             bound_conversation_id: None,
             processing_mode: "continuous".to_string(),
+            response_strategy: default_remote_im_contact_response_strategy(),
+            response_guidance: default_remote_im_contact_response_guidance(),
             last_activated_at: None,
             last_message_at: None,
             dingtalk_session_webhook: None,
@@ -770,6 +774,8 @@
             bound_department_id: Some(REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID.to_string()),
             bound_conversation_id: Some(conversation_id.to_string()),
             processing_mode: "continuous".to_string(),
+            response_strategy: default_remote_im_contact_response_strategy(),
+            response_guidance: default_remote_im_contact_response_guidance(),
             last_activated_at: None,
             last_message_at: None,
             dingtalk_session_webhook: None,
@@ -808,6 +814,56 @@
             memory_recall_table: Vec::new(),
             plan_mode_enabled: false,
         }
+    }
+
+    #[test]
+    fn remote_im_collect_secretary_recent_messages_should_keep_last_seven_and_truncate_each_item() {
+        let mut messages = Vec::<ChatMessage>::new();
+        for idx in 0..8 {
+            messages.push(ChatMessage {
+                id: format!("msg-{idx}"),
+                role: if idx % 2 == 0 { "user".to_string() } else { "assistant".to_string() },
+                created_at: now_iso(),
+                speaker_agent_id: None,
+                parts: vec![MessagePart::Text {
+                    text: format!("第{}条{}", idx, "很长的内容".repeat(30)),
+                }],
+                extra_text_blocks: Vec::new(),
+                provider_meta: None,
+                tool_call: None,
+                mcp_call: None,
+            });
+        }
+
+        let digests = remote_im_collect_secretary_recent_messages(&messages, 7);
+
+        assert_eq!(digests.len(), 7);
+        assert_eq!(digests.first().map(|item| item.role.as_str()), Some("你"));
+        assert!(digests.iter().all(|item| item.text.chars().count() <= 100));
+    }
+
+    #[test]
+    fn remote_im_secretary_message_digest_should_include_media_placeholder() {
+        let digest = remote_im_secretary_message_digest(&ChatMessage {
+            id: "msg-image".to_string(),
+            role: "user".to_string(),
+            created_at: now_iso(),
+            speaker_agent_id: None,
+            parts: vec![MessagePart::Image {
+                mime: "image/png".to_string(),
+                bytes_base64: "abc".to_string(),
+                name: None,
+                compressed: false,
+            }],
+            extra_text_blocks: Vec::new(),
+            provider_meta: None,
+            tool_call: None,
+            mcp_call: None,
+        })
+        .expect("digest");
+
+        assert_eq!(digest.role, "对方");
+        assert_eq!(digest.text, "[图片]");
     }
 
     #[test]

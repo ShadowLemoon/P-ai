@@ -444,7 +444,7 @@
               </li>
 
               <li class="list-row flex items-start justify-between gap-3">
-                <div class="font-medium">回复策略</div>
+                <div class="font-medium">入场时机</div>
                 <div class="flex w-64 flex-col gap-2">
                   <select
                     class="select select-bordered select-sm w-full"
@@ -462,6 +462,34 @@
                     :placeholder="t('config.remoteIm.activateKeywordsPlaceholder')"
                     v-model="contactDraft.activationKeywordsText"
                   />
+                </div>
+              </li>
+
+              <li class="list-row flex items-start justify-between gap-3">
+                <div class="font-medium">应答策略</div>
+                <div class="flex w-64 flex-col gap-2">
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    v-model="contactDraft.responseStrategy"
+                  >
+                    <option value="always_reply">始终回复</option>
+                    <option value="smart_judge">智能判断</option>
+                  </select>
+                  <span class="text-[11px] opacity-60">{{ contactDraftResponseStrategyHint }}</span>
+                </div>
+              </li>
+
+              <li class="list-row flex items-start justify-between gap-3">
+                <div class="font-medium">什么时候应该回答</div>
+                <div class="flex w-64 flex-col gap-2">
+                  <textarea
+                    class="textarea textarea-bordered textarea-sm min-h-28 w-full"
+                    v-model="contactDraft.responseGuidance"
+                    placeholder="例如：当对方直接提问、请求帮助、需要确认，或明显期待继续互动时回答。"
+                  />
+                  <span class="text-[11px] opacity-60">
+                    仅在“智能判断”时生效。秘书会把最近 7 条消息和本批新消息交给快速模型，并参考这里的规则判断是否需要回复。
+                  </span>
                 </div>
               </li>
 
@@ -616,10 +644,12 @@ import type { AppConfig, RemoteImChannelConfig, RemoteImContact, RemoteImPlatfor
 import type { ChannelConnectionStatus, ChannelLogEntry, WeixinLoginStatus } from "./remote-im/types";
 import {
   contactActivationHint,
+  contactResponseStrategyHint,
   contactRoutingHint,
   formatLogTime,
   normalizeActivationMode,
   normalizeProcessingMode,
+  normalizeResponseStrategy,
   parseActivationKeywords,
   platformLabelOf,
   processingModeHint,
@@ -797,6 +827,8 @@ type ContactEditDraft = {
   processingMode: "qa" | "continuous";
   activationMode: RemoteImContact["activationMode"];
   activationKeywordsText: string;
+  responseStrategy: NonNullable<RemoteImContact["responseStrategy"]>;
+  responseGuidance: string;
   patienceSeconds: number;
   allowReceive: boolean;
   allowSend: boolean;
@@ -829,6 +861,13 @@ const contactDraftActivationHint = computed(() => {
     activationMode: contactDraft.value.activationMode,
   } as RemoteImContact);
 });
+const contactDraftResponseStrategyHint = computed(() => {
+  if (!selectedContact.value || !contactDraft.value) return "";
+  return contactResponseStrategyHint({
+    ...selectedContact.value,
+    responseStrategy: contactDraft.value.responseStrategy,
+  } as RemoteImContact);
+});
 
 const remoteImDepartmentOptions = computed(() =>
   (props.config.departments || [])
@@ -844,6 +883,8 @@ function buildContactDraftFromContact(item: RemoteImContact): ContactEditDraft {
     processingMode: normalizeProcessingMode(item.processingMode),
     activationMode: normalizeActivationMode(item.activationMode || "never"),
     activationKeywordsText: item.activationKeywords.join(", "),
+    responseStrategy: normalizeResponseStrategy(item.responseStrategy),
+    responseGuidance: String(item.responseGuidance || "").trim(),
     patienceSeconds: Math.max(0, Number(item.patienceSeconds || 60)),
     allowReceive: !!item.allowReceive,
     allowSend: !!item.allowSend,
@@ -1162,12 +1203,24 @@ async function toggleContactAllowSendFiles(item: RemoteImContact, enabled: boole
 
 async function saveContactActivation(
   item: RemoteImContact,
-  patch?: Partial<Pick<RemoteImContact, "activationMode" | "activationKeywords" | "patienceSeconds" | "activationCooldownSeconds">>,
+  patch?: Partial<
+    Pick<
+      RemoteImContact,
+      | "activationMode"
+      | "activationKeywords"
+      | "patienceSeconds"
+      | "activationCooldownSeconds"
+      | "responseStrategy"
+      | "responseGuidance"
+    >
+  >,
 ) {
   const oldMode = item.activationMode;
   const oldKeywords = [...item.activationKeywords];
   const oldPatience = item.patienceSeconds;
   const oldCooldown = item.activationCooldownSeconds;
+  const oldResponseStrategy = normalizeResponseStrategy(item.responseStrategy);
+  const oldResponseGuidance = String(item.responseGuidance || "");
   if (patch?.activationMode) item.activationMode = patch.activationMode;
   if (patch?.activationKeywords) item.activationKeywords = [...patch.activationKeywords];
   if (typeof patch?.patienceSeconds === "number") {
@@ -1176,6 +1229,8 @@ async function saveContactActivation(
   if (typeof patch?.activationCooldownSeconds === "number") {
     item.activationCooldownSeconds = Math.max(0, Math.floor(patch.activationCooldownSeconds));
   }
+  if (patch?.responseStrategy) item.responseStrategy = normalizeResponseStrategy(patch.responseStrategy);
+  if (typeof patch?.responseGuidance === "string") item.responseGuidance = patch.responseGuidance;
   try {
     await invokeTauri<RemoteImContact>("remote_im_update_contact_activation", {
       input: {
@@ -1184,6 +1239,8 @@ async function saveContactActivation(
         activationKeywords: item.activationKeywords,
         patienceSeconds: item.patienceSeconds,
         activationCooldownSeconds: item.activationCooldownSeconds,
+        responseStrategy: normalizeResponseStrategy(item.responseStrategy),
+        responseGuidance: String(item.responseGuidance || ""),
       },
     });
     await refreshContacts();
@@ -1192,6 +1249,8 @@ async function saveContactActivation(
     item.activationKeywords = oldKeywords;
     item.patienceSeconds = oldPatience;
     item.activationCooldownSeconds = oldCooldown;
+    item.responseStrategy = oldResponseStrategy;
+    item.responseGuidance = oldResponseGuidance;
     props.setStatusAction(t("status.saveConfigFailed", { err: String(error) }));
   }
 }
@@ -1325,13 +1384,21 @@ async function saveContactDraft() {
     const keywordsChanged = JSON.stringify(nextKeywords) !== JSON.stringify(currentKeywords);
     const nextActivationMode = normalizeActivationMode(draft.activationMode);
     const modeChanged = nextActivationMode !== normalizeActivationMode(item.activationMode || "never");
+    const nextResponseStrategy = normalizeResponseStrategy(draft.responseStrategy);
+    const responseStrategyChanged =
+      nextResponseStrategy !== normalizeResponseStrategy(item.responseStrategy);
+    const nextResponseGuidance = String(draft.responseGuidance || "").trim();
+    const currentResponseGuidance = String(item.responseGuidance || "").trim();
+    const responseGuidanceChanged = nextResponseGuidance !== currentResponseGuidance;
     const nextPatience = Math.max(0, Math.floor(Number(draft.patienceSeconds) || 0));
     const patienceChanged = nextPatience !== Math.max(0, Math.floor(Number(item.patienceSeconds || 60)));
-    if (modeChanged || keywordsChanged || patienceChanged) {
+    if (modeChanged || keywordsChanged || patienceChanged || responseStrategyChanged || responseGuidanceChanged) {
       await saveContactActivation(item, {
         activationMode: nextActivationMode,
         activationKeywords: nextKeywords,
         patienceSeconds: nextPatience,
+        responseStrategy: nextResponseStrategy,
+        responseGuidance: nextResponseGuidance,
       });
     }
 
@@ -1523,6 +1590,8 @@ async function refreshContacts() {
       item.activationKeywords = Array.isArray(item.activationKeywords) ? item.activationKeywords : [];
       item.activationCooldownSeconds = Math.max(0, Number(item.activationCooldownSeconds || 0));
       item.processingMode = normalizeProcessingMode(item.processingMode);
+      item.responseStrategy = normalizeResponseStrategy(item.responseStrategy);
+      item.responseGuidance = String(item.responseGuidance || "").trim();
       item.allowSendFiles = !!item.allowSendFiles;
       contactKeywordDrafts.value[item.id] = item.activationKeywords.join(", ");
     }

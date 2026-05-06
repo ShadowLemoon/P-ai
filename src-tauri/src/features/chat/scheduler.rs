@@ -1508,6 +1508,7 @@ async fn process_conversation_batch(
             return Err(format!("目标会话不存在，conversationId={conversation_id}"));
         }
     };
+    let secretary_recent_history = remote_im_collect_secretary_recent_messages(&conversation.messages, 7);
     let scheduler_agents = state_read_agents_cached(state)?;
     let has_summary_context = conversation
         .messages
@@ -1591,7 +1592,70 @@ async fn process_conversation_batch(
     // 但本批消息还没正式落入历史的时序错乱。
     let activated_remote_im_sources =
         collect_activated_remote_im_sources(&events, &event_activate_flags);
-    let should_activate = event_activate_flags.iter().copied().any(|v| v);
+    let mut should_activate = event_activate_flags.iter().copied().any(|v| v);
+    let mut skipped_by_secretary = false;
+    if should_activate && !activated_remote_im_sources.is_empty() {
+        if let Some(contact) = remote_im_resolve_secretary_contact(state, &activated_remote_im_sources)? {
+            if remote_im_contact_uses_smart_judge(&contact) {
+                let secretary_new_batch_messages = remote_im_collect_secretary_recent_messages(
+                    &persisted_batch_messages,
+                    persisted_batch_messages.len(),
+                );
+                let decision = match run_remote_im_secretary_decision(
+                    state,
+                    &contact,
+                    &secretary_recent_history,
+                    &secretary_new_batch_messages,
+                )
+                .await
+                {
+                    Ok(result) => result,
+                    Err(err) => {
+                        runtime_log_warn(format!(
+                            "[远程联系人秘书] 判断失败，降级为始终回复: conversation_id={}, contact_id={}, error={}",
+                            conversation_id, contact.id, err
+                        ));
+                        RemoteImSecretaryDecision {
+                            should_reply: true,
+                            reason: format!("秘书判断失败，已降级为始终回复：{err}"),
+                            model_name: String::new(),
+                        }
+                    }
+                };
+                eprintln!(
+                    "[远程联系人秘书] 决策完成: conversation_id={}, contact_id={}, should_reply={}, model={}, reason={}",
+                    conversation_id,
+                    contact.id,
+                    decision.should_reply,
+                    if decision.model_name.trim().is_empty() {
+                        "fallback"
+                    } else {
+                        decision.model_name.as_str()
+                    },
+                    decision.reason
+                );
+                if !decision.should_reply {
+                    should_activate = false;
+                    skipped_by_secretary = true;
+                    let follow_up_sources = remote_im_finalize_round_completion(
+                        state,
+                        &activated_remote_im_sources,
+                        Some("no_reply"),
+                        None,
+                        None,
+                        &history_flush_time,
+                    )?;
+                    if !follow_up_sources.is_empty() {
+                        runtime_log_warn(format!(
+                            "[远程联系人秘书] 判定不回复后仍出现待办续跑，当前先跳过: conversation_id={}, source_count={}",
+                            conversation_id,
+                            follow_up_sources.len()
+                        ));
+                    }
+                }
+            }
+        }
+    }
     let guided_event_ids = events
         .iter()
         .filter(|event| event.queue_mode == ChatQueueMode::Guided)
@@ -1833,7 +1897,7 @@ async fn process_conversation_batch(
                 context_window_tokens: None,
                 max_output_tokens: None,
                 context_usage_percent: None,
-                remote_im_reply_decision: None,
+                remote_im_reply_decision: skipped_by_secretary.then_some("no_reply".to_string()),
                 remote_im_reply_target: None,
             },
         )?;

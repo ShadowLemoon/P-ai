@@ -14,6 +14,12 @@ export function normalizeActivationMode(value: string): RemoteImContact["activat
   return "never";
 }
 
+export function normalizeResponseStrategy(
+  value?: string,
+): NonNullable<RemoteImContact["responseStrategy"]> {
+  return value === "smart_judge" ? "smart_judge" : "always_reply";
+}
+
 export function normalizeProcessingMode(value?: string): "qa" | "continuous" {
   return value === "qa" ? "qa" : "continuous";
 }
@@ -34,9 +40,17 @@ export function processingModeHint(item: RemoteImContact): string {
 
 export function contactActivationHint(item: RemoteImContact): string {
   const mode = normalizeActivationMode(item.activationMode);
-  if (mode === "always") return "始终回复：任何时候都回复。";
-  if (mode === "keyword") return "关键字触发：消息命中关键字时回复。";
-  return "不回复：任何时候都不回复。";
+  if (mode === "always") return "始终入场：满足接待条件时，总是允许进入激活流程。";
+  if (mode === "keyword") return "关键词入场：消息命中关键词时，才允许进入激活流程。";
+  return "不入场：只记录消息，不进入激活流程。";
+}
+
+export function contactResponseStrategyHint(item: RemoteImContact): string {
+  const mode = normalizeResponseStrategy(item.responseStrategy);
+  if (mode === "smart_judge") {
+    return "智能判断：先用快速模型检查这批消息是否真的需要回复。";
+  }
+  return "始终回复：一旦允许入场，就直接交给处理部门回复。";
 }
 
 export function parseActivationKeywords(raw: string): string[] {

@@ -650,13 +650,13 @@
       "serverNotStarted": "Server not started",
       "channelLogs": "Channel Logs",
       "noLogs": "No logs yet",
-      "activateMode": "Activate Mode",
-      "activateModeAlways": "Always",
-      "activateModeNever": "Never Activate",
-      "activateModeKeyword": "Keyword",
+      "activateMode": "Entry Timing",
+      "activateModeAlways": "Always Enter",
+      "activateModeNever": "Never Enter",
+      "activateModeKeyword": "Keyword Entry",
       "activateCooldown": "Activate Cooldown",
       "seconds": "seconds",
-      "activateKeywords": "Activate Keywords",
+      "activateKeywords": "Entry Keywords",
       "activateKeywordsPlaceholder": "keyword1, keyword2"
     },
     "task": {

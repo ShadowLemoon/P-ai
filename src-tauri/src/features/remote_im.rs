@@ -112,6 +112,10 @@ struct RemoteImContactActivationUpdateInput {
     patience_seconds: u64,
     #[serde(default)]
     activation_cooldown_seconds: u64,
+    #[serde(default = "default_remote_im_contact_response_strategy")]
+    response_strategy: String,
+    #[serde(default = "default_remote_im_contact_response_guidance")]
+    response_guidance: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -253,6 +257,8 @@ fn remote_im_upsert_contact_for_inbound(
         bound_department_id: Some(REMOTE_CUSTOMER_SERVICE_DEPARTMENT_ID.to_string()),
         bound_conversation_id: None,
         processing_mode: "continuous".to_string(),
+        response_strategy: default_remote_im_contact_response_strategy(),
+        response_guidance: default_remote_im_contact_response_guidance(),
         last_activated_at: None,
         last_message_at: Some(now.to_string()),
         dingtalk_session_webhook: if matches!(input.platform, RemoteImPlatform::Dingtalk) {
@@ -305,6 +311,22 @@ fn normalize_contact_processing_mode(value: &str) -> String {
     match value.trim().to_ascii_lowercase().as_str() {
         "qa" => "qa".to_string(),
         _ => "continuous".to_string(),
+    }
+}
+
+fn normalize_contact_response_strategy(value: &str) -> String {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "smart_judge" => "smart_judge".to_string(),
+        _ => "always_reply".to_string(),
+    }
+}
+
+fn normalize_contact_response_guidance(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        default_remote_im_contact_response_guidance()
+    } else {
+        trimmed.to_string()
     }
 }
 
@@ -513,6 +535,233 @@ fn remote_im_message_is_readable(message: &ChatMessage) -> bool {
         return remote_im_message_text_len(message) > 0;
     }
     false
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteImSecretaryMessageDigest {
+    role: String,
+    text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteImSecretaryDecisionReply {
+    #[serde(default, alias = "should_reply")]
+    should_reply: bool,
+    #[serde(default)]
+    reason: String,
+}
+
+#[derive(Debug, Clone)]
+struct RemoteImSecretaryDecision {
+    should_reply: bool,
+    reason: String,
+    model_name: String,
+}
+
+fn remote_im_contact_uses_smart_judge(contact: &RemoteImContact) -> bool {
+    normalize_contact_response_strategy(&contact.response_strategy) == "smart_judge"
+}
+
+fn remote_im_secretary_message_role_label(role: &str) -> Option<&'static str> {
+    match role.trim() {
+        "user" => Some("对方"),
+        "assistant" => Some("你"),
+        _ => None,
+    }
+}
+
+fn remote_im_secretary_truncate_text(text: &str, max_chars: usize) -> String {
+    text.chars().take(max_chars).collect::<String>()
+}
+
+fn remote_im_secretary_message_digest(
+    message: &ChatMessage,
+) -> Option<RemoteImSecretaryMessageDigest> {
+    let role = remote_im_secretary_message_role_label(message.role.trim())?;
+    if is_context_compaction_message(message, message.role.trim()) {
+        return None;
+    }
+    let mut chunks = Vec::<String>::new();
+    for part in &message.parts {
+        match part {
+            MessagePart::Text { text } => {
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    chunks.push(trimmed.to_string());
+                }
+            }
+            MessagePart::Image { .. } => chunks.push("[图片]".to_string()),
+            MessagePart::Audio { .. } => chunks.push("[音频]".to_string()),
+        }
+    }
+    for block in &message.extra_text_blocks {
+        let trimmed = block.trim();
+        if !trimmed.is_empty() {
+            chunks.push(trimmed.to_string());
+        }
+    }
+    if chunks.is_empty() {
+        return None;
+    }
+    Some(RemoteImSecretaryMessageDigest {
+        role: role.to_string(),
+        text: remote_im_secretary_truncate_text(&chunks.join("\n"), 100),
+    })
+}
+
+fn remote_im_collect_secretary_recent_messages(
+    messages: &[ChatMessage],
+    limit: usize,
+) -> Vec<RemoteImSecretaryMessageDigest> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut selected = Vec::<RemoteImSecretaryMessageDigest>::new();
+    for message in messages.iter().rev() {
+        if let Some(digest) = remote_im_secretary_message_digest(message) {
+            selected.push(digest);
+            if selected.len() >= limit {
+                break;
+            }
+        }
+    }
+    selected.reverse();
+    selected
+}
+
+fn remote_im_secretary_messages_to_text(messages: &[RemoteImSecretaryMessageDigest]) -> String {
+    if messages.is_empty() {
+        return "（无）".to_string();
+    }
+    messages
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| format!("{}. {}：{}", idx + 1, item.role, item.text))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn build_remote_im_secretary_prepared_prompt(
+    language: &str,
+    contact: &RemoteImContact,
+    history_messages: &[RemoteImSecretaryMessageDigest],
+    new_batch_messages: &[RemoteImSecretaryMessageDigest],
+) -> PreparedPrompt {
+    let guidance = normalize_contact_response_guidance(&contact.response_guidance);
+    let contact_name = remote_im_contact_display_name(contact);
+    PreparedPrompt {
+        preamble: format!(
+            "请使用{language}完成远程联系人应答判断。\n\
+你是正式处理部门入场前的秘书，只负责判断这一次是否应该回应，不负责代写回复。\n\
+你会收到两段内容：最近 7 条旧消息，以及最近这一批新消息。每条消息都只保留了前 100 个字，信息不足时不要过度推断。\n\
+请优先遵守“什么时候应该回答”这段规则；如果规则不够，再按常识判断。\n\
+如果无法确定，倾向于 shouldReply=true。\n\
+只返回一个 JSON 对象，不要输出 Markdown、代码块或额外解释。\n\
+JSON 只能包含字段：shouldReply, reason。"
+        ),
+        history_messages: Vec::new(),
+        latest_user_text: format!(
+            "联系人：{contact_name}\n\
+什么时候应该回答：\n{guidance}\n\n\
+最近 7 条旧消息：\n{}\n\n\
+最近这一批新消息：\n{}\n\n\
+请直接输出 JSON。",
+            remote_im_secretary_messages_to_text(history_messages),
+            remote_im_secretary_messages_to_text(new_batch_messages),
+        ),
+        latest_user_meta_text: String::new(),
+        latest_user_extra_text: String::new(),
+        latest_user_extra_blocks: Vec::new(),
+        latest_images: Vec::new(),
+        latest_audios: Vec::new(),
+    }
+}
+
+fn remote_im_secretary_extract_json(raw: &str) -> &str {
+    let trimmed = raw.trim();
+    if let Some(stripped) = trimmed.strip_prefix("```json") {
+        return stripped.trim().trim_end_matches("```").trim();
+    }
+    if let Some(stripped) = trimmed.strip_prefix("```") {
+        return stripped.trim().trim_end_matches("```").trim();
+    }
+    trimmed
+}
+
+fn remote_im_resolve_secretary_contact(
+    state: &AppState,
+    activated_sources: &[RemoteImActivationSource],
+) -> Result<Option<RemoteImContact>, String> {
+    let Some(source) = activated_sources.first() else {
+        return Ok(None);
+    };
+    if activated_sources.len() > 1 {
+        runtime_log_warn(format!(
+            "[远程联系人秘书] 本轮激活联系人超过 1 个，跳过秘书判断: source_count={}",
+            activated_sources.len()
+        ));
+        return Ok(None);
+    }
+    let runtime = state_read_runtime_state_cached(state)?;
+    Ok(remote_im_contact_by_activation_source_in_runtime(&runtime.remote_im_contacts, source).cloned())
+}
+
+async fn run_remote_im_secretary_decision(
+    state: &AppState,
+    contact: &RemoteImContact,
+    history_messages: &[RemoteImSecretaryMessageDigest],
+    new_batch_messages: &[RemoteImSecretaryMessageDigest],
+) -> Result<RemoteImSecretaryDecision, String> {
+    let review_api_config_id = current_tool_review_api_config_id(state)?
+        .ok_or_else(|| "未配置快速模型".to_string())?;
+    let app_config = state_read_config_cached(state)?;
+    let selected_api = resolve_selected_api_config(&app_config, Some(&review_api_config_id))
+        .ok_or_else(|| format!("快速模型配置不存在：{}", review_api_config_id))?;
+    if !selected_api.enable_text || !selected_api.request_format.is_chat_text() {
+        return Err("快速模型不支持文本对话".to_string());
+    }
+    let resolved_api = resolve_api_config(&app_config, Some(&review_api_config_id))?;
+    let model_name = if selected_api.model.trim().is_empty() {
+        resolved_api.model.clone()
+    } else {
+        selected_api.model.trim().to_string()
+    };
+    let language = terminal_smart_review_language(&app_config.ui_language);
+    let execution = invoke_model_with_policy(
+        &resolved_api,
+        &model_name,
+        build_remote_im_secretary_prepared_prompt(
+            language,
+            contact,
+            history_messages,
+            new_batch_messages,
+        ),
+        CallPolicy {
+            scene: "Remote IM secretary review",
+            timeout_secs: Some(12),
+            json_only: true,
+        },
+        Some(state),
+    )
+    .await;
+    push_model_call_log_parts(Some(state), &execution);
+    let reply = execution.result?;
+    let raw_text = if reply.final_response_text.trim().is_empty() {
+        reply.assistant_text.trim()
+    } else {
+        reply.final_response_text.trim()
+    };
+    let parsed = serde_json::from_str::<RemoteImSecretaryDecisionReply>(
+        remote_im_secretary_extract_json(raw_text),
+    )
+    .map_err(|err| format!("解析秘书 JSON 失败: {err}; raw={}", raw_text.trim()))?;
+    Ok(RemoteImSecretaryDecision {
+        should_reply: parsed.should_reply,
+        reason: parsed.reason.trim().to_string(),
+        model_name,
+    })
 }
 
 fn remote_im_collect_recent_readable_messages(
@@ -1564,6 +1813,8 @@ fn remote_im_update_contact_activation(
     contact.activation_keywords = normalize_contact_activation_keywords(&input.activation_keywords);
     contact.patience_seconds = input.patience_seconds;
     contact.activation_cooldown_seconds = input.activation_cooldown_seconds;
+    contact.response_strategy = normalize_contact_response_strategy(&input.response_strategy);
+    contact.response_guidance = normalize_contact_response_guidance(&input.response_guidance);
     let output = contact.clone();
     state_write_runtime_state_cached(&state, &runtime)?;
     Ok(output)

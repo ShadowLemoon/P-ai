@@ -269,10 +269,7 @@ async fn start_background_services_after_frontend_ready(
                 Ok(errors) => {
                     refresh_global_tool_schema_cache(&mcp_state);
                     if !errors.is_empty() {
-                        eprintln!(
-                            "[启动] MCP 自动重部署完成，发生 {} 个错误",
-                            errors.len()
-                        );
+                        eprintln!("[启动] MCP 自动重部署完成，发生 {} 个错误", errors.len());
                         for item in errors {
                             eprintln!("[启动] MCP 自动重部署异常: {} | {}", item.item, item.error);
                         }
@@ -308,8 +305,7 @@ async fn start_remote_im_services_after_frontend_ready(app_handle: AppHandle) {
         if let Err(err) = onebot_v11_ws_server_start(channel.clone(), app_handle.clone()) {
             eprintln!(
                 "[启动] 前端就绪后启动 OneBot v11 WS 服务失败: channel_id={}, error={}",
-                channel.id,
-                err
+                channel.id, err
             );
         }
     }
@@ -335,8 +331,7 @@ async fn start_remote_im_services_after_frontend_ready(app_handle: AppHandle) {
             if let Err(err) = manager.start_channel(channel, state_clone).await {
                 eprintln!(
                     "[启动] 前端就绪后启动钉钉 Stream 渠道失败: channel_id={}, error={}",
-                    channel_id,
-                    err
+                    channel_id, err
                 );
             }
         });
@@ -357,8 +352,7 @@ async fn start_remote_im_services_after_frontend_ready(app_handle: AppHandle) {
             {
                 eprintln!(
                     "[启动] 前端就绪后启动个人微信渠道失败: channel_id={}, error={}",
-                    channel.id,
-                    err
+                    channel.id, err
                 );
             }
         });
@@ -466,7 +460,10 @@ fn main() {
                 }
             };
             if let Err(err) = show_window(app, target) {
-                eprintln!("[单实例] 激活已有实例失败: target={}, error={}", target, err);
+                eprintln!(
+                    "[单实例] 激活已有实例失败: target={}, error={}",
+                    target, err
+                );
             } else {
                 eprintln!("[单实例] 已拦截重复启动并激活现有实例: target={}", target);
             }

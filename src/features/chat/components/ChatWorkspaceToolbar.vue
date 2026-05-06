@@ -116,6 +116,12 @@
             @
           </span>
           <span
+            v-else-if="entry.hasBackgroundTask"
+            class="indicator-item indicator-bottom indicator-end inline-flex min-w-5 translate-x-1/4 translate-y-1/4 items-center justify-center rounded-full border border-base-300 bg-base-100 px-1 py-0.5 text-[9px] text-base-content shadow-sm"
+          >
+            <span class="loading loading-dots loading-xs"></span>
+          </span>
+          <span
             v-if="props.selectedMentionKeys.length > 0 && entry.isFrontSpeaking"
             class="indicator-item indicator-top indicator-start inline-flex h-4 w-4 -translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-base-300 text-[9px] font-bold text-base-content"
           >

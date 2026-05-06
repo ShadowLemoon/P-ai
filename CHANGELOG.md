@@ -2,6 +2,8 @@
 
 ## 进行中
 
+- 修复（chat-mention-avatar-background-task-indicator）：被 `@` 触发异步委托的人格在后台执行期间，聊天工具栏头像会显示三点工作提醒，便于观察谁正在处理委托。
+
 ## 发布：v0.9.74
 
 - 发布（release-0.9.74）：同步前端 `package.json`、Tauri `tauri.conf.json` 与 Rust `Cargo.toml` / `Cargo.lock` 版本号到 `0.9.74`，纳入本轮归档索引自愈、远程秘书上下文修复、委托直属下级语义、工具评估与代码审查拆分及清理。

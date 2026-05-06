@@ -698,11 +698,16 @@ fn build_summary_context_requirement_block(scene: SummaryContextScene) -> String
              请为另一个将继续当前任务的语言模型生成一份交接摘要。\n\
              你的工具都已经被禁用，你只能生成 JSON 完成任务。\n\
              title 表示“当前会话标题”，应概括本轮主题，尽量控制在 10 个汉字以内。\n\
-             请包含以下内容：\n\
-             - 当前进展，以及已经做出的关键决策\n\
-             - 重要上下文、约束条件、或用户偏好\n\
-             - 剩余待办事项（给出清晰的下一步）\n\
-             - 为继续工作所需的关键数据、示例或引用\n\
+             summary 请直接按下面顺序自然书写，不要额外发明字段名：\n\
+             第一，先写当前进展，以及已经做出的关键决策。\n\
+             第二，再写重要上下文、约束条件、用户偏好。\n\
+             第三，再写剩余待办事项，给出清晰的下一步。\n\
+             第四，补充后续工作需要回看的文件片段、网页片段、日志片段或引用材料。\n\
+             - 只有在后续续跑明显还会用到时，才补充这部分\n\
+             - 优先保留最近刚读到、后续还要回看的片段\n\
+             - 每条尽量包含可回看的定位信息（如文件路径、行号、页面名、日志来源）\n\
+             - 每条都尽量附上短原文摘录，避免只写意译；若定位信息已足够，则摘录保持最短必要长度\n\
+             - 推荐格式：- `定位信息` 为什么重要\\n  原文：摘录\n\
              请保持内容简洁、结构化，并专注于帮助下一个语言模型无缝继续当前工作。"
                 .to_string()
         }
@@ -740,7 +745,7 @@ fn build_summary_context_memory_block(
 fn build_summary_context_json_contract_block(scene: SummaryContextScene) -> String {
     let summary_rule = match scene {
         SummaryContextScene::Compaction => {
-            "summary 表示本次上下文检查点压缩的交接摘要，必须方便下一个模型继续当前任务直接使用。"
+            "summary 表示本次上下文检查点压缩的交接摘要，必须方便下一个模型继续当前任务直接使用；“关键证据”如果需要出现，也只能作为 summary 正文最后的小节，绝不能成为独立 JSON 字段。"
         }
         SummaryContextScene::Archive => {
             "summary 表示本次会话归档结论汇报，必须能够让后续阅读者直接知道这轮最终得出了什么结论。"

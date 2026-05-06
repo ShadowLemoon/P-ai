@@ -2,6 +2,7 @@
 
 ## 进行中
 
+- 调整（delegate-direct-child-hierarchy）：委托全面切换到部门树直属下级语义；没有直接下级的部门不再暴露 `delegate`；`delegate` 默认同步执行，委托线程内只允许同步再次委托；同人格岗位之间禁止异步委托并统一提示“你同时担任这个职位，只能发起同步委托”。
 - 调整（tool-review-code-review-split）：统一“工具评估 / 代码审查”口径，代码审查只按部门委托，不再夹带当前聊天模型；批量工具处理仅逐项执行工具评估，不再保留旧批次审查提交流程。
 - 修复（tool-review-direct-child-retry-guard）：代码审查重试严格受直属下级部门约束；当不存在可用直属下级时，前端不再创建必然失败的新报告覆盖旧结果。
 - 清理（tool-review-legacy-cleanup）：启动迁移与报告列表会清除遗留 `tool_review_report` 消息和 `scope=batch` 旧结果记录，并修复 pending 报告完成后 findings 自动勾选刷新。

@@ -582,6 +582,32 @@ fn tool_restricted_by_department(
     )
 }
 
+fn delegate_builtin_tool_unavailable_reason(
+    config: &AppConfig,
+    department: Option<&DepartmentConfig>,
+) -> Option<String> {
+    let Some(department) = department else {
+        return Some("当前人格未归属部门，无法使用委托".to_string());
+    };
+    if !department_direct_child_ids(config, department).is_empty() {
+        return None;
+    }
+    Some("当前部门没有直接下级，无法使用委托".to_string())
+}
+
+fn builtin_tool_unavailable_reason(
+    config: &AppConfig,
+    department: Option<&DepartmentConfig>,
+    tool_id: &str,
+) -> Option<String> {
+    if tool_id.trim() == "delegate" {
+        if let Some(reason) = delegate_builtin_tool_unavailable_reason(config, department) {
+            return Some(reason);
+        }
+    }
+    tool_restricted_by_department(department, tool_id)
+}
+
 fn tool_forced_by_department(
     department: Option<&DepartmentConfig>,
     tool_id: &str,
@@ -746,5 +772,47 @@ mod types_storage_tests {
         assert!(department_has_direct_child(&config, "dept-a", "shared-team"));
         assert!(department_has_direct_child(&config, "dept-b", "shared-team"));
         assert!(!department_has_direct_child(&config, "dept-a", "missing-team"));
+    }
+
+    #[test]
+    fn delegate_builtin_tool_unavailable_reason_should_require_direct_children() {
+        let mut config = AppConfig::default();
+
+        assert_eq!(
+            delegate_builtin_tool_unavailable_reason(&config, None),
+            Some("当前人格未归属部门，无法使用委托".to_string())
+        );
+
+        let mut parent = default_assistant_department("api-a");
+        parent.id = "dept-parent".to_string();
+        parent.name = "父部门".to_string();
+        parent.is_built_in_assistant = false;
+        parent.child_department_ids = Vec::new();
+
+        let mut child = default_assistant_department("api-a");
+        child.id = "dept-child".to_string();
+        child.name = "子部门".to_string();
+        child.is_built_in_assistant = false;
+
+        config.departments = vec![parent.clone(), child.clone()];
+
+        let parent_department = department_by_id(&config, "dept-parent").expect("parent");
+        assert_eq!(
+            delegate_builtin_tool_unavailable_reason(&config, Some(parent_department)),
+            Some("当前部门没有直接下级，无法使用委托".to_string())
+        );
+
+        let parent_index = config
+            .departments
+            .iter()
+            .position(|item| item.id == "dept-parent")
+            .expect("parent index");
+        config.departments[parent_index].child_department_ids = vec!["dept-child".to_string()];
+
+        let parent_department = department_by_id(&config, "dept-parent").expect("parent updated");
+        assert_eq!(
+            delegate_builtin_tool_unavailable_reason(&config, Some(parent_department)),
+            None
+        );
     }
 }

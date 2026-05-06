@@ -3789,6 +3789,14 @@ async function userAsyncDelegateFromSelection(payload: {
   const question = String(payload?.question || "").trim();
   const focus = String(payload?.focus || "").trim();
   if (!conversationId || !targetDepartmentId || !question) return false;
+  const sourceAgentId = String(currentForegroundAgentId.value || "").trim();
+  const targetOwnerAgentId = String(
+    createConversationDepartmentOptions.value.find((item) => item.id === targetDepartmentId)?.ownerAgentId || "",
+  ).trim();
+  if (sourceAgentId && targetOwnerAgentId && sourceAgentId === targetOwnerAgentId) {
+    setStatus("你同时担任这个职位，只能发起同步委托");
+    return false;
+  }
   try {
     const result = await invokeTauri<{
       delegateId: string;

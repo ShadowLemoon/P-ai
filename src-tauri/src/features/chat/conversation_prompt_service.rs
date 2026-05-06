@@ -492,7 +492,7 @@ impl ConversationPromptService {
         }
         tool_rule_blocks.extend(department_snapshot.department_tool_rule_blocks.iter().cloned());
         tool_rule_blocks.push(build_question_and_planning_rule_block());
-        if department_builtin_tool_enabled(current_department, "meme") {
+        if department_builtin_tool_enabled(&department_config, current_department, "meme") {
             if let Some(meme_block) = meme_prompt_rule_block(state).as_deref() {
                 tool_rule_blocks.push(meme_block.trim().to_string());
             }

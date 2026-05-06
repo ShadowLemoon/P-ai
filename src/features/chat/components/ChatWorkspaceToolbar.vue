@@ -99,24 +99,24 @@
         </span>
       </button>
       <button
-        v-for="persona in personaPresenceChips"
-        :key="persona.id"
+        v-for="entry in mentionEntries"
+        :key="mentionEntryKey(entry)"
         type="button"
         class="btn btn-ghost btn-sm btn-circle overflow-visible p-0 shrink-0 border relative"
-        :class="personaChipClass(persona)"
-        :title="`部门：${persona.departmentName}\n人格：${persona.name}`"
-        :disabled="chatting || frozen || !mentionableAgentIds.includes(persona.id)"
-        @click="emit('mentionPersona', persona.id)"
+        :class="personaChipClass(entry)"
+        :title="mentionEntryTitle(entry)"
+        :disabled="chatting || frozen || !entry.mentionable"
+        @click="emit('mentionEntry', entry)"
       >
         <div class="indicator">
           <span
-            v-if="selectedMentionAgentIds.includes(persona.id)"
+            v-if="selectedMentionKeys.includes(mentionEntryKey(entry))"
             class="indicator-item indicator-top indicator-end inline-flex h-4 w-4 translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-content"
           >
             @
           </span>
           <span
-            v-if="props.selectedMentionAgentIds.length > 0 && persona.isFrontSpeaking"
+            v-if="props.selectedMentionKeys.length > 0 && entry.isFrontSpeaking"
             class="indicator-item indicator-top indicator-start inline-flex h-4 w-4 -translate-x-1/4 -translate-y-1/4 items-center justify-center rounded-full bg-base-300 text-[9px] font-bold text-base-content"
           >
             禁
@@ -124,20 +124,20 @@
           <div class="avatar">
             <div class="w-7 rounded-full">
               <img
-                v-if="persona.avatarUrl"
-                :src="persona.avatarUrl"
-                :alt="persona.name"
+                v-if="entry.avatarUrl"
+                :src="entry.avatarUrl"
+                :alt="entry.agentName"
                 class="w-7 h-7 rounded-full object-cover"
-                :class="frontSpeakingMuted(persona) ? 'grayscale opacity-75' : ''"
+                :class="frontSpeakingMuted(entry) ? 'grayscale opacity-75' : ''"
               />
               <div
                 v-else
                 class="w-7 h-7 rounded-full flex items-center justify-center text-[10px]"
-                :class="frontSpeakingMuted(persona)
+                :class="frontSpeakingMuted(entry)
                   ? 'bg-base-300 text-base-content/70'
                   : 'bg-neutral text-neutral-content'"
               >
-                {{ avatarInitial(persona.name) }}
+                {{ avatarInitial(entry.agentName) }}
               </div>
             </div>
           </div>
@@ -151,7 +151,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
 import { ClipboardList, ExternalLink, Folder, GitBranchPlus, Glasses, Grip, Package, SquareTerminal, Timer } from "lucide-vue-next";
-import type { ChatPersonaPresenceChip } from "../../../types/app";
+import type { ChatMentionEntry } from "../../../types/app";
 
 const props = defineProps<{
   chatting: boolean;
@@ -160,9 +160,8 @@ const props = defineProps<{
   workspaceButtonLabel: string;
   workspaceButtonName: string;
   workspaceButtonDisabled?: boolean;
-  personaPresenceChips: ChatPersonaPresenceChip[];
-  mentionableAgentIds: string[];
-  selectedMentionAgentIds: string[];
+  mentionEntries: ChatMentionEntry[];
+  selectedMentionKeys: string[];
   supervisionActive: boolean;
   supervisionLabel: string;
   supervisionActiveLabel: string;
@@ -187,7 +186,7 @@ const emit = defineEmits<{
   (e: "openShareSelection"): void;
   (e: "detachConversation"): void;
   (e: "toggleToolReview"): void;
-  (e: "mentionPersona", agentId: string): void;
+  (e: "mentionEntry", entry: ChatMentionEntry): void;
 }>();
 
 const { t } = useI18n();
@@ -228,20 +227,39 @@ function avatarInitial(name: string): string {
   return text[0].toUpperCase();
 }
 
-function personaChipClass(persona: ChatPersonaPresenceChip): string {
-  const selected = props.selectedMentionAgentIds.includes(persona.id);
-  const muted = frontSpeakingMuted(persona);
+function mentionEntryKey(entry: ChatMentionEntry): string {
+  const agentId = String(entry.agentId || "").trim();
+  const departmentId = String(entry.departmentId || "").trim();
+  return departmentId ? `${agentId}:${departmentId}` : agentId;
+}
+
+function mentionEntryTitle(entry: ChatMentionEntry): string {
+  const lines = [
+    `人格：${entry.agentName}`,
+    `部门：${entry.departmentName}`,
+  ];
+  const reason = String(entry.unavailableReason || "").trim();
+  if (reason) lines.push(`不可用：${reason}`);
+  return lines.join("\n");
+}
+
+function personaChipClass(entry: ChatMentionEntry): string {
+  const selected = props.selectedMentionKeys.includes(mentionEntryKey(entry));
+  const muted = frontSpeakingMuted(entry);
   if (selected) {
     return "border-primary/60 bg-primary/10 hover:border-primary hover:bg-primary/15";
   }
   if (muted) {
     return "border-base-300/70 bg-base-200/70 hover:border-base-300 hover:bg-base-200";
   }
+  if (!entry.mentionable) {
+    return "border-base-300/70 bg-base-200/70 text-base-content/55 hover:border-base-300 hover:bg-base-200";
+  }
   return "border-base-300/70 bg-base-100/70 hover:border-base-300 hover:bg-base-200";
 }
 
-function frontSpeakingMuted(persona: ChatPersonaPresenceChip): boolean {
-  return props.selectedMentionAgentIds.length > 0 && persona.isFrontSpeaking;
+function frontSpeakingMuted(entry: ChatMentionEntry): boolean {
+  return props.selectedMentionKeys.length > 0 && entry.isFrontSpeaking;
 }
 
 onMounted(() => {

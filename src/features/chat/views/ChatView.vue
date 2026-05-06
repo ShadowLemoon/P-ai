@@ -238,9 +238,8 @@
                 :workspace-button-disabled="activeConversationSummary?.kind === 'remote_im_contact'"
                 :hide-menu-button="activeConversationSummary?.kind === 'remote_im_contact'"
                 :hide-workspace-button="activeConversationSummary?.kind === 'remote_im_contact'"
-                :persona-presence-chips="personaPresenceChips"
-                :mentionable-agent-ids="mentionableAgentIds"
-                :selected-mention-agent-ids="selectedMentionAgentIds"
+                :mention-entries="mentionEntries"
+                :selected-mention-keys="selectedMentionKeys"
                 :supervision-active="supervisionActive"
                 :supervision-label="t('chat.supervision.button')"
                 :supervision-active-label="t('chat.supervision.buttonActive')"
@@ -257,15 +256,22 @@
                 @open-delegate-selection="openDelegateSelectionMenu"
                 @open-forward-selection="openForwardSelectionMenu"
                 @open-share-selection="openShareSelectionMenu"
-                @mention-persona="agentId => {
-                  const normalizedAgentId = String(agentId || '').trim();
-                  if (!normalizedAgentId) return;
-                  if (selectedMentionAgentIds.includes(normalizedAgentId)) {
-                    emit('removeMention', normalizedAgentId);
+                @mention-entry="entry => {
+                  const agentId = String(entry?.agentId || '').trim();
+                  const departmentId = String(entry?.departmentId || '').trim();
+                  if (!agentId || !departmentId) return;
+                  const mentionKey = `${agentId}:${departmentId}`;
+                  if (selectedMentionKeys.includes(mentionKey)) {
+                    emit('removeMention', { agentId, departmentId });
                     return;
                   }
-                  const match = mentionOptions.find((item) => String(item.agentId || '').trim() === normalizedAgentId);
-                  if (match) emit('addMention', match);
+                  emit('addMention', {
+                    agentId,
+                    agentName: String(entry?.agentName || '').trim() || agentId,
+                    departmentId,
+                    departmentName: String(entry?.departmentName || '').trim() || departmentId,
+                    avatarUrl: String(entry?.avatarUrl || '').trim() || undefined,
+                  });
                 }"
                 @open-supervision-task="$emit('openSupervisionTask')"
                 @detach-conversation="handleDetachConversationRequest"
@@ -354,7 +360,7 @@
             :selected-message-count="selectedMessageBlocks.length"
             :chat-input="chatInput"
             :instruction-presets="instructionPresets"
-            :mention-options="mentionOptions"
+            :mention-entries="mentionEntries"
             :selected-mentions="selectedMentions"
             :chat-input-placeholder="chatInputPlaceholder"
             :clipboard-images="clipboardImages"
@@ -488,7 +494,7 @@ import { isDarkAppTheme } from "../../shell/composables/use-app-theme";
 import { ChevronsDown, History, ListTodo } from "lucide-vue-next";
 import "markstream-vue/index.css";
 import { invokeTauri } from "../../../services/tauri-api";
-import type { ApiConfigItem, ChatConversationOverviewItem, ChatMentionTarget, ChatMessageBlock, ChatPersonaPresenceChip, ChatTodoItem, ConversationDelegateStatusSummary, PromptCommandPreset, ShellWorkspace } from "../../../types/app";
+import type { ApiConfigItem, ChatConversationOverviewItem, ChatMentionEntry, ChatMentionTarget, ChatMessageBlock, ChatTodoItem, ConversationDelegateStatusSummary, PromptCommandPreset, ShellWorkspace } from "../../../types/app";
 import ChatMessageItem from "../components/ChatMessageItem.vue";
 import ChatApprovalPanel from "../components/ChatApprovalPanel.vue";
 import ChatComposerPanel from "../components/ChatComposerPanel.vue";
@@ -590,8 +596,7 @@ const props = defineProps<{
   assistantAvatarUrl: string;
   personaNameMap: Record<string, string>;
   personaAvatarUrlMap: Record<string, string>;
-  personaPresenceChips: ChatPersonaPresenceChip[];
-  mentionOptions: ChatMentionTarget[];
+  mentionEntries: ChatMentionEntry[];
   selectedMentions: ChatMentionTarget[];
   latestUserText: string;
   latestUserImages: Array<{ mime: string; bytesBase64: string }>;
@@ -1006,14 +1011,13 @@ const chatRenderItems = computed<ChatRenderItem[]>(() => {
   flushGroup();
   return items;
 });
-const mentionableAgentIds = computed(() =>
-  props.mentionOptions
-    .map((item) => String(item?.agentId || "").trim())
-    .filter((value, index, list) => !!value && list.indexOf(value) === index),
-);
-const selectedMentionAgentIds = computed(() =>
+const selectedMentionKeys = computed(() =>
   (Array.isArray(props.selectedMentions) ? props.selectedMentions : [])
-    .map((item) => String(item?.agentId || "").trim())
+    .map((item) => {
+      const agentId = String(item?.agentId || "").trim();
+      const departmentId = String(item?.departmentId || "").trim();
+      return agentId && departmentId ? `${agentId}:${departmentId}` : "";
+    })
     .filter((value, index, list) => !!value && list.indexOf(value) === index),
 );
 const latestPendingPlanMessageId = computed(() => {
@@ -1037,7 +1041,7 @@ const emit = defineEmits<{
   (e: "update:chatInput", value: string): void;
   (e: "update:selectedInstructionPrompts", value: PromptCommandPreset[]): void;
   (e: "addMention", value: ChatMentionTarget): void;
-  (e: "removeMention", agentId: string): void;
+  (e: "removeMention", value: string | { agentId: string; departmentId?: string }): void;
   (e: "sideConversationListVisibleChange", value: boolean): void;
   (e: "removeClipboardImage", index: number): void;
   (e: "removeQueuedAttachmentNotice", index: number): void;

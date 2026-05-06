@@ -397,7 +397,7 @@ const props = defineProps<{
   viewMode: "chat" | "archives" | "config";
   detachedChatWindow?: boolean;
   config: AppConfig;
-  configTab: "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
+  configTab: "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "demo" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
   localeOptions: Array<{ value: "zh-CN" | "en-US" | "zh-TW"; label: string }>;
   currentTheme: string;
   generatedThemeControls: GeneratedThemeControls;
@@ -564,7 +564,7 @@ const props = defineProps<{
   loadPromptPreview: (mode: "chat" | "compaction" | "archive") => void;
   setMemoryDialogRef: (el: Element | null) => void;
   setPromptPreviewDialogRef: (el: Element | null) => void;
-  updateConfigTab: (value: "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "about") => void;
+  updateConfigTab: (value: "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "demo" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "about") => void;
   setUiLanguage: (value: string) => void;
   updatePersonaEditorId: (value: string) => void;
   updateSelectedPersonaId: (value: string) => void;

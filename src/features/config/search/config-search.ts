@@ -9,6 +9,7 @@ export type ConfigSearchTab =
   | "persona"
   | "department"
   | "departmentTree"
+  | "demo"
   | "chatSettings"
   | "remoteIm"
   | "memory"
@@ -45,6 +46,7 @@ const CONFIG_SEARCH_SOURCES: ConfigSearchSource[] = [
   { tab: "persona", titleKey: "config.tabs.persona", titleFallback: "Persona", prefixes: ["config.persona"] },
   { tab: "department", titleKey: "config.tabs.department", titleFallback: "Department", prefixes: ["config.department"] },
   { tab: "departmentTree", titleKey: "config.tabs.departmentTree", titleFallback: "Department Tree", prefixes: ["config.departmentTree"] },
+  ...(import.meta.env.DEV ? [{ tab: "demo", titleKey: "config.tabs.demo", titleFallback: "Demo", prefixes: ["config.demo"] } satisfies ConfigSearchSource] : []),
   { tab: "chatSettings", titleKey: "config.tabs.chatSettings", titleFallback: "Chat", prefixes: ["config.chatSettings"] },
   { tab: "remoteIm", titleKey: "config.tabs.remoteIm", titleFallback: "Contacts", prefixes: ["config.remoteIm"] },
   { tab: "memory", titleKey: "config.tabs.memory", titleFallback: "Memory", prefixes: ["config.memory", "memory"] },

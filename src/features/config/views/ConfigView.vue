@@ -29,6 +29,9 @@
         <li>
           <a :class="{ 'active': props.configTab === 'departmentTree', 'menu-active': props.configTab === 'departmentTree', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('departmentTree')">{{ t("config.tabs.departmentTree") }}</a>
         </li>
+        <li v-if="SHOW_DEV_DEMO_TAB">
+          <a :class="{ 'active': props.configTab === 'demo', 'menu-active': props.configTab === 'demo', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('demo')">{{ t("config.tabs.demo") }}</a>
+        </li>
         <li>
           <a :class="{ 'active': props.configTab === 'chatSettings', 'menu-active': props.configTab === 'chatSettings', 'opacity-50 pointer-events-none': memorySyncLocked }" @click="requestTabChange('chatSettings')">{{ t("config.tabs.chatSettings") }}</a>
         </li>
@@ -61,7 +64,7 @@
 
     <div
       class="flex-1 min-w-0"
-      :class="props.configTab === 'api' || props.configTab === 'department' || props.configTab === 'departmentTree' ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-gutter-stable'"
+      :class="props.configTab === 'api' || props.configTab === 'department' || props.configTab === 'departmentTree' || props.configTab === 'demo' ? 'flex min-h-0 flex-col overflow-hidden' : 'overflow-y-auto scrollbar-gutter-stable'"
     >
       <div v-if="props.configTab === 'api'" class="flex-1 min-h-0">
         <ApiTab
@@ -97,9 +100,19 @@
       <div v-else-if="props.configTab === 'departmentTree'" class="flex-1 min-h-0">
         <DepartmentTreeTab
           :config="config"
+          :personas="personas"
           :saving-config="savingConfig"
           :save-config-action="saveConfigAction"
           :set-status-action="setStatusAction"
+        />
+      </div>
+
+      <div v-else-if="props.configTab === 'demo' && SHOW_DEV_DEMO_TAB" class="flex-1 min-h-0">
+        <DemoTab
+          :config="config"
+          :personas="personas"
+          @update:config-tab="$emit('update:configTab', $event)"
+          @update:persona-editor-id="$emit('update:personaEditorId', $event)"
         />
       </div>
 
@@ -368,6 +381,7 @@ import SkillTab from "./config-tabs/SkillTab.vue";
 import PersonaTab from "./config-tabs/PersonaTab.vue";
 import DepartmentTab from "./config-tabs/DepartmentTab.vue";
 import DepartmentTreeTab from "./config-tabs/DepartmentTreeTab.vue";
+import DemoTab from "./config-tabs/DemoTab.vue";
 import ChatSettingsTab from "./config-tabs/ChatSettingsTab.vue";
 import RemoteImTab from "./config-tabs/RemoteImTab.vue";
 import MemoryTab from "./config-tabs/MemoryTab.vue";
@@ -380,8 +394,9 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invokeTauri } from "../../../services/tauri-api";
 import { toErrorMessage } from "../../../utils/error";
 
-type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
+type ConfigTab = "welcome" | "hotkey" | "api" | "tools" | "mcp" | "skill" | "persona" | "department" | "departmentTree" | "demo" | "chatSettings" | "remoteIm" | "memory" | "task" | "logs" | "appearance" | "migration" | "about";
 type AvatarTarget = { agentId: string };
+const SHOW_DEV_DEMO_TAB = import.meta.env.DEV;
 
 const props = defineProps<{
   config: AppConfig;
@@ -670,6 +685,10 @@ function onMaxRecordSecondsChanged(value: number) {
 
 function requestTabChange(nextTab: ConfigTab) {
   if (memorySyncLocked.value && nextTab !== "memory") {
+    return;
+  }
+  if (!SHOW_DEV_DEMO_TAB && nextTab === "demo") {
+    emit("update:configTab", "hotkey");
     return;
   }
   emit("update:configTab", nextTab);
